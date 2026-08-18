@@ -723,20 +723,6 @@ def monitoring_events(limit: int = Query(20, ge=1, le=200)) -> MonitoringEventsR
 )
 def list_alerts(status_filter: Optional[AlertStatus] = Query(default=None)) -> List[Alert]:
     data = list(alerts_store.values())
-    if not data:
-        seed = Alert(
-            alert_id=make_id("alert"),
-            status=AlertStatus.ACTIVE,
-            severity=Severity.HIGH,
-            domain=Domain.WEATHER,
-            location="Narayanguda",
-            title="Heavy rainfall + congestion risk",
-            message="Rainfall expected in ~2h with existing high traffic load.",
-            created_at=utc_now_iso(),
-            updated_at=utc_now_iso(),
-        )
-        alerts_store[seed.alert_id] = seed
-        data = [seed]
     if status_filter is not None:
         data = [item for item in data if item.status == status_filter]
     return data
