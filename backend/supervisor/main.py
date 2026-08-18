@@ -408,6 +408,17 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(HTTPException)
+async def contract_http_exception_handler(request, exc: HTTPException):
+    """Return contract error envelopes as the response body (no FastAPI 'detail' wrapper)."""
+    from fastapi.exception_handlers import http_exception_handler as default_http_exception_handler
+    from fastapi.responses import JSONResponse
+
+    if isinstance(exc.detail, dict) and "error" in exc.detail:
+        return JSONResponse(status_code=exc.status_code, content=exc.detail, headers=exc.headers)
+
+    return await default_http_exception_handler(request, exc)
+
 planning_requests: Dict[str, PlanningRequestDetail] = {}
 orchestrator_tasks: Dict[str, OrchestratorTaskDetail] = {}
 alerts_store: Dict[str, Alert] = {}
