@@ -242,7 +242,7 @@ class ModelEvaluationResponse(BaseModel):
 
 class MonitoringStatusResponse(BaseModel):
     generated_at: str
-    domains: Dict[Domain, str]
+    domains: Dict[str, str] = Field(..., description="Map of domain name to component status")
     active_alerts: int
     unhealthy_components: List[str]
 
