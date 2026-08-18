@@ -1,0 +1,99 @@
+# ==============================================================================
+# SUPADSP .gitignore
+# ==============================================================================
+
+# ---- Environment & Secrets ----
+.env
+.env.local
+.env.*.local
+*.pem
+*.key
+*.crt
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+venv/
+.venv/
+env/
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# ---- Node / Frontend ----
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+.eslintcache
+
+# ---- IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ---- ML / Data ----
+*.pt
+*.pth
+*.pkl
+*.onnx
+*.h5
+*.joblib
+*.parquet
+*.arrow
+*.csv
+*.nc
+*.grib
+*.tif
+*.tiff
+*.geotiff
+*.shp
+*.shx
+*.dbf
+*.prj
+*.cpg
+*.osm.pbf
+mlruns/
+
+# ---- Project Datasets (LOCAL ONLY) ----
+datasets/
+
+# ---- Logs & Backups ----
+logs/
+*.log
+backups/
+*.sql.gz
+*.dump
+
+# ---- Docker ----
+docker-compose.override.yml
+
+# ---- MinIO Data ----
+minio-data/
+
+# ---- SUMO ----
+simulations/outputs/
+*.xml
+!simulations/configs/*.xml
+
+# ---- Misc ----
+tmp/
+temp/
+*.bak
+*.orig

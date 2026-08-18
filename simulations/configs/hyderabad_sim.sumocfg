@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  SUPADSP Hyderabad Smart City - SUMO Main Configuration File
+-->
+
+<configuration xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/sumoConfiguration.xsd">
+
+    <input>
+        <net-file value="../networks/hyderabad_network.net.xml"/>
+        <route-files value="../routes/hyderabad_traffic.rou.xml"/>
+        <additional-files value="../detectors/hyderabad_detectors.add.xml"/>
+    </input>
+
+    <time>
+        <begin value="0"/>
+        <end value="3600"/>
+        <step-length value="0.5"/>
+    </time>
+
+    <processing>
+        <ignore-junction-blocker value="15"/>
+        <collision.action value="warn"/>
+        <time-to-teleport value="300"/>
+        <max-depart-delay value="900"/>
+    </processing>
+
+    <report>
+        <verbose value="true"/>
+        <no-step-log value="true"/>
+    </report>
+
+</configuration>
