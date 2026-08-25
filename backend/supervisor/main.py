@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -7,6 +8,8 @@ from uuid import uuid4
 
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
+
+from backend.supervisor.agent_client import AGENT_REGISTRY, _dispatch_agent, dispatch_agent
 
 
 def utc_now_iso() -> str:
@@ -126,6 +129,10 @@ class OrchestratorExecuteRequest(BaseModel):
     workflow: str = Field(..., description="Workflow name, e.g. monitor-detect-understand")
     steps: List[str] = Field(default_factory=list, description="Optional explicit execution steps")
     priority: int = Field(default=3, ge=1, le=5)
+    objective: Optional[str] = Field(default=None, description="Optional planner objective, used when the request does not already exist in planning state")
+    location: Optional[str] = Field(default=None, description="Optional planning location, used when the request does not already exist in planning state")
+    domains: List[Domain] = Field(default_factory=list, description="Optional domains requested by the planner/orchestrator")
+    constraints: List[Constraint] = Field(default_factory=list, description="Optional execution constraints")
 
 
 class OrchestratorExecuteResponse(BaseModel):
@@ -133,6 +140,10 @@ class OrchestratorExecuteResponse(BaseModel):
     request_id: str
     status: TaskStatus
     assigned_capabilities: List[str]
+    dispatched_agents: List[str] = Field(default_factory=list)
+    collected_results: Dict[str, Any] = Field(default_factory=dict)
+    failures: Dict[str, Any] = Field(default_factory=dict)
+    planner_feedback: Optional[Dict[str, Any]] = None
     created_at: str
 
 
@@ -143,6 +154,11 @@ class OrchestratorTaskDetail(BaseModel):
     current_step: str
     completed_steps: List[str]
     pending_steps: List[str]
+    assigned_capabilities: List[str] = Field(default_factory=list)
+    dispatched_agents: List[str] = Field(default_factory=list)
+    collected_results: Dict[str, Any] = Field(default_factory=dict)
+    failures: Dict[str, Any] = Field(default_factory=dict)
+    planner_feedback: Optional[Dict[str, Any]] = None
     started_at: str
     updated_at: str
 
@@ -169,6 +185,32 @@ class PlannerPlanResponse(BaseModel):
     required_data: List[str]
     scenarios: List[ScenarioDefinition]
     planner_confidence: float = Field(..., ge=0, le=1)
+    required_capabilities: List[str] = Field(default_factory=list, description="Capabilities implied by the plan, such as traffic, weather, simulation, verification")
+
+
+class PlannerFeedbackRequest(BaseModel):
+    request_id: str
+    task_id: Optional[str] = None
+    objective: str
+    location: str
+    domains: List[Domain] = Field(default_factory=list)
+    assigned_capabilities: List[str] = Field(default_factory=list)
+    dispatched_agents: List[str] = Field(default_factory=list)
+    collected_results: Dict[str, Any] = Field(default_factory=dict)
+    failures: Dict[str, Any] = Field(default_factory=dict)
+    constraints: List[Constraint] = Field(default_factory=list)
+
+
+class PlannerFeedbackResponse(BaseModel):
+    request_id: str
+    task_id: Optional[str] = None
+    status: str = "RECEIVED"
+    decision: str = Field(default="PROCEED_TO_EVALUATION", description="Planner next decision after evaluating agent results")
+    insights: Dict[str, Any] = Field(default_factory=dict, description="Synthesized insights from collected agent results")
+    next_steps: List[str] = Field(default_factory=list)
+    confidence: float = Field(default=0.92, ge=0, le=1)
+    received_results: Dict[str, Any] = Field(default_factory=dict)
+    failures: Dict[str, Any] = Field(default_factory=dict)
 
 
 class KnowledgeSearchRequest(BaseModel):
@@ -471,6 +513,90 @@ def get_planning_request(request_id: str = Path(..., min_length=8)) -> PlanningR
     return detail
 
 
+KNOWN_CAPABILITIES = {
+    "traffic",
+    "weather",
+    "energy",
+    "flood",
+    "pollution",
+    "simulation",
+    "data_discovery",
+    "data_retrieval",
+    "verification",
+    "knowledge",
+    "planner",
+}
+
+
+def _resolve_planner_request(payload: OrchestratorExecuteRequest) -> PlannerPlanRequest:
+    planning_record = planning_requests.get(payload.request_id)
+    objective = payload.objective or (planning_record.objective if planning_record else None)
+    location = payload.location or (planning_record.location if planning_record else None)
+    domains = payload.domains or (planning_record.requested_domains if planning_record else [])
+
+    if not objective:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="PLANNER_INPUT_MISSING",
+                    message="Planner objective is required to execute orchestration.",
+                    details={"request_id": payload.request_id},
+                    correlation_id=make_id("corr"),
+                    timestamp=utc_now_iso(),
+                )
+            ).model_dump(),
+        )
+
+    if not location:
+        location = "general"
+
+    return PlannerPlanRequest(
+        request_id=payload.request_id,
+        objective=objective,
+        location=location,
+        domains=domains,
+        constraints=payload.constraints,
+    )
+
+
+def _extract_required_capabilities(plan: PlannerPlanResponse) -> List[str]:
+    matched = []
+    if plan.required_capabilities:
+        matched.extend(plan.required_capabilities)
+    else:
+        obj_text = plan.objective.lower()
+        for capability in ["traffic", "weather", "energy", "flood", "pollution", "simulation", "verification", "knowledge", "data_discovery"]:
+            if capability in obj_text:
+                matched.append(capability)
+
+    normalized = []
+    for capability in matched:
+        value = capability.strip().lower()
+        if value in KNOWN_CAPABILITIES and value not in normalized:
+            normalized.append(value)
+
+    if not normalized:
+        normalized = ["traffic"]
+
+    unknown = [capability for capability in plan.required_capabilities if capability.strip().lower() not in KNOWN_CAPABILITIES]
+    if unknown:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="UNKNOWN_CAPABILITY",
+                    message="Planner requested a capability that is not available to the orchestrator.",
+                    details={"unknown_capabilities": unknown},
+                    correlation_id=make_id("corr"),
+                    timestamp=utc_now_iso(),
+                )
+            ).model_dump(),
+        )
+
+    return normalized
+
+
 @app.post(
     "/agents/orchestrator/execute",
     tags=["Internal API - Orchestrator"],
@@ -478,25 +604,146 @@ def get_planning_request(request_id: str = Path(..., min_length=8)) -> PlanningR
     summary="Execute orchestrator workflow",
 )
 def execute_orchestrator(payload: OrchestratorExecuteRequest) -> OrchestratorExecuteResponse:
+    # First validate and resolve the planner request before creating/updating state
+    planner_request = _resolve_planner_request(payload)
+
     task_id = make_id("orctask")
     created_at = utc_now_iso()
-    completed_steps: List[str] = []
-    pending_steps = payload.steps if payload.steps else ["monitor", "detect", "understand", "predict", "simulate", "verify", "recommend"]
-    orchestrator_tasks[task_id] = OrchestratorTaskDetail(
+
+    request_context = planning_requests.get(payload.request_id)
+    if request_context is None:
+        planning_requests[payload.request_id] = PlanningRequestDetail(
+            request_id=payload.request_id,
+            status=PlanningStatus.ORCHESTRATING,
+            objective=planner_request.objective,
+            location=planner_request.location,
+            requested_domains=planner_request.domains,
+            created_at=created_at,
+            updated_at=created_at,
+        )
+    else:
+        request_context.status = PlanningStatus.ORCHESTRATING
+        request_context.updated_at = created_at
+        request_context.orchestrator_task_id = task_id
+
+    task_detail = OrchestratorTaskDetail(
         task_id=task_id,
         request_id=payload.request_id,
-        status=TaskStatus.QUEUED,
-        current_step=pending_steps[0],
-        completed_steps=completed_steps,
-        pending_steps=pending_steps,
+        status=TaskStatus.RUNNING,
+        current_step="planner",
+        completed_steps=[],
+        pending_steps=["planner", "agent_dispatch"],
         started_at=created_at,
         updated_at=created_at,
     )
+    orchestrator_tasks[task_id] = task_detail
+
+    try:
+        planner_response = planner_plan(planner_request)
+        if not planner_response.objective or not planner_response.likely_causes or not planner_response.interventions:
+            raise ValueError("Planner response is incomplete")
+        assigned_capabilities = _extract_required_capabilities(planner_response)
+    except HTTPException:
+        orchestrator_tasks[task_id] = OrchestratorTaskDetail(
+            task_id=task_id,
+            request_id=payload.request_id,
+            status=TaskStatus.FAILED,
+            current_step="planner",
+            completed_steps=[],
+            pending_steps=[],
+            started_at=created_at,
+            updated_at=utc_now_iso(),
+        )
+        raise
+    except Exception as exc:  # pragma: no cover - safe fallback for invalid planner output
+        error_detail = ErrorDetail(
+            code="PLANNER_FAILURE",
+            message="Planner execution failed or returned an invalid plan.",
+            details={"error": str(exc), "request_id": payload.request_id},
+            correlation_id=make_id("corr"),
+            timestamp=utc_now_iso(),
+        )
+        orchestrator_tasks[task_id] = OrchestratorTaskDetail(
+            task_id=task_id,
+            request_id=payload.request_id,
+            status=TaskStatus.FAILED,
+            current_step="planner",
+            completed_steps=[],
+            pending_steps=[],
+            started_at=created_at,
+            updated_at=utc_now_iso(),
+        )
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=ErrorResponse(error=error_detail).model_dump()) from exc
+
+    if request_context is not None:
+        request_context.status = PlanningStatus.RUNNING_MODELS
+        request_context.updated_at = utc_now_iso()
+
+    # Agent Dispatch & Result Collection
+    # Invoke ONLY the specialist agents corresponding to assigned_capabilities
+    dispatched_agents: List[str] = []
+    collected_results: Dict[str, Any] = {}
+    failures: Dict[str, Any] = {}
+
+    for capability in assigned_capabilities:
+        if capability in AGENT_REGISTRY:
+            agent_name = AGENT_REGISTRY[capability]["agent_name"]
+            dispatched_agents.append(agent_name)
+            try:
+                result = _dispatch_agent(capability)
+                collected_results[capability] = result
+            except Exception as exc:
+                failures[capability] = {
+                    "agent": agent_name,
+                    "error": str(exc),
+                    "status": "FAILED",
+                }
+
+    # Step 3: Agent Results -> Planner Feedback
+    # Route collected specialist-agent results (and any failures) back to Planner
+    feedback_request = PlannerFeedbackRequest(
+        request_id=payload.request_id,
+        task_id=task_id,
+        objective=planner_request.objective,
+        location=planner_request.location,
+        domains=planner_request.domains,
+        assigned_capabilities=assigned_capabilities,
+        dispatched_agents=dispatched_agents,
+        collected_results=collected_results,
+        failures=failures,
+        constraints=planner_request.constraints,
+    )
+    feedback_response = planner_feedback(feedback_request)
+    planner_feedback_dict = feedback_response.model_dump()
+
+    final_status = TaskStatus.FAILED if (failures and not collected_results) else TaskStatus.COMPLETED
+
+    task_detail = OrchestratorTaskDetail(
+        task_id=task_id,
+        request_id=payload.request_id,
+        status=final_status,
+        current_step="planner_feedback",
+        completed_steps=["planner", "agent_dispatch", "planner_feedback"],
+        pending_steps=[],
+        assigned_capabilities=assigned_capabilities,
+        dispatched_agents=dispatched_agents,
+        collected_results=collected_results,
+        failures=failures,
+        planner_feedback=planner_feedback_dict,
+        started_at=created_at,
+        updated_at=utc_now_iso(),
+    )
+    orchestrator_tasks[task_id] = task_detail
+
     return OrchestratorExecuteResponse(
         task_id=task_id,
         request_id=payload.request_id,
-        status=TaskStatus.QUEUED,
-        assigned_capabilities=["planner_plan", "data_discovery", "model_evaluation", "verification"],
+        status=final_status,
+        assigned_capabilities=assigned_capabilities,
+        dispatched_agents=dispatched_agents,
+        collected_results=collected_results,
+        failures=failures,
+        planner_feedback=planner_feedback_dict,
         created_at=created_at,
     )
 
@@ -522,6 +769,19 @@ def get_orchestrator_task(task_id: str = Path(..., min_length=8)) -> Orchestrato
     summary="Generate planning strategy",
 )
 def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
+    # Determine required capabilities from requested domains or objective
+    caps: List[str] = []
+    if payload.domains:
+        caps.extend([d.value for d in payload.domains if d.value in KNOWN_CAPABILITIES])
+
+    obj_lower = payload.objective.lower()
+    for cap in ["traffic", "weather", "energy", "pollution", "flood", "simulation"]:
+        if cap in obj_lower and cap not in caps:
+            caps.append(cap)
+
+    if not caps:
+        caps = ["traffic"]
+
     return PlannerPlanResponse(
         request_id=payload.request_id,
         objective=payload.objective,
@@ -561,6 +821,84 @@ def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
             ),
         ],
         planner_confidence=0.91,
+        required_capabilities=caps,
+    )
+
+
+@app.post(
+    "/agents/planner/feedback",
+    tags=["Internal API - Planner"],
+    response_model=PlannerFeedbackResponse,
+    summary="Submit specialist agent results to planner for feedback & next decision",
+)
+def planner_feedback(payload: PlannerFeedbackRequest) -> PlannerFeedbackResponse:
+    insights: Dict[str, Any] = {}
+    next_steps: List[str] = []
+
+    # Synthesize insights directly from the received agent results
+    if "traffic" in payload.collected_results:
+        traffic_data = payload.collected_results["traffic"]
+        insights["traffic_assessment"] = {
+            "congestion_index": traffic_data.get("congestion_index"),
+            "average_speed_kmh": traffic_data.get("average_speed_kmh"),
+            "active_vehicles": traffic_data.get("active_vehicles"),
+            "bottlenecks": [c.get("name") for c in traffic_data.get("corridors", []) if c.get("status") == "HEAVY"],
+        }
+        next_steps.append("evaluate_signal_timing_adjustments")
+
+    if "weather" in payload.collected_results:
+        weather_data = payload.collected_results["weather"]
+        insights["weather_assessment"] = {
+            "condition": weather_data.get("condition"),
+            "temperature_c": weather_data.get("temperature_c"),
+            "humidity_pct": weather_data.get("humidity_pct"),
+            "precipitation_mm": weather_data.get("precipitation_mm"),
+        }
+        next_steps.append("correlate_weather_impact_on_flow")
+
+    if "energy" in payload.collected_results:
+        energy_data = payload.collected_results["energy"]
+        insights["energy_assessment"] = {
+            "current_load_mw": energy_data.get("current_load_mw"),
+            "load_pct": energy_data.get("load_pct"),
+            "critical_substations": [s.get("name") for s in energy_data.get("substations", []) if s.get("status") == "HIGH"],
+        }
+        next_steps.append("balance_grid_distribution")
+
+    if "pollution" in payload.collected_results:
+        poll_data = payload.collected_results["pollution"]
+        insights["pollution_assessment"] = {
+            "city_avg_aqi": poll_data.get("city_avg_aqi"),
+            "category": poll_data.get("category"),
+            "primary_pollutant": poll_data.get("primary_pollutant"),
+        }
+        next_steps.append("assess_emission_hotspots")
+
+    if "simulation" in payload.collected_results:
+        sim_data = payload.collected_results["simulation"]
+        insights["simulation_assessment"] = {
+            "scenario": sim_data.get("scenario"),
+            "metrics": sim_data.get("metrics"),
+        }
+        next_steps.append("verify_simulation_outcomes")
+
+    # If failures occurred, note them in the feedback
+    if payload.failures:
+        insights["agent_failures"] = payload.failures
+        decision = "HANDLE_AGENT_FAILURES" if not payload.collected_results else "PROCEED_WITH_PARTIAL_RESULTS"
+    else:
+        decision = "PROCEED_TO_EVALUATION"
+
+    return PlannerFeedbackResponse(
+        request_id=payload.request_id,
+        task_id=payload.task_id,
+        status="RECEIVED",
+        decision=decision,
+        insights=insights,
+        next_steps=next_steps,
+        confidence=0.92,
+        received_results=payload.collected_results,
+        failures=payload.failures,
     )
 
 
