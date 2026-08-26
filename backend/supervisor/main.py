@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import FastAPI, HTTPException, Path, Query, status
 from pydantic import BaseModel, Field
 
+from backend.agents.planner_agent.planner import PlannerAgent, get_planner_agent
 from backend.supervisor.agent_client import AGENT_REGISTRY, _dispatch_agent, dispatch_agent
 
 
@@ -769,39 +770,43 @@ def get_orchestrator_task(task_id: str = Path(..., min_length=8)) -> Orchestrato
     summary="Generate planning strategy",
 )
 def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
-    # Determine required capabilities from requested domains or objective
-    caps: List[str] = []
-    if payload.domains:
-        caps.extend([d.value for d in payload.domains if d.value in KNOWN_CAPABILITIES])
+    planner_agent = get_planner_agent()
+    plan_result = planner_agent.plan(payload.objective)
 
-    obj_lower = payload.objective.lower()
-    for cap in ["traffic", "weather", "energy", "pollution", "flood", "simulation"]:
-        if cap in obj_lower and cap not in caps:
-            caps.append(cap)
+    if not plan_result.relevant:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=ErrorResponse(
+                error=ErrorDetail(
+                    code="QUERY_OUT_OF_SCOPE",
+                    message=plan_result.response or "This question is outside the scope of the Smart City system.",
+                    details={"request_id": payload.request_id},
+                    correlation_id=make_id("corr"),
+                    timestamp=utc_now_iso(),
+                )
+            ).model_dump(),
+        )
 
-    if not caps:
-        caps = ["traffic"]
+    # Determine capabilities (e.g. traffic, simulation)
+    caps: List[str] = [plan_result.domain] if plan_result.domain in KNOWN_CAPABILITIES else ["traffic"]
+    if any("sumo" in step.lower() or "simulation" in step.lower() for step in plan_result.plan):
+        if "simulation" not in caps and "simulation" in KNOWN_CAPABILITIES:
+            caps.append("simulation")
 
     return PlannerPlanResponse(
         request_id=payload.request_id,
-        objective=payload.objective,
+        objective=plan_result.objective or payload.objective,
         likely_causes=[
             "peak-hour demand concentration",
             "intersection bottlenecks",
             "signal-cycle imbalance",
             "weather-induced throughput drop",
         ],
-        interventions=[
-            "adaptive signal optimization",
-            "dynamic rerouting advisories",
-            "lane-use adjustment",
-            "traffic personnel deployment",
-        ],
+        interventions=plan_result.plan,
         required_data=[
-            "traffic volumes",
-            "signal configuration",
-            "weather forecast",
-            "historical incident data",
+            "real-time vehicle counts",
+            "corridor speeds",
+            "signal cycle timings",
         ],
         scenarios=[
             ScenarioDefinition(
@@ -820,7 +825,7 @@ def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
                 assumptions=["signals+routing+manual control"],
             ),
         ],
-        planner_confidence=0.91,
+        planner_confidence=0.95,
         required_capabilities=caps,
     )
 
@@ -832,71 +837,32 @@ def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
     summary="Submit specialist agent results to planner for feedback & next decision",
 )
 def planner_feedback(payload: PlannerFeedbackRequest) -> PlannerFeedbackResponse:
-    insights: Dict[str, Any] = {}
-    next_steps: List[str] = []
+    planner_agent = get_planner_agent()
+    eval_result = planner_agent.evaluate_and_replan(
+        objective=payload.objective,
+        plan=payload.assigned_capabilities,
+        collected_results=payload.collected_results,
+        failures=payload.failures,
+    )
 
-    # Synthesize insights directly from the received agent results
-    if "traffic" in payload.collected_results:
-        traffic_data = payload.collected_results["traffic"]
-        insights["traffic_assessment"] = {
-            "congestion_index": traffic_data.get("congestion_index"),
-            "average_speed_kmh": traffic_data.get("average_speed_kmh"),
-            "active_vehicles": traffic_data.get("active_vehicles"),
-            "bottlenecks": [c.get("name") for c in traffic_data.get("corridors", []) if c.get("status") == "HEAVY"],
-        }
-        next_steps.append("evaluate_signal_timing_adjustments")
-
-    if "weather" in payload.collected_results:
-        weather_data = payload.collected_results["weather"]
-        insights["weather_assessment"] = {
-            "condition": weather_data.get("condition"),
-            "temperature_c": weather_data.get("temperature_c"),
-            "humidity_pct": weather_data.get("humidity_pct"),
-            "precipitation_mm": weather_data.get("precipitation_mm"),
-        }
-        next_steps.append("correlate_weather_impact_on_flow")
-
-    if "energy" in payload.collected_results:
-        energy_data = payload.collected_results["energy"]
-        insights["energy_assessment"] = {
-            "current_load_mw": energy_data.get("current_load_mw"),
-            "load_pct": energy_data.get("load_pct"),
-            "critical_substations": [s.get("name") for s in energy_data.get("substations", []) if s.get("status") == "HIGH"],
-        }
-        next_steps.append("balance_grid_distribution")
-
-    if "pollution" in payload.collected_results:
-        poll_data = payload.collected_results["pollution"]
-        insights["pollution_assessment"] = {
-            "city_avg_aqi": poll_data.get("city_avg_aqi"),
-            "category": poll_data.get("category"),
-            "primary_pollutant": poll_data.get("primary_pollutant"),
-        }
-        next_steps.append("assess_emission_hotspots")
-
-    if "simulation" in payload.collected_results:
-        sim_data = payload.collected_results["simulation"]
-        insights["simulation_assessment"] = {
-            "scenario": sim_data.get("scenario"),
-            "metrics": sim_data.get("metrics"),
-        }
-        next_steps.append("verify_simulation_outcomes")
-
-    # If failures occurred, note them in the feedback
+    insights: Dict[str, Any] = {
+        "analysis": eval_result.analysis,
+        "goal_achieved": eval_result.goal_achieved,
+        "recommendation": eval_result.final_recommendation,
+        "revised_plan": eval_result.revised_plan,
+        "agent_results": payload.collected_results,
+    }
     if payload.failures:
         insights["agent_failures"] = payload.failures
-        decision = "HANDLE_AGENT_FAILURES" if not payload.collected_results else "PROCEED_WITH_PARTIAL_RESULTS"
-    else:
-        decision = "PROCEED_TO_EVALUATION"
 
     return PlannerFeedbackResponse(
         request_id=payload.request_id,
         task_id=payload.task_id,
-        status="RECEIVED",
-        decision=decision,
+        status="SUCCESS" if eval_result.goal_achieved else "NEEDS_REPLANNING",
+        decision=eval_result.decision,
         insights=insights,
-        next_steps=next_steps,
-        confidence=0.92,
+        next_steps=eval_result.revised_plan if not eval_result.goal_achieved else ["implement_recommendation", "monitor_flow"],
+        confidence=eval_result.confidence,
         received_results=payload.collected_results,
         failures=payload.failures,
     )
