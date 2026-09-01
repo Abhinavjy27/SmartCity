@@ -19,6 +19,9 @@ from backend.agents.planner_agent.prompts import (
     build_evaluation_prompt,
 )
 from backend.agents.planner_agent.schema import (
+    OrchestratorExecuteRequest,
+    OrchestratorExecuteResponse,
+    PlannerConstraint,
     PlannerEvaluationResponse,
     PlannerResponse,
 )
@@ -176,7 +179,60 @@ class PlannerAgent:
                 confidence=0.85,
             )
 
+    def build_orchestrator_request(
+        self,
+        user_query: str,
+        request_id: Optional[str] = None,
+        workflow: str = "monitor-detect-understand",
+        priority: int = 3,
+        location: Optional[str] = None,
+        constraints: Optional[List[PlannerConstraint]] = None,
+    ) -> OrchestratorExecuteRequest:
+        """
+        Convert a user query into a validated OrchestratorExecuteRequest schema payload.
+        """
+        plan_result = self.plan(user_query)
+        req_id = request_id or plan_result.request_id
+
+        steps = plan_result.plan if plan_result.plan else [
+            "Collect real-time traffic telemetry and vehicle counts",
+            "Run SUMO congestion simulation for target corridor",
+            "Generate optimized signal split recommendations",
+        ]
+
+        domains = [plan_result.domain] if plan_result.domain else ["traffic"]
+
+        return OrchestratorExecuteRequest(
+            request_id=req_id,
+            workflow=workflow,
+            steps=steps,
+            priority=priority,
+            objective=plan_result.objective or user_query,
+            location=location or "Hyderabad Urban Corridor",
+            domains=domains,
+            constraints=constraints or [],
+        )
+
+    def plan_and_execute(
+        self,
+        user_query: str,
+        request_id: Optional[str] = None,
+    ) -> OrchestratorExecuteResponse:
+        """
+        Full end-to-end flow: Generate execution plan and run via supervisor orchestrator.
+        """
+        orch_req = self.build_orchestrator_request(user_query, request_id=request_id)
+        try:
+            from backend.supervisor.main import OrchestratorExecuteRequest as SupervisorOrchReq, execute_orchestrator
+            supervisor_payload = SupervisorOrchReq.model_validate(orch_req.model_dump())
+            supervisor_res = execute_orchestrator(supervisor_payload)
+            return OrchestratorExecuteResponse.model_validate(supervisor_res.model_dump())
+        except Exception as exc:
+            logger.warning(f"Supervisor orchestrator dispatch error, returning standalone plan: {exc}")
+            return self.plan(user_query)
+
 
 # Default factory function
 def get_planner_agent() -> PlannerAgent:
     return PlannerAgent()
+

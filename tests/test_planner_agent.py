@@ -85,6 +85,30 @@ class TestPlannerAgent(unittest.TestCase):
         self.assertFalse(result.relevant)
         self.assertIsNotNone(result.response)
 
+    def test_07_build_orchestrator_request(self):
+        """Test that build_orchestrator_request generates the exact schema required by supervisor."""
+        from backend.agents.planner_agent.schema import OrchestratorExecuteRequest
+        query = "Optimize signal timing along Gachibowli to reduce evening delays"
+        req: OrchestratorExecuteRequest = self.agent.build_orchestrator_request(query, request_id="req_test_123")
+
+        self.assertEqual(req.request_id, "req_test_123")
+        self.assertEqual(req.workflow, "monitor-detect-understand")
+        self.assertEqual(req.priority, 3)
+        self.assertIn("traffic", req.domains)
+        self.assertIsNotNone(req.objective)
+        self.assertGreaterEqual(len(req.steps), 1)
+
+    def test_08_plan_and_execute_integration(self):
+        """Test end-to-end plan and execute flow returning an OrchestratorExecuteResponse."""
+        query = "Detect bottlenecks and optimize signals at Outer Ring Road"
+        result = self.agent.plan_and_execute(query, request_id="req_orch_999")
+
+        self.assertIsNotNone(result.task_id)
+        self.assertEqual(result.request_id, "req_orch_999")
+        self.assertIn(result.status, ["QUEUED", "COMPLETED", "RUNNING"])
+        self.assertIsInstance(result.assigned_capabilities, list)
+        self.assertIsInstance(result.dispatched_agents, list)
+
 
 if __name__ == "__main__":
     unittest.main()
