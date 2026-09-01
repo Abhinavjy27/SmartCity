@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from backend.agents.planner_agent.llm_client import LLMClient
@@ -22,6 +24,35 @@ from backend.agents.planner_agent.schema import (
 )
 
 logger = logging.getLogger("planner_agent")
+
+
+def _create_fallback_planner_response(
+    status: str = "REJECTED",
+    response_text: str = "This question is outside the scope of the Smart City system.",
+    relevant: bool = False,
+    task_id: Optional[str] = None,
+    request_id: Optional[str] = None,
+) -> PlannerResponse:
+    now_iso = datetime.now(timezone.utc).isoformat()
+    tid = task_id or f"task_{uuid.uuid4().hex[:8]}"
+    rid = request_id or f"req_{uuid.uuid4().hex[:8]}"
+    return PlannerResponse(
+        task_id=tid,
+        request_id=rid,
+        status=status,
+        assigned_capabilities=[],
+        dispatched_agents=[],
+        collected_results={},
+        failures={},
+        planner_feedback={
+            "relevant": relevant,
+            "domain": None,
+            "objective": None,
+            "plan": [],
+            "response": response_text,
+        },
+        created_at=now_iso,
+    )
 
 
 class PlannerAgent:
@@ -43,9 +74,10 @@ class PlannerAgent:
         4. Return structured response (gatekeeping or execution plan).
         """
         if not user_query or not user_query.strip():
-            return PlannerResponse(
+            return _create_fallback_planner_response(
+                status="REJECTED",
+                response_text="Please provide a valid query or description of the urban traffic situation.",
                 relevant=False,
-                response="Please provide a valid query or description of the urban traffic situation.",
             )
 
         sanitized_query = user_query.strip()
@@ -60,21 +92,49 @@ class PlannerAgent:
             # 2. Parse raw JSON
             parsed_dict = json.loads(raw_json_str)
 
-            # 3. Validate against Pydantic schema
+            # 3. Ensure required task metadata fields exist
+            now_iso = datetime.now(timezone.utc).isoformat()
+            if "task_id" not in parsed_dict or not parsed_dict["task_id"]:
+                parsed_dict["task_id"] = f"task_{uuid.uuid4().hex[:8]}"
+            if "request_id" not in parsed_dict or not parsed_dict["request_id"]:
+                parsed_dict["request_id"] = f"req_{uuid.uuid4().hex[:8]}"
+            if "created_at" not in parsed_dict or not parsed_dict["created_at"]:
+                parsed_dict["created_at"] = now_iso
+
+            # Legacy compatibility for flat LLM JSON
+            if "planner_feedback" not in parsed_dict and ("relevant" in parsed_dict or "objective" in parsed_dict):
+                relevant = parsed_dict.get("relevant", True)
+                parsed_dict["planner_feedback"] = {
+                    "relevant": relevant,
+                    "domain": parsed_dict.get("domain", "traffic" if relevant else None),
+                    "objective": parsed_dict.get("objective"),
+                    "plan": parsed_dict.get("plan", []),
+                    "response": parsed_dict.get("response"),
+                }
+                if "status" not in parsed_dict:
+                    parsed_dict["status"] = "QUEUED" if relevant else "REJECTED"
+                if "assigned_capabilities" not in parsed_dict:
+                    parsed_dict["assigned_capabilities"] = ["traffic_flow_analysis", "signal_optimization"] if relevant else []
+                if "dispatched_agents" not in parsed_dict:
+                    parsed_dict["dispatched_agents"] = ["TrafficAgent", "SimulationAgent"] if relevant else []
+
+            # 4. Validate against Pydantic schema
             validated_response = PlannerResponse.model_validate(parsed_dict)
             return validated_response
 
         except json.JSONDecodeError as exc:
             logger.error(f"Failed to decode LLM response as JSON: {exc}")
-            return PlannerResponse(
+            return _create_fallback_planner_response(
+                status="FAILED",
+                response_text="The system could not parse the planner output. Please try rephrasing your request.",
                 relevant=False,
-                response="The system could not parse the planner output. Please try rephrasing your request.",
             )
         except Exception as exc:
             logger.error(f"Planner Agent error: {exc}")
-            return PlannerResponse(
+            return _create_fallback_planner_response(
+                status="FAILED",
+                response_text=f"Error generating plan: {str(exc)}",
                 relevant=False,
-                response=f"Error generating plan: {str(exc)}",
             )
 
     def evaluate_and_replan(

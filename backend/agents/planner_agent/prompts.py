@@ -68,33 +68,59 @@ Always evaluate the underlying request strictly against the defined Smart City T
 ---
 
 ### 📋 5. OUTPUT FORMAT REQUIREMENT
-You MUST ALWAYS return a strictly valid JSON object adhering to the following structure:
+You MUST ALWAYS return a strictly valid JSON object adhering to the following task execution structure:
 
 #### For Relevant Queries:
 ```json
 {
-  "relevant": true,
-  "domain": "traffic",
-  "objective": "<Concise summary of the urban planner's objective>",
-  "plan": [
-    "<Step 1: Data Retrieval>",
-    "<Step 2: Analysis / Diagnosis>",
-    "<Step 3: Solution Generation / Strategy>",
-    "<Step 4: Simulation Verification (e.g. SUMO)>",
-    "<Step 5: Recommendation Selection>"
+  "task_id": "task_<unique_id>",
+  "request_id": "req_<unique_id>",
+  "status": "QUEUED",
+  "assigned_capabilities": [
+    "traffic_flow_analysis",
+    "signal_optimization"
   ],
-  "response": null
+  "dispatched_agents": [
+    "TrafficAgent",
+    "SimulationAgent"
+  ],
+  "collected_results": {},
+  "failures": {},
+  "planner_feedback": {
+    "relevant": true,
+    "domain": "traffic",
+    "objective": "<Concise summary of the urban planner's objective>",
+    "plan": [
+      "<Step 1: Data Retrieval>",
+      "<Step 2: Analysis / Diagnosis>",
+      "<Step 3: Solution Generation / Strategy>",
+      "<Step 4: Simulation Verification (e.g. SUMO)>",
+      "<Step 5: Recommendation Selection>"
+    ],
+    "response": null
+  },
+  "created_at": "2026-09-01T15:20:00Z"
 }
 ```
 
 #### For Irrelevant Queries:
 ```json
 {
-  "relevant": false,
-  "domain": null,
-  "objective": null,
-  "plan": [],
-  "response": "This question is outside the scope of the Smart City system."
+  "task_id": "task_<unique_id>",
+  "request_id": "req_<unique_id>",
+  "status": "REJECTED",
+  "assigned_capabilities": [],
+  "dispatched_agents": [],
+  "collected_results": {},
+  "failures": {},
+  "planner_feedback": {
+    "relevant": false,
+    "domain": null,
+    "objective": null,
+    "plan": [],
+    "response": "This question is outside the scope of the Smart City system."
+  },
+  "created_at": "2026-09-01T15:20:00Z"
 }
 ```
 

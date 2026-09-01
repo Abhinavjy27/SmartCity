@@ -11,49 +11,74 @@ from pydantic import BaseModel, Field, model_validator
 
 class PlannerResponse(BaseModel):
     """
-    Structured output schema for the Planner Agent's initial plan generation and gatekeeping.
+    Structured output schema for the Planner Agent conforming to the Task Execution JSON standard.
     """
-    relevant: bool = Field(
+    task_id: str = Field(
         ...,
-        description="Whether the user query is relevant to the Smart City traffic optimization domain."
+        description="Unique ID for the created planning task."
     )
-    domain: Optional[Literal["traffic"]] = Field(
-        default=None,
-        description="Domain of the query. Currently only 'traffic' is supported. Null if irrelevant."
+    request_id: str = Field(
+        ...,
+        description="Unique request identifier."
     )
-    objective: Optional[str] = Field(
-        default=None,
-        description="Concise, extracted planner objective in natural language. Null if irrelevant."
+    status: Literal["QUEUED", "IN_PROGRESS", "COMPLETED", "FAILED", "REJECTED"] = Field(
+        default="QUEUED",
+        description="Current status of the planning task."
     )
-    plan: List[str] = Field(
+    assigned_capabilities: List[str] = Field(
         default_factory=list,
-        description="Ordered list of execution steps for the orchestrator and domain agents. Empty if irrelevant."
+        description="Capabilities assigned by the planner to address the request."
     )
-    response: Optional[str] = Field(
+    dispatched_agents: List[str] = Field(
+        default_factory=list,
+        description="Specialist agents dispatched to perform the plan steps."
+    )
+    collected_results: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Collected execution results from specialist agents."
+    )
+    failures: Dict[str, Any] = Field(
+        default_factory=dict,
+        description="Failures or errors encountered during step execution."
+    )
+    planner_feedback: Optional[Dict[str, Any]] = Field(
         default=None,
-        description="User-facing explanation message when the query is rejected or out of scope."
+        description="Feedback, reasoning, objective, and domain gatekeeping details from the planner."
+    )
+    created_at: str = Field(
+        ...,
+        description="ISO 8601 timestamp string when the task was created."
     )
 
-    @model_validator(mode="after")
-    def validate_gatekeeping_consistency(self) -> PlannerResponse:
-        """
-        Validate logical consistency between relevant flag and associated fields.
-        """
-        if self.relevant:
-            if not self.domain:
-                self.domain = "traffic"
-            if not self.objective or not self.objective.strip():
-                raise ValueError("Relevant query must specify an 'objective'.")
-            if not self.plan or len(self.plan) == 0:
-                raise ValueError("Relevant query must contain at least one step in 'plan'.")
-            self.response = None
-        else:
-            self.domain = None
-            self.objective = None
-            self.plan = []
-            if not self.response or not self.response.strip():
-                self.response = "This question is outside the scope of the Smart City system."
-        return self
+    @property
+    def relevant(self) -> bool:
+        if self.planner_feedback and isinstance(self.planner_feedback, dict):
+            return self.planner_feedback.get("relevant", self.status != "REJECTED")
+        return self.status != "REJECTED"
+
+    @property
+    def domain(self) -> Optional[str]:
+        if self.planner_feedback and isinstance(self.planner_feedback, dict):
+            return self.planner_feedback.get("domain")
+        return None
+
+    @property
+    def objective(self) -> Optional[str]:
+        if self.planner_feedback and isinstance(self.planner_feedback, dict):
+            return self.planner_feedback.get("objective")
+        return None
+
+    @property
+    def plan(self) -> List[str]:
+        if self.planner_feedback and isinstance(self.planner_feedback, dict):
+            return self.planner_feedback.get("plan", [])
+        return []
+
+    @property
+    def response(self) -> Optional[str]:
+        if self.planner_feedback and isinstance(self.planner_feedback, dict):
+            return self.planner_feedback.get("response")
+        return None
 
 
 class PlannerEvaluationResponse(BaseModel):

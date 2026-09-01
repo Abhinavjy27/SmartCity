@@ -24,6 +24,17 @@ class TestPlannerAgent(unittest.TestCase):
         self.assertGreaterEqual(len(result.plan), 3)
         self.assertIsNone(result.response)
 
+        # Assert task execution schema fields
+        self.assertIsNotNone(result.task_id)
+        self.assertIsNotNone(result.request_id)
+        self.assertEqual(result.status, "QUEUED")
+        self.assertIsInstance(result.assigned_capabilities, list)
+        self.assertIsInstance(result.dispatched_agents, list)
+        self.assertIsInstance(result.collected_results, dict)
+        self.assertIsInstance(result.failures, dict)
+        self.assertIsInstance(result.planner_feedback, dict)
+        self.assertIsNotNone(result.created_at)
+
     def test_02_borderline_implicit_query(self):
         """Test that implicit traffic queries without the word 'traffic' are correctly recognized."""
         query = "There are too many cars parked near the school every morning causing a block"
