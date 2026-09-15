@@ -229,18 +229,39 @@ export const urbanProblems = [
   }
 ]
 
-export default function ProblemSolverSection({ initialProblemId = 'PROB_01' }) {
-  const [selectedProbId, setSelectedProbId] = useState(initialProblemId)
+import { alertsApi, planningApi } from '../services/api'
+
+export default function ProblemSolverSection() {
+  const [selectedProbId, setSelectedProbId] = useState('PROB_01')
   const [appliedSuggestions, setAppliedSuggestions] = useState({})
   const [activeDomainFilter, setActiveDomainFilter] = useState('ALL')
+  const [isExecuting, setIsExecuting] = useState(false)
 
   const currentProblem = urbanProblems.find(p => p.id === selectedProbId) || urbanProblems[0]
 
-  const handleApplySuggestion = (suggId) => {
-    setAppliedSuggestions(prev => ({
-      ...prev,
-      [suggId]: true
-    }))
+  const handleApplySuggestion = async (suggId) => {
+    setIsExecuting(true)
+    const sugg = currentProblem.suggestions?.find(s => s.id === suggId)
+
+    try {
+      // Dispatch Supervisor Orchestrator with suggestion objective
+      await planningApi.executeOrchestrator({
+        objective: sugg ? `${sugg.title} for ${currentProblem.title}` : 'Execute AI Suggestion',
+        location: currentProblem.location,
+        workflow: 'problem-mitigation-dispatch'
+      })
+
+      // Acknowledge corresponding system alert if exists
+      await alertsApi.acknowledgeAlert(currentProblem.id, 'URBAN_PLANNER_01', `Executed: ${sugg?.title || suggId}`)
+    } catch (err) {
+      console.warn('Orchestrator suggestion dispatch warning:', err)
+    } finally {
+      setIsExecuting(false)
+      setAppliedSuggestions(prev => ({
+        ...prev,
+        [suggId]: true
+      }))
+    }
   }
 
   const filteredProblems = activeDomainFilter === 'ALL'

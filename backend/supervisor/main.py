@@ -449,6 +449,16 @@ app = FastAPI(
     ),
 )
 
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 @app.exception_handler(HTTPException)
 async def contract_http_exception_handler(request, exc: HTTPException):
@@ -463,7 +473,52 @@ async def contract_http_exception_handler(request, exc: HTTPException):
 
 planning_requests: Dict[str, PlanningRequestDetail] = {}
 orchestrator_tasks: Dict[str, OrchestratorTaskDetail] = {}
-alerts_store: Dict[str, Alert] = {}
+alerts_store: Dict[str, Alert] = {
+    "ALERT_01": Alert(
+        alert_id="ALERT_01",
+        status=AlertStatus.ACTIVE,
+        severity=Severity.CRITICAL,
+        domain=Domain.TRAFFIC,
+        location="Gachibowli — HITECH City",
+        title="Evening Traffic Gridlock at Gachibowli Flyover & Mindspace Corridor",
+        message="Severe bottleneck causing 3.4 km vehicle queues during peak evening office rush.",
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    ),
+    "ALERT_02": Alert(
+        alert_id="ALERT_02",
+        status=AlertStatus.ACTIVE,
+        severity=Severity.HIGH,
+        domain=Domain.WEATHER,
+        location="Nacharam Industrial Zone",
+        title="Air Quality Deterioration in Nacharam Sector",
+        message="Particulate matter PM2.5 levels exceeding threshold (>180 ug/m3). Dispersion inhibited by low wind speeds.",
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    ),
+    "ALERT_03": Alert(
+        alert_id="ALERT_03",
+        status=AlertStatus.ACTIVE,
+        severity=Severity.MEDIUM,
+        domain=Domain.ENERGY,
+        location="Financial District Substation",
+        title="High Peak Load Margin on Feeder Grid #4",
+        message="Transformer core temperature near 78C due to simultaneous data center and EV charging station draw.",
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    ),
+    "ALERT_04": Alert(
+        alert_id="ALERT_04",
+        status=AlertStatus.ACTIVE,
+        severity=Severity.HIGH,
+        domain=Domain.FLOOD,
+        location="Begumpet Low-lying Ingress",
+        title="Urban Flood Risk Alert - Monsoon Inundation",
+        message="Stormwater catchment reaching 84% capacity. Sump drainage backflow risk within 45 minutes.",
+        created_at=utc_now_iso(),
+        updated_at=utc_now_iso(),
+    ),
+}
 simulations_store: Dict[str, SimulationStatusResponse] = {}
 recommendations_store: Dict[str, Recommendation] = {}
 
@@ -1350,3 +1405,20 @@ def digital_twin_location_state(location: str) -> DigitalTwinLocationStateRespon
             "weather": {"rain_probability": 0.83, "wind_speed_kmh": 19.4},
         },
     )
+
+
+# ---------------------------------------------------------------------------
+# Specialist Agent APIs (Traffic, Weather, Pollution, Energy, Simulation)
+# ---------------------------------------------------------------------------
+from backend.agents.traffic_agent.main import router as traffic_router
+from backend.agents.weather_agent.main import router as weather_router
+from backend.agents.pollution_agent.main import router as pollution_router
+from backend.agents.energy_agent.main import router as energy_router
+from backend.agents.simulation_agent.main import router as simulation_router
+
+app.include_router(traffic_router, tags=["Specialist Agent - Traffic"])
+app.include_router(weather_router, tags=["Specialist Agent - Weather"])
+app.include_router(pollution_router, tags=["Specialist Agent - Pollution"])
+app.include_router(energy_router, tags=["Specialist Agent - Energy"])
+app.include_router(simulation_router, tags=["Specialist Agent - Simulation"])
+
