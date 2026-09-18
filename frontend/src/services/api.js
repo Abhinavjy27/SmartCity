@@ -192,7 +192,7 @@ export const planningApi = {
       }
 
       const lowerObj = defaultPayload.objective.toLowerCase()
-      const isEnergy = lowerObj.includes('energy') || lowerObj.includes('power') || lowerObj.includes('substation') || lowerObj.includes('grid')
+      const isEnergy = lowerObj.includes('energy') || lowerObj.includes('power') || lowerObj.includes('substation') || lowerObj.includes('grid') || lowerObj.includes('transformer') || lowerObj.includes('solar') || lowerObj.includes('bess') || lowerObj.includes('electricity') || lowerObj.includes('feeder')
       const isPollution = lowerObj.includes('pollution') || lowerObj.includes('aqi') || lowerObj.includes('air quality')
       
       let assigned_capabilities = ['traffic', 'weather']
