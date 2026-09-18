@@ -4,6 +4,7 @@
  */
 
 const BASE_URL = import.meta.env.VITE_API_URL || ''
+const ENABLE_API_MOCK_FALLBACK = import.meta.env.VITE_ENABLE_API_MOCK_FALLBACK === 'true'
 
 async function request(endpoint, options = {}) {
   const url = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint}`
@@ -189,6 +190,10 @@ export const planningApi = {
           collected_results: {},
           dispatched_agents: []
         }
+      }
+
+      if (!ENABLE_API_MOCK_FALLBACK) {
+        throw err
       }
 
       const lowerObj = defaultPayload.objective.toLowerCase()
@@ -757,4 +762,3 @@ export const simulationApi = {
     })
   }
 }
-
