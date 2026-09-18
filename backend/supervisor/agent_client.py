@@ -70,6 +70,14 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
     if context and isinstance(context, dict) and capability in context:
         payload = context[capability]
 
+    # Extract optional location or query params from context
+    params: Dict[str, Any] = {}
+    if context and isinstance(context, dict):
+        if "location" in context and context["location"]:
+            params["location"] = context["location"]
+        elif capability in context and isinstance(context[capability], dict) and "location" in context[capability]:
+            params["location"] = context[capability]["location"]
+
     # If explicit URL is configured in environment, dispatch over HTTP
     if agent_url:
         full_url = f"{agent_url.rstrip('/')}{endpoint}"
@@ -77,7 +85,7 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
             if method == "POST":
                 resp = requests.post(full_url, json=payload or {}, timeout=5.0)
             else:
-                resp = requests.get(full_url, timeout=5.0)
+                resp = requests.get(full_url, params=params or None, timeout=5.0)
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.Timeout as exc:
@@ -100,7 +108,7 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
         if method == "POST":
             resp = client.post(endpoint, json=payload or {})
         else:
-            resp = client.get(endpoint)
+            resp = client.get(endpoint, params=params or None)
 
         if resp.status_code >= 400:
             raise RuntimeError(f"Agent '{config['agent_name']}' returned HTTP {resp.status_code}: {resp.text}")

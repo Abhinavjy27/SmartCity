@@ -17,9 +17,9 @@ class PlannerResponse(BaseModel):
         ...,
         description="Whether the user query is relevant to the Smart City traffic optimization domain."
     )
-    domain: Optional[Literal["traffic"]] = Field(
+    domain: Optional[str] = Field(
         default=None,
-        description="Domain of the query. Currently only 'traffic' is supported. Null if irrelevant."
+        description="Domain of the query, e.g. 'traffic', 'energy', 'weather', 'pollution', 'simulation'. Null if irrelevant."
     )
     objective: Optional[str] = Field(
         default=None,
@@ -64,9 +64,9 @@ class PlannerEvaluationResponse(BaseModel):
         ...,
         description="Whether the collected specialist agent data and simulation results satisfy the planning objective."
     )
-    decision: Literal["PROCEED_TO_RECOMMENDATION", "RE_PLAN", "ABORT"] = Field(
+    decision: Literal["PROCEED_TO_RECOMMENDATION", "RE_PLAN", "ABORT", "HANDLE_AGENT_FAILURES", "PROCEED_TO_EVALUATION"] = Field(
         ...,
-        description="Next strategic decision: proceed to final recommendation, trigger re-planning, or abort."
+        description="Next strategic decision: proceed to final recommendation, trigger re-planning, handle agent failures, or abort."
     )
     analysis: str = Field(
         ...,

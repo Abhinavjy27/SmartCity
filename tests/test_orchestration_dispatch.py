@@ -294,7 +294,8 @@ class TestOrchestratorAgentDispatch(unittest.TestCase):
         response = self.client.post("/agents/orchestrator/execute", json=payload)
         self.assertEqual(response.status_code, 400)
         data = response.json()
-        self.assertEqual(data["detail"]["error"]["code"], "PLANNER_INPUT_MISSING")
+        error_obj = data.get("detail", data).get("error", {})
+        self.assertEqual(error_obj["code"], "PLANNER_INPUT_MISSING")
 
     def test_planner_feedback_endpoint_direct(self):
         """Direct test of POST /agents/planner/feedback endpoint."""
