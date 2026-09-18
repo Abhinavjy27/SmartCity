@@ -243,6 +243,57 @@ class TestEnergyAgent(unittest.TestCase):
         self.assertGreater(factor_noon, 0.0)
         self.assertGreater(factor_night, 0.0)
 
+    def test_peak_shave_zero_reduction(self):
+        """Test POST /api/v1/energy/peak-shave with target_reduction_mw=0 preserves 0 rather than defaulting to 25."""
+        payload = {
+            "zone": "HITECH City",
+            "target_reduction_mw": 0.0,
+        }
+        response = self.client.post("/api/v1/energy/peak-shave", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "OPTIMIZED")
+        self.assertEqual(data["bess_discharge_mw"], 0.0)
+        self.assertEqual(data["solar_offset_mw"], 0.0)
+        self.assertEqual(data["curtailed_mw"], 0.0)
+        self.assertEqual(data["target_load_mw"], data["original_load_mw"])
+
+    def test_peak_shave_target_substations_filter(self):
+        """Test POST /api/v1/energy/peak-shave with target_substations filtering."""
+        payload = {
+            "zone": "HITECH City",
+            "target_substations": ["SUB_01", "SUB_03"],
+            "target_reduction_mw": 20.0,
+        }
+        response = self.client.post("/api/v1/energy/peak-shave", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertGreater(data["original_load_mw"], 0)
+        self.assertLess(data["target_load_mw"], data["original_load_mw"])
+
+    def test_query_bounds_validation(self):
+        """Test FastAPI validation bounds reject invalid physical parameters."""
+        # Negative occupancy
+        resp1 = self.client.get("/api/v1/energy/grid-status?traffic_occupancy_pct=-10.0")
+        self.assertEqual(resp1.status_code, 422)
+
+        # Occupancy > 100%
+        resp2 = self.client.get("/api/v1/energy/grid-status?traffic_occupancy_pct=150.0")
+        self.assertEqual(resp2.status_code, 422)
+
+        # Negative ev_count
+        resp3 = self.client.get("/api/v1/energy/grid-status?ev_count=-5")
+        self.assertEqual(resp3.status_code, 422)
+
+    def test_weather_impact_scaling(self):
+        """Test that weather_impact_mw in telemetry is properly scaled by grid capacity."""
+        response = self.client.get("/api/v1/energy/grid-status?location=Financial District&ambient_temp_c=40.0")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("weather_impact_mw", data)
+        # Weather impact for a 500MW substation at 40°C should be scaled to capacity (~100-200MW), not unscaled 1000MW base
+        self.assertLess(data["weather_impact_mw"], data["capacity_mw"])
+
     def test_execution_latency(self):
         """Test sub-5-second execution latency requirement (< 100ms expected)."""
         start_time = time.perf_counter()

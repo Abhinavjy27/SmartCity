@@ -9,17 +9,20 @@ from typing import Any, Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
+PlannerDomain = Literal["traffic", "energy", "weather", "pollution", "simulation"]
+
+
 class PlannerResponse(BaseModel):
     """
     Structured output schema for the Planner Agent's initial plan generation and gatekeeping.
     """
     relevant: bool = Field(
         ...,
-        description="Whether the user query is relevant to the Smart City traffic optimization domain."
+        description="Whether the user query is relevant to the Smart City platform domains."
     )
-    domain: Optional[str] = Field(
+    domain: Optional[PlannerDomain] = Field(
         default=None,
-        description="Domain of the query, e.g. 'traffic', 'energy', 'weather', 'pollution', 'simulation'. Null if irrelevant."
+        description="Domain of the query: 'traffic', 'energy', 'weather', 'pollution', or 'simulation'. Null if irrelevant."
     )
     objective: Optional[str] = Field(
         default=None,

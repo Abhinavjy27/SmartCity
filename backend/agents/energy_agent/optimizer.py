@@ -12,6 +12,7 @@ from backend.agents.energy_agent.schema import (
     PeakShavingResponse,
     SubstationData,
 )
+from backend.agents.energy_agent.substations import SUBSTATIONS_DB, ZONE_METRICS_CONFIG
 
 
 def generate_recommendations(
@@ -141,22 +142,47 @@ def generate_recommendations(
 def execute_peak_shaving(request: PeakShavingRequest) -> PeakShavingResponse:
     """
     Executes algorithmic peak shaving scenario calculation.
+    Resolves baseline load dynamically from requested zone or target substations.
     """
     zone = request.zone or "HITECH City"
-    target_reduction = request.target_reduction_mw or 25.0
+    target_reduction = request.target_reduction_mw if request.target_reduction_mw is not None else 25.0
     
-    original_load = 342.0  # MW baseline for HITECH City
-    bess_contribution = min(15.0, target_reduction * 0.5)
-    solar_offset = min(10.0, target_reduction * 0.3)
-    curtailed = max(0.0, target_reduction - bess_contribution - solar_offset)
-    target_load = max(50.0, original_load - target_reduction)
+    # 1. Resolve baseline load dynamically
+    if request.target_substations:
+        target_ids = {s.upper() for s in request.target_substations}
+        matched_subs = [s for s in SUBSTATIONS_DB if s["id"].upper() in target_ids]
+        if matched_subs:
+            original_load = sum(float(s["capacity_mw"]) * (float(s.get("base_load_pct", 75.0)) / 100.0) for s in matched_subs)
+        else:
+            original_load = 342.0
+    else:
+        zone_subs = [s for s in SUBSTATIONS_DB if s.get("zone", "").lower() == zone.lower()]
+        if zone_subs:
+            original_load = sum(float(s["capacity_mw"]) * (float(s.get("base_load_pct", 75.0)) / 100.0) for s in zone_subs)
+        else:
+            original_load = float(ZONE_METRICS_CONFIG.get(zone, {}).get("nominal_mwh", 342.0))
+            
+    original_load = round(original_load, 1)
     
-    actions = [
-        f"Throttle commercial HVAC setpoints by +1.5°C across {zone} commercial parks (saving {curtailed:.1f} MW)",
-        f"Discharge 20 MWh localized BESS battery packs at primary substations (supplying {bess_contribution:.1f} MW)",
-        f"Route rooftop solar microgrid generation directly to feeder lines (offsetting {solar_offset:.1f} MW)",
-        "Schedule dynamic street-lighting dimming offsets after 22:00"
-    ]
+    if target_reduction > 0:
+        bess_contribution = min(15.0, target_reduction * 0.5)
+        solar_offset = min(10.0, target_reduction * 0.3)
+        curtailed = max(0.0, target_reduction - bess_contribution - solar_offset)
+        target_load = max(0.0, original_load - target_reduction)
+        actions = [
+            f"Throttle commercial HVAC setpoints by +1.5°C across {zone} commercial parks (saving {curtailed:.1f} MW)",
+            f"Discharge 20 MWh localized BESS battery packs at primary substations (supplying {bess_contribution:.1f} MW)",
+            f"Route rooftop solar microgrid generation directly to feeder lines (offsetting {solar_offset:.1f} MW)",
+            "Schedule dynamic street-lighting dimming offsets after 22:00"
+        ]
+    else:
+        bess_contribution = 0.0
+        solar_offset = 0.0
+        curtailed = 0.0
+        target_load = original_load
+        actions = [
+            f"Grid operating at nominal load ({original_load:.1f} MW) for {zone}; maintaining standard automated telemetry monitoring."
+        ]
     
     return PeakShavingResponse(
         status="OPTIMIZED",

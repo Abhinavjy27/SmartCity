@@ -58,29 +58,22 @@ DOMAIN_KEYWORDS = {
 
 
 OUT_OF_SCOPE_PATTERNS = [
-    "python", "java", "javascript", "c++", "golang", "ruby", "rust", "php",
-    "code", "programming", "reverse a string", "reverse string", "function",
-    "array", "linked list", "binary tree", "regex", "sql query", "html", "css",
-    "capital of", "who is", "who won", "tell me a joke", "tell a joke",
-    "recipe", "cook", "movie", "song", "meaning of life", "how to make",
-    "write an essay", "translate", "poem", "story", "crypto", "bitcoin",
-    "stock market", "diet", "gym", "horoscope", "dating"
+    r"\bpython\b", r"\bjava\b", r"\bjavascript\b", r"\bc\+\+\b", r"\bgolang\b", r"\bruby\b", r"\brust\b", r"\bphp\b",
+    r"\bwrite\s+(?:a\s+)?code\b", r"\bprogramming\b", r"\breverse\s+(?:a\s+)?string\b", r"\bfunction\b",
+    r"\barray\b", r"\blinked\s+list\b", r"\bbinary\s+tree\b", r"\bregex\b", r"\bsql\s+query\b", r"\bhtml\b", r"\bcss\b",
+    r"\bcapital\s+of\b", r"\bwho\s+is\b", r"\bwho\s+won\b", r"\btell\s+(?:me\s+)?a\s+joke\b",
+    r"\brecipe\b", r"\bcook\b", r"\bmovie\b", r"\bsong\b", r"\bmeaning\s+of\s+life\b", r"\bhow\s+to\s+make\b",
+    r"\bwrite\s+an?\s+essay\b", r"\btranslate\b", r"\bpoem\b", r"\bstory\b", r"\bcrypto\b", r"\bbitcoin\b",
+    r"\bstock\s+market\b", r"\bdiet\b", r"\bgym\b", r"\bhoroscope\b", r"\bdating\b"
 ]
 
 
 def is_out_of_scope_query(text: str) -> bool:
     """Check if query is explicitly asking for general programming, trivia, or non-smart-city topics."""
     lower = text.lower().strip()
-    
-    # Direct match against out-of-scope patterns
     for pattern in OUT_OF_SCOPE_PATTERNS:
-        if pattern in lower:
-            # If it's a coding or trivia query and doesn't explicitly talk about smart city power/traffic/pollution
-            has_smart_city_keyword = any(
-                kw in lower for d in DOMAIN_KEYWORDS for kw in DOMAIN_KEYWORDS[d]
-            )
-            if not has_smart_city_keyword:
-                return True
+        if re.search(pattern, lower):
+            return True
     return False
 
 
@@ -94,12 +87,13 @@ def extract_location_from_text(text: str) -> Optional[str]:
 
 
 def detect_domain_from_text(text: str) -> Optional[str]:
-    """Detect most prominent domain from text. Returns None if query matches no domain."""
+    """Detect most prominent domain from text using regex token boundaries."""
     lower = text.lower()
     scores: Dict[str, int] = {d: 0 for d in DOMAIN_KEYWORDS}
     for domain, kw_list in DOMAIN_KEYWORDS.items():
         for kw in kw_list:
-            if kw in lower:
+            pattern = r"\b" + re.escape(kw) + r"\b"
+            if re.search(pattern, lower):
                 scores[domain] += 1
     best_domain = max(scores, key=scores.get)
     if scores[best_domain] > 0:
@@ -201,6 +195,16 @@ class PlannerAgent:
 
         sanitized_query = user_query.strip()
 
+        # 0. Immediate deterministic gatekeeper for explicitly out-of-scope queries
+        if is_out_of_scope_query(sanitized_query):
+            return PlannerResponse(
+                relevant=False,
+                domain=None,
+                objective=None,
+                plan=[],
+                response="This query is outside the scope of the SUPADSP Smart City Decision Support System."
+            )
+
         # 1. Try LLM if available
         if self.llm_client is not None:
             try:
@@ -246,7 +250,8 @@ class PlannerAgent:
                 logger.warning(f"LLM evaluation failed, using dynamic multi-recommendation synthesis: {exc}")
 
         # Multi-Recommendation Dynamic Synthesis
-        has_failures = bool(failures and not collected_results)
+        has_failures = bool(failures)
+        has_results = bool(collected_results)
         recommendations_list: List[str] = []
         analysis_text = "Evaluated with collected specialist telemetry."
 
@@ -330,16 +335,38 @@ class PlannerAgent:
                 "5. [MEDIUM] Automated Real-Time Monitoring: Maintain automated 5-minute telemetry polling cycle across all sensor nodes."
             ]
 
-        final_rec_formatted = "\n\n".join(recommendations_list)
+        final_rec_formatted = "\n\n".join(recommendations_list) if recommendations_list else None
 
-        return PlannerEvaluationResponse(
-            goal_achieved=not has_failures,
-            decision="HANDLE_AGENT_FAILURES" if has_failures else "PROCEED_TO_RECOMMENDATION",
-            analysis=analysis_text if not has_failures else "Agent telemetry collection encountered errors.",
-            final_recommendation=final_rec_formatted if not has_failures else None,
-            revised_plan=["Retry telemetry retrieval", "Check connectivity"] if has_failures else [],
-            confidence=0.95 if not has_failures else 0.5,
-        )
+        if has_failures and not has_results:
+            # Complete failure
+            return PlannerEvaluationResponse(
+                goal_achieved=False,
+                decision="HANDLE_AGENT_FAILURES",
+                analysis=f"All specialist agent dispatches failed: {', '.join(failures.keys())}.",
+                final_recommendation=None,
+                revised_plan=["Retry specialist agent telemetry retrieval", "Check specialist container network connectivity"],
+                confidence=0.3,
+            )
+        elif has_failures and has_results:
+            # Partial failure
+            return PlannerEvaluationResponse(
+                goal_achieved=False,
+                decision="HANDLE_AGENT_FAILURES",
+                analysis=f"Partial specialist telemetry collection: {len(collected_results)} domain(s) succeeded, but errors occurred in: {', '.join(failures.keys())}. {analysis_text}",
+                final_recommendation=final_rec_formatted,
+                revised_plan=[f"Retry telemetry retrieval for failed agent(s): {', '.join(failures.keys())}", "Re-evaluate multi-domain planning scenario"],
+                confidence=0.70,
+            )
+        else:
+            # Clean success
+            return PlannerEvaluationResponse(
+                goal_achieved=True,
+                decision="PROCEED_TO_RECOMMENDATION",
+                analysis=analysis_text,
+                final_recommendation=final_rec_formatted,
+                revised_plan=[],
+                confidence=0.95,
+            )
 
 
 # Default factory function

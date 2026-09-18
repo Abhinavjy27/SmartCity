@@ -50,14 +50,19 @@ def get_grid_status(
     ),
     ambient_temp_c: Optional[float] = Query(
         default=None,
+        ge=-20.0,
+        le=65.0,
         description="Ambient temperature feed from weather agent (°C)",
     ),
     traffic_occupancy_pct: Optional[float] = Query(
         default=None,
+        ge=0.0,
+        le=100.0,
         description="Traffic occupancy feed from traffic agent (%)",
     ),
     ev_count: Optional[int] = Query(
         default=None,
+        ge=0,
         description="Active EV fleet count estimate",
     ),
 ) -> Dict[str, Any]:
@@ -99,11 +104,13 @@ def analyze_energy(req: Optional[EnergyAnalyzeRequest] = None) -> EnergyAnalyzeR
     target_location = req.location if req and req.location else "Financial District Substation"
     ambient_temp = req.ambient_temp_c if req else None
     traffic_occ = req.traffic_occupancy_pct if req else None
+    ev_cnt = req.ev_count if req else None
 
     telemetry = compute_telemetry_state(
         location=target_location,
         ambient_temp_c=ambient_temp,
         traffic_occupancy_pct=traffic_occ,
+        ev_count=ev_cnt,
     )
 
     recs = generate_recommendations(

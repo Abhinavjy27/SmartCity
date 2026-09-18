@@ -78,6 +78,14 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
         elif capability in context and isinstance(context[capability], dict) and "location" in context[capability]:
             params["location"] = context[capability]["location"]
 
+        # Forward cross-domain contextual query parameters
+        cap_dict = context[capability] if (capability in context and isinstance(context[capability], dict)) else {}
+        for param_key in ["ambient_temp_c", "traffic_occupancy_pct", "ev_count", "temperature_c", "zone", "status"]:
+            if param_key in context and context[param_key] is not None:
+                params[param_key] = context[param_key]
+            elif param_key in cap_dict and cap_dict[param_key] is not None:
+                params[param_key] = cap_dict[param_key]
+
     # If explicit URL is configured in environment, dispatch over HTTP
     if agent_url:
         full_url = f"{agent_url.rstrip('/')}{endpoint}"

@@ -107,7 +107,7 @@ $$\text{Weather Impact (MW)} = \text{Base Capacity} \cdot (\text{Multiplier}_{\t
 
 Grid load is dynamically coupled with vehicular congestion and electric vehicle charging hub operations:
 
-$$\text{EV Load (MW)} = (N_{\text{EV}} \cdot 0.012\text{ MW}) + \max(0, \text{Occupancy}_{\text{Traffic}} - 60.0\%) \cdot 0.30\text{ MW}$$
+$$\text{EV Load (MW)} = (N_{\text{EV}} \cdot 0.030\text{ MW}) + \max(0, \text{Occupancy}_{\text{Traffic}} - 60.0\%) \cdot 1.5\text{ MW}$$
 
 ---
 
@@ -135,21 +135,21 @@ The Energy Agent maintains a spatial registry of 15 primary TSSPDCL substations:
 
 | Substation ID | Substation Name | Zone | Voltage | Base Capacity | Feeders | Latitude | Longitude |
 |---|---|---|---|---|---|---|---|
-| `SUB_01` | Madhapur 220kV Substation | HITECH City | 220 kV | 450.0 MW | 12 | 17.4483 | 78.3915 |
-| `SUB_02` | Gachibowli 132kV Substation | Gachibowli | 132 kV | 250.0 MW | 8 | 17.4401 | 78.3489 |
-| `SUB_03` | Kondapur 132kV Substation | HITECH City | 132 kV | 200.0 MW | 6 | 17.4699 | 78.3578 |
-| `SUB_04` | Financial District 220kV Substation | Gachibowli | 220 kV | 500.0 MW | 14 | 17.4156 | 78.3425 |
-| `SUB_05` | Tarnaka 132kV Substation | Secunderabad | 132 kV | 200.0 MW | 5 | 17.4289 | 78.5324 |
-| `SUB_06` | Secunderabad Paradise 220kV Substation | Secunderabad | 220 kV | 400.0 MW | 10 | 17.4411 | 78.4870 |
-| `SUB_07` | Narayanguda 132kV Substation | Central | 132 kV | 180.0 MW | 6 | 17.3984 | 78.4903 |
-| `SUB_08` | Begumpet 132kV Substation | Central | 132 kV | 220.0 MW | 7 | 17.4448 | 78.4664 |
-| `SUB_09` | Kukatpally 220kV Substation | Kukatpally | 220 kV | 350.0 MW | 9 | 17.4933 | 78.3994 |
-| `SUB_10` | Miyapur 132kV Substation | Kukatpally | 132 kV | 180.0 MW | 6 | 17.4968 | 78.3614 |
-| `SUB_11` | Charminar 132kV Substation | Old City | 132 kV | 160.0 MW | 5 | 17.3616 | 78.4747 |
-| `SUB_12` | Nacharam TSIIC 132kV Substation | Secunderabad | 132 kV | 240.0 MW | 8 | 17.4325 | 78.5611 |
-| `SUB_13` | Sanathnagar 132kV Substation | Central | 132 kV | 210.0 MW | 7 | 17.4568 | 78.4412 |
-| `SUB_14` | Jubilee Hills 132kV Substation | HITECH City | 132 kV | 220.0 MW | 7 | 17.4319 | 78.4073 |
-| `SUB_15` | LB Nagar 132kV Substation | LB Nagar | 132 kV | 190.0 MW | 6 | 17.3457 | 78.5522 |
+| `SUB_01` | Madhapur 220kV | HITECH City | 220 kV | 480.0 MW | 8 | 17.4483 | 78.3915 |
+| `SUB_02` | Gachibowli 132kV | Gachibowli | 132 kV | 260.0 MW | 6 | 17.4401 | 78.3489 |
+| `SUB_03` | Kondapur 132kV | HITECH City | 132 kV | 220.0 MW | 6 | 17.4682 | 78.3578 |
+| `SUB_04` | Narayanguda 132kV | Central Hyderabad | 132 kV | 240.0 MW | 6 | 17.3984 | 78.4905 |
+| `SUB_05` | Tarnaka 132kV | Secunderabad | 132 kV | 200.0 MW | 5 | 17.4289 | 78.5324 |
+| `SUB_06` | Financial District 220kV | Gachibowli | 220 kV | 500.0 MW | 10 | 17.4156 | 78.3392 |
+| `SUB_07` | Secunderabad Paradise 220kV | Secunderabad | 220 kV | 450.0 MW | 8 | 17.4411 | 78.4983 |
+| `SUB_08` | Kukatpally 220kV | Kukatpally | 220 kV | 420.0 MW | 8 | 17.4849 | 78.4138 |
+| `SUB_09` | Charminar 132kV | Old City | 132 kV | 280.0 MW | 6 | 17.3616 | 78.4747 |
+| `SUB_10` | LB Nagar 132kV | LB Nagar | 132 kV | 300.0 MW | 6 | 17.3457 | 78.5522 |
+| `SUB_11` | Sanathnagar 132kV | Industrial North | 132 kV | 260.0 MW | 6 | 17.4583 | 78.4417 |
+| `SUB_12` | Nacharam TSIIC 132kV | Industrial East | 132 kV | 250.0 MW | 6 | 17.4241 | 78.5672 |
+| `SUB_13` | Begumpet 132kV | Central Hyderabad | 132 kV | 280.0 MW | 6 | 17.4448 | 78.4682 |
+| `SUB_14` | Jubilee Hills 132kV | Central Hyderabad | 132 kV | 260.0 MW | 6 | 17.4319 | 78.4073 |
+| `SUB_15` | Miyapur 132kV | Kukatpally | 132 kV | 240.0 MW | 6 | 17.4968 | 78.3614 |
 
 ---
 

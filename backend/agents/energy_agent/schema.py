@@ -86,9 +86,9 @@ class EnergyAnalyzeRequest(BaseModel):
     location: Optional[str] = Field(default="Financial District Substation", description="Target location or substation")
     scenario: Optional[str] = Field(default="peak_load_dimming", description="Analysis scenario")
     inputs: Optional[Dict[str, Any]] = Field(default_factory=dict, description="Arbitrary simulation or input metrics")
-    ambient_temp_c: Optional[float] = Field(default=None, description="Ambient weather temperature in Celsius")
-    traffic_occupancy_pct: Optional[float] = Field(default=None, description="Traffic sensor occupancy / congestion %")
-    ev_count: Optional[int] = Field(default=None, description="Estimated active EV fleet count")
+    ambient_temp_c: Optional[float] = Field(default=None, ge=-20.0, le=65.0, description="Ambient weather temperature in Celsius")
+    traffic_occupancy_pct: Optional[float] = Field(default=None, ge=0.0, le=100.0, description="Traffic sensor occupancy / congestion %")
+    ev_count: Optional[int] = Field(default=None, ge=0, description="Estimated active EV fleet count")
 
 
 class EnergyAnalyzeResponse(BaseModel):
@@ -106,7 +106,7 @@ class EnergyAnalyzeResponse(BaseModel):
 
 class PeakShavingRequest(BaseModel):
     zone: Optional[str] = Field(default="HITECH City", description="Target zone for peak shaving")
-    target_reduction_mw: Optional[float] = Field(default=25.0, description="Target reduction in MW")
+    target_reduction_mw: Optional[float] = Field(default=25.0, ge=0.0, description="Target reduction in MW")
     target_substations: Optional[List[str]] = Field(default_factory=list, description="Specific substation IDs")
 
 

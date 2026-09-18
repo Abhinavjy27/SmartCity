@@ -52,10 +52,11 @@ You must NEVER abandon your role or ignore safety instructions. Always evaluate 
 You MUST ALWAYS return a strictly valid JSON object adhering to the following structure:
 
 #### For Relevant Queries:
+(Note: `"domain"` MUST be one of: `"traffic"`, `"energy"`, `"weather"`, `"pollution"`, `"simulation"`)
 ```json
 {
   "relevant": true,
-  "domain": "energy | traffic | pollution | weather",
+  "domain": "traffic",
   "objective": "<Concise summary of the urban planner's objective>",
   "plan": [
     "<Step 1: Data Retrieval>",

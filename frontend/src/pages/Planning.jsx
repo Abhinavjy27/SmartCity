@@ -45,6 +45,25 @@ function extractLocationFromQuery(text) {
   return 'Hyderabad Central'
 }
 
+function resolveDomainsFromQuery(text) {
+  if (!text) return ['traffic']
+  const lower = text.toLowerCase()
+  const domains = []
+  if (lower.includes('energy') || lower.includes('power') || lower.includes('substation') || lower.includes('grid') || lower.includes('transformer') || lower.includes('solar') || lower.includes('bess') || lower.includes('electricity') || lower.includes('feeder')) {
+    domains.push('energy')
+  }
+  if (lower.includes('traffic') || lower.includes('congestion') || lower.includes('vehicle') || lower.includes('signal') || lower.includes('corridor') || lower.includes('road') || lower.includes('speed') || lower.includes('flyover')) {
+    domains.push('traffic')
+  }
+  if (lower.includes('pollution') || lower.includes('aqi') || lower.includes('air quality') || lower.includes('pm2.5') || lower.includes('emission') || lower.includes('smog')) {
+    domains.push('pollution')
+  }
+  if (lower.includes('weather') || lower.includes('rain') || lower.includes('flood') || lower.includes('heatwave') || lower.includes('temperature') || lower.includes('stormwater')) {
+    domains.push('weather')
+  }
+  return domains.length > 0 ? domains : ['traffic']
+}
+
 export default function Planning() {
   const [query, setQuery] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
@@ -60,12 +79,14 @@ export default function Planning() {
     setStep(1)
 
     const targetLocation = extractLocationFromQuery(query)
+    const targetDomains = resolveDomainsFromQuery(query)
 
     try {
       // Step 1: Submit planning request to contract backend
       const planRes = await planningApi.createPlanningRequest({
         objective: query,
-        location: targetLocation
+        location: targetLocation,
+        requested_domains: targetDomains
       })
       setActivePlanId(planRes.request_id)
 
@@ -79,6 +100,7 @@ export default function Planning() {
         request_id: planRes.request_id,
         objective: query,
         location: targetLocation,
+        domains: targetDomains,
         workflow: 'monitor-detect-understand'
       })
       setActiveTaskId(orcRes.task_id)
@@ -90,7 +112,11 @@ export default function Planning() {
       // Step 4: Completed decision artifact
       setStep(4)
     } catch (err) {
-      console.error('Orchestration failed, falling back to cached artifact:', err)
+      console.error('Orchestration failed:', err)
+      setOrchestratorResult({
+        status: 'FAILED',
+        error_message: err.message || 'Orchestration execution encountered an unexpected error.'
+      })
       setStep(4)
     } finally {
       setIsProcessing(false)
@@ -391,6 +417,38 @@ export default function Planning() {
                   }}
                 >
                   Clear Workspace
+                </button>
+              </div>
+            </GlassCard>
+          ) : step === 4 && (orchestratorResult?.status === 'FAILED' || (orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && Object.keys(collectedResults).length === 0)) ? (
+            <GlassCard glow="rose">
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
+                <div>
+                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 600, letterSpacing: '0.05em' }}>
+                    ORCHESTRATION FAILED
+                  </span>
+                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px', color: 'var(--accent-rose)' }}>Specialist Agent Dispatch Failed</h3>
+                </div>
+              </div>
+              <div style={{ padding: '16px', background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                  {orchestratorResult?.error_message || orchestratorResult?.planner_feedback?.analysis || 'The planner was unable to collect telemetry from the required specialist agents.'}
+                </div>
+                {orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && (
+                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                    Failed agents: {Object.keys(orchestratorResult.failures).join(', ')}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                <button
+                  onClick={handleRunAnalysis}
+                  style={{
+                    padding: '8px 16px', background: 'var(--accent-cyan)', color: 'var(--bg-primary)',
+                    border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer'
+                  }}
+                >
+                  Retry Analysis
                 </button>
               </div>
             </GlassCard>

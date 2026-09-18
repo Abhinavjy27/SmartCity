@@ -331,6 +331,6 @@ def compute_telemetry_state(
         "hourly_load": hourly_load,
         "zone_data": zone_data,
         "severity": overall_severity,
-        "weather_impact_mw": round(weather_offset_mw, 1),
+        "weather_impact_mw": round(weather_offset_mw * total_capacity_mw / 1000.0, 1),
         "ev_traffic_impact_mw": round(ev_offset_mw, 1),
     }

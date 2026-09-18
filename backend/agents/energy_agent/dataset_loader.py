@@ -15,7 +15,21 @@ import pandas as pd
 logger = logging.getLogger("energy_agent.dataset_loader")
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-DATASET_PATH = os.path.join(BASE_DIR, "datasets", "raw", "energy", "household_power_consumption.txt")
+
+CANDIDATE_DATASET_PATHS = [
+    os.path.join(BASE_DIR, "datasets", "raw", "energy", "household_power_consumption.txt"),
+    os.path.join(BASE_DIR, "datasets", "raw", "energy", "individual_household_electric+power_consumption.txt"),
+    os.path.join(BASE_DIR, "datasets", "raw", "energy", "household_power_consumption.csv"),
+]
+
+def find_dataset_path() -> str:
+    """Find available empirical dataset file or return default path."""
+    for p in CANDIDATE_DATASET_PATHS:
+        if os.path.exists(p):
+            return p
+    return CANDIDATE_DATASET_PATHS[0]
+
+DATASET_PATH = find_dataset_path()
 
 # In-memory cache for empirical profile
 _CACHED_HOURLY_PROFILE: Optional[Dict[int, float]] = None
@@ -23,7 +37,7 @@ _CACHED_DATASET_STATS: Optional[Dict[str, float]] = None
 
 
 def load_energy_dataset_stats(
-    filepath: str = DATASET_PATH,
+    filepath: Optional[str] = None,
     sample_rows: int = 150000
 ) -> Tuple[Dict[int, float], Dict[str, float]]:
     """
@@ -35,8 +49,10 @@ def load_energy_dataset_stats(
     if _CACHED_HOURLY_PROFILE is not None and _CACHED_DATASET_STATS is not None:
         return _CACHED_HOURLY_PROFILE, _CACHED_DATASET_STATS
 
-    if not os.path.exists(filepath):
-        logger.warning(f"Energy dataset not found at {filepath}. Using synthetic baseline fallback.")
+    target_path = filepath or find_dataset_path()
+
+    if not os.path.exists(target_path):
+        logger.warning(f"Energy dataset not found at {target_path}. Using synthetic baseline fallback.")
         default_profile = {h: 1.0 for h in range(24)}
         default_stats = {"avg_active_power_kw": 1.15, "peak_active_power_kw": 4.8, "voltage_avg": 240.8}
         return default_profile, default_stats
@@ -44,7 +60,7 @@ def load_energy_dataset_stats(
     try:
         # Load sample from the benchmark dataset for rapid initialization
         df = pd.read_csv(
-            filepath,
+            target_path,
             sep=';',
             nrows=sample_rows,
             na_values=['?'],
