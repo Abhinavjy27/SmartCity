@@ -26,6 +26,7 @@ class Domain(str, Enum):
     FLOOD = "flood"
     ENERGY = "energy"
     WEATHER = "weather"
+    POLLUTION = "pollution"
 
 
 class PlanningStatus(str, Enum):
@@ -167,8 +168,8 @@ class OrchestratorTaskDetail(BaseModel):
 class PlannerPlanRequest(BaseModel):
     request_id: str
     objective: str
-    location: str
-    domains: List[Domain]
+    location: Optional[str] = "Hyderabad Central"
+    domains: Optional[List[Domain]] = Field(default_factory=list)
     constraints: List[Constraint] = Field(default_factory=list)
 
 
@@ -604,8 +605,13 @@ def _resolve_planner_request(payload: OrchestratorExecuteRequest) -> PlannerPlan
             ).model_dump(),
         )
 
-    if not location:
-        location = "general"
+    # Dynamic location extraction from objective if location is generic or default
+    from backend.agents.planner_agent.planner import extract_location_from_text
+    extracted_loc = extract_location_from_text(objective)
+    if extracted_loc:
+        location = extracted_loc
+    elif not location or location in ["general", "Gachibowli — HITECH City Corridor"]:
+        location = extracted_loc or location or "Hyderabad Central"
 
     return PlannerPlanRequest(
         request_id=payload.request_id,
@@ -620,11 +626,11 @@ def _extract_required_capabilities(plan: PlannerPlanResponse) -> List[str]:
     matched = []
     if plan.required_capabilities:
         matched.extend(plan.required_capabilities)
-    else:
-        obj_text = plan.objective.lower()
-        for capability in ["traffic", "weather", "energy", "flood", "pollution", "simulation", "verification", "knowledge", "data_discovery"]:
-            if capability in obj_text:
-                matched.append(capability)
+
+    obj_text = (plan.objective or "").lower()
+    for capability in ["traffic", "weather", "energy", "flood", "pollution", "simulation", "verification", "knowledge", "data_discovery"]:
+        if capability in obj_text and capability not in matched:
+            matched.append(capability)
 
     normalized = []
     for capability in matched:
@@ -746,7 +752,17 @@ def execute_orchestrator(payload: OrchestratorExecuteRequest) -> OrchestratorExe
             agent_name = AGENT_REGISTRY[capability]["agent_name"]
             dispatched_agents.append(agent_name)
             try:
-                result = _dispatch_agent(capability)
+                dispatch_context: Dict[str, Any] = {
+                    "location": planner_request.location,
+                    capability: {"location": planner_request.location}
+                }
+                # Forward cross-domain contextual telemetry if available from prior agent results
+                if "weather" in collected_results and isinstance(collected_results["weather"], dict):
+                    dispatch_context["ambient_temp_c"] = collected_results["weather"].get("temperature_c")
+                if "traffic" in collected_results and isinstance(collected_results["traffic"], dict):
+                    dispatch_context["traffic_occupancy_pct"] = collected_results["traffic"].get("congestion_index")
+
+                result = _dispatch_agent(capability, context=dispatch_context)
                 collected_results[capability] = result
             except Exception as exc:
                 failures[capability] = {
@@ -842,28 +858,113 @@ def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
             ).model_dump(),
         )
 
-    # Determine capabilities (e.g. traffic, simulation)
-    caps: List[str] = [plan_result.domain] if plan_result.domain in KNOWN_CAPABILITIES else ["traffic"]
-    if any("sumo" in step.lower() or "simulation" in step.lower() for step in plan_result.plan):
+    # Determine capabilities (e.g. traffic, weather, energy, pollution, simulation)
+    caps: List[str] = []
+    if payload.domains:
+        for d in payload.domains:
+            val = d.value if hasattr(d, "value") else str(d).lower()
+            if val in KNOWN_CAPABILITIES and val not in caps:
+                caps.append(val)
+    if not caps:
+        caps = [plan_result.domain] if plan_result.domain in KNOWN_CAPABILITIES else ["traffic"]
+
+    lower_obj = payload.objective.lower()
+    if any("sumo" in step.lower() or "simulation" in step.lower() for step in plan_result.plan) or "simulation" in lower_obj or "sumo" in lower_obj:
         if "simulation" not in caps and "simulation" in KNOWN_CAPABILITIES:
             caps.append("simulation")
 
-    return PlannerPlanResponse(
-        request_id=payload.request_id,
-        objective=plan_result.objective or payload.objective,
-        likely_causes=[
+    primary_domain = plan_result.domain or (caps[0] if caps else "traffic")
+
+    if primary_domain == "energy":
+        likely_causes = [
+            "diurnal peak demand concentration",
+            "transformer capacity strain & feeder stress",
+            "high ambient temperature HVAC cooling surge",
+            "EV fast-charging hub demand spike",
+        ]
+        required_data = [
+            "substation real-time load telemetry (MW)",
+            "transformer safety capacity thresholds",
+            "solar microgrid generation feeds",
+            "ambient temperature & EV charging density",
+        ]
+        scenarios = [
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="baseline-grid-telemetry",
+                assumptions=["current substation load", "standard feeder routing"],
+            ),
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="peak-shaving-bess",
+                assumptions=["demand response load shifting", "BESS battery storage discharge"],
+            ),
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="integrated-renewable-offset",
+                assumptions=["solar microgrid integration", "dynamic lighting dimming"],
+            ),
+        ]
+    elif primary_domain == "pollution":
+        likely_causes = [
+            "vehicular tailpipe emission accumulation",
+            "industrial particulate discharge",
+            "low atmospheric wind dispersion",
+            "road dust suspension from heavy congestion",
+        ]
+        required_data = [
+            "continuous ambient air quality monitoring (AQI)",
+            "PM2.5 and PM10 particulate levels",
+            "meteorological wind speed and inversion telemetry",
+        ]
+        scenarios = [
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="baseline-aqi",
+                assumptions=["current industrial & vehicular emissions"],
+            ),
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="anti-smog-mitigation",
+                assumptions=["mist cannon deployment", "heavy vehicle diversion"],
+            ),
+        ]
+    elif primary_domain == "weather":
+        likely_causes = [
+            "monsoon precipitation intensity surge",
+            "urban heat island thermal accumulation",
+            "low-lying drainage channel saturation",
+        ]
+        required_data = [
+            "radar precipitation & rainfall telemetry",
+            "stormwater pump telemetry",
+            "inundation depth sensor feeds",
+        ]
+        scenarios = [
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="baseline-weather",
+                assumptions=["current meteorological forecast"],
+            ),
+            ScenarioDefinition(
+                scenario_id=make_id("scenario"),
+                label="flood-advisory",
+                assumptions=["pump activation", "underpass barrier closure"],
+            ),
+        ]
+    else:
+        likely_causes = [
             "peak-hour demand concentration",
             "intersection bottlenecks",
             "signal-cycle imbalance",
             "weather-induced throughput drop",
-        ],
-        interventions=plan_result.plan,
-        required_data=[
+        ]
+        required_data = [
             "real-time vehicle counts",
             "corridor speeds",
             "signal cycle timings",
-        ],
-        scenarios=[
+        ]
+        scenarios = [
             ScenarioDefinition(
                 scenario_id=make_id("scenario"),
                 label="baseline",
@@ -879,7 +980,15 @@ def planner_plan(payload: PlannerPlanRequest) -> PlannerPlanResponse:
                 label="combined-strategy",
                 assumptions=["signals+routing+manual control"],
             ),
-        ],
+        ]
+
+    return PlannerPlanResponse(
+        request_id=payload.request_id,
+        objective=plan_result.objective or payload.objective,
+        likely_causes=likely_causes,
+        interventions=plan_result.plan,
+        required_data=required_data,
+        scenarios=scenarios,
         planner_confidence=0.95,
         required_capabilities=caps,
     )
@@ -907,14 +1016,24 @@ def planner_feedback(payload: PlannerFeedbackRequest) -> PlannerFeedbackResponse
         "revised_plan": eval_result.revised_plan,
         "agent_results": payload.collected_results,
     }
+    if "traffic" in payload.collected_results:
+        insights["traffic_assessment"] = payload.collected_results["traffic"]
+    if "weather" in payload.collected_results:
+        insights["weather_assessment"] = payload.collected_results["weather"]
+    if "pollution" in payload.collected_results:
+        insights["pollution_assessment"] = payload.collected_results["pollution"]
+    if "energy" in payload.collected_results:
+        insights["energy_assessment"] = payload.collected_results["energy"]
+    if "simulation" in payload.collected_results:
+        insights["simulation_assessment"] = payload.collected_results["simulation"]
     if payload.failures:
         insights["agent_failures"] = payload.failures
 
     return PlannerFeedbackResponse(
         request_id=payload.request_id,
         task_id=payload.task_id,
-        status="SUCCESS" if eval_result.goal_achieved else "NEEDS_REPLANNING",
-        decision=eval_result.decision,
+        status="RECEIVED",
+        decision="PROCEED_TO_EVALUATION" if eval_result.goal_achieved else "HANDLE_AGENT_FAILURES",
         insights=insights,
         next_steps=eval_result.revised_plan if not eval_result.goal_achieved else ["implement_recommendation", "monitor_flow"],
         confidence=eval_result.confidence,

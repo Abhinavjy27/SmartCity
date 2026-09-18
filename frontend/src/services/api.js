@@ -4,6 +4,7 @@
  */
 
 const BASE_URL = import.meta.env.VITE_API_URL || ''
+const ENABLE_API_MOCK_FALLBACK = import.meta.env.VITE_ENABLE_API_MOCK_FALLBACK === 'true'
 
 async function request(endpoint, options = {}) {
   const url = endpoint.startsWith('http') ? endpoint : `${BASE_URL}${endpoint}`
@@ -163,22 +164,78 @@ export const planningApi = {
         method: 'POST',
         body: JSON.stringify(defaultPayload)
       })
-    } catch {
+    } catch (err) {
+      console.warn('[API] Orchestrator error or rejection:', err.message)
+
+      const errorObj = err.details?.detail?.error || err.details?.error || (typeof err.details?.detail === 'object' ? err.details.detail : {})
+      const errorCode = errorObj?.code || err.code
+      const errorMsg = errorObj?.message || (typeof err.details?.detail === 'string' ? err.details.detail : null) || err.message
+
+      if (errorCode === 'QUERY_OUT_OF_SCOPE' || errorMsg?.toLowerCase().includes('outside the scope')) {
+        return {
+          request_id: defaultPayload.request_id,
+          task_id: `orctask_${Math.random().toString(16).substring(2, 10)}`,
+          status: 'REJECTED',
+          is_out_of_scope: true,
+          out_of_scope_message: errorMsg || 'This query is outside the scope of the Smart City system.',
+          planner_feedback: {
+            decision: 'REJECTED',
+            confidence: 0.99,
+            insights: {
+              analysis: errorMsg || 'Query is outside the Smart City system scope.',
+              recommendation: errorMsg || 'Please enter an urban planning inquiry.',
+              goal_achieved: false
+            }
+          },
+          collected_results: {},
+          dispatched_agents: []
+        }
+      }
+
+      if (!ENABLE_API_MOCK_FALLBACK) {
+        throw err
+      }
+
+      const lowerObj = defaultPayload.objective.toLowerCase()
+      const isEnergy = lowerObj.includes('energy') || lowerObj.includes('power') || lowerObj.includes('substation') || lowerObj.includes('grid') || lowerObj.includes('transformer') || lowerObj.includes('solar') || lowerObj.includes('bess') || lowerObj.includes('electricity') || lowerObj.includes('feeder')
+      const isPollution = lowerObj.includes('pollution') || lowerObj.includes('aqi') || lowerObj.includes('air quality')
+      
+      let assigned_capabilities = ['traffic', 'weather']
+      let dispatched_agents = ['traffic_agent', 'weather_agent']
+      let collected_results = {
+        traffic: { active_vehicles: 2150, average_speed_kmh: 24.2, congestion_index: 64.5 },
+        weather: { temperature_c: 32.5, humidity_pct: 68.0 }
+      }
+      let finalRec = 'Deploy AI-Actuated Traffic Signal overrides along congested intersections and coordinate traffic divergence routes.'
+
+      if (isEnergy) {
+        assigned_capabilities = ['energy']
+        dispatched_agents = ['energy_agent']
+        collected_results = {
+          energy: { load_pct: 74.2, current_load_mw: 148.0, location: defaultPayload.location || 'Tarnaka, Hyderabad', severity: 'MODERATE' }
+        }
+        finalRec = `For ${defaultPayload.location || 'Tarnaka, Hyderabad'}: Implement local demand response load shifting during peak hours (18:00–21:30), deploy rooftop solar-assisted power offsets on institutional buildings, and configure dynamic street-lighting dimming after 22:00.`
+      } else if (isPollution) {
+        assigned_capabilities = ['pollution']
+        dispatched_agents = ['pollution_agent']
+        collected_results = {
+          pollution: { city_avg_aqi: 128, primary_pollutant: 'PM2.5' }
+        }
+        finalRec = 'Deploy automated anti-smog mist cannons at high-density junctions and divert heavy commercial vehicles.'
+      }
+
       return {
         task_id: `orctask_${Math.random().toString(16).substring(2, 10)}`,
         request_id: defaultPayload.request_id,
         status: 'COMPLETED',
-        assigned_capabilities: ['traffic', 'weather', 'energy'],
-        dispatched_agents: ['TrafficAgent', 'PollutionAgent', 'EnergyAgent'],
-        collected_results: {
-          traffic: { congestion_reduction: '18%', phase_offset_seconds: 25 },
-          pollution: { pm25_reduction_ugm3: 22 },
-          energy: { load_margin_saved_pct: 15 }
-        },
+        assigned_capabilities,
+        dispatched_agents,
+        collected_results,
         failures: {},
         planner_feedback: {
-          decision: 'PROCEED_TO_EVALUATION',
-          confidence: 0.94
+          decision: 'PROCEED_TO_RECOMMENDATION',
+          confidence: 0.94,
+          final_recommendation: finalRec
         },
         created_at: new Date().toISOString()
       }
@@ -705,4 +762,3 @@ export const simulationApi = {
     })
   }
 }
-

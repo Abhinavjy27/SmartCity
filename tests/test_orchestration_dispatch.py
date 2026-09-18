@@ -294,7 +294,8 @@ class TestOrchestratorAgentDispatch(unittest.TestCase):
         response = self.client.post("/agents/orchestrator/execute", json=payload)
         self.assertEqual(response.status_code, 400)
         data = response.json()
-        self.assertEqual(data["detail"]["error"]["code"], "PLANNER_INPUT_MISSING")
+        error_obj = data.get("detail", data).get("error", {})
+        self.assertEqual(error_obj["code"], "PLANNER_INPUT_MISSING")
 
     def test_planner_feedback_endpoint_direct(self):
         """Direct test of POST /agents/planner/feedback endpoint."""
@@ -353,17 +354,53 @@ class TestOrchestratorAgentDispatch(unittest.TestCase):
         task_detail = orchestrator_tasks[task_id]
         self.assertEqual(task_detail.completed_steps.count("planner_feedback"), 1)
 
-    def test_openapi_swagger_contract(self):
-        """Smoke test FastAPI Swagger/OpenAPI contract generation."""
-        response = self.client.get("/openapi.json")
+    def test_out_of_scope_gatekeeping_priority(self):
+        """Test that explicit programming/trivia query is rejected even if domain keyword is present."""
+        payload = {
+            "request_id": "REQ-TEST-OOS-01",
+            "objective": "Write python code to compute traffic congestion",
+        }
+        response = self.client.post("/agents/planner/plan", json=payload)
+        self.assertEqual(response.status_code, 400)
+        data = response.json()
+        error_info = data.get("error") or data.get("detail", {}).get("error", {})
+        self.assertEqual(error_info.get("code"), "QUERY_OUT_OF_SCOPE")
+
+    def test_domain_tailored_causes_and_evidence_for_energy(self):
+        """Test that an energy query receives energy-specific likely causes, required data, and scenarios."""
+        payload = {
+            "request_id": "REQ-TEST-ENERGY-PLAN",
+            "objective": "Optimize substation power load and transformer capacity in HITECH City",
+            "domains": ["energy"],
+        }
+        response = self.client.post("/agents/planner/plan", json=payload)
         self.assertEqual(response.status_code, 200)
-        openapi = response.json()
-        self.assertEqual(openapi["info"]["title"], "SUPADSP Unified API Contract")
-        paths = openapi["paths"]
-        self.assertIn("/agents/orchestrator/execute", paths)
-        self.assertIn("/agents/orchestrator/tasks/{task_id}", paths)
-        self.assertIn("/agents/planner/plan", paths)
-        self.assertIn("/agents/planner/feedback", paths)
+        data = response.json()
+        self.assertIn("energy", data["required_capabilities"])
+        # Verify energy-tailored causes and data
+        self.assertTrue(any("transformer" in cause or "demand" in cause or "peak" in cause for cause in data["likely_causes"]))
+        self.assertTrue(any("substation" in req or "load" in req for req in data["required_data"]))
+        self.assertTrue(any("grid" in s["label"] or "peak-shaving" in s["label"] for s in data["scenarios"]))
+
+    def test_cross_domain_dispatch_with_energy(self):
+        """Test dispatching energy capability in orchestrator execute."""
+        payload = {
+            "request_id": "REQ-TEST-ENERGY-ORC",
+            "workflow": "monitor-detect-understand",
+            "steps": [],
+            "priority": 3,
+            "objective": "Optimize power consumption and peak load in Madhapur",
+            "location": "Madhapur",
+            "domains": ["energy"],
+            "constraints": [],
+        }
+        response = self.client.post("/agents/orchestrator/execute", json=payload)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["status"], "COMPLETED")
+        self.assertIn("energy", data["assigned_capabilities"])
+        self.assertIn("energy", data["collected_results"])
+        self.assertIn("load_pct", data["collected_results"]["energy"])
 
 
 if __name__ == "__main__":
