@@ -1,0 +1,662 @@
+{
+  "1_date_range": {
+    "start_date": "2024-01-01",
+    "end_date": "2025-12-31",
+    "total_calendar_days": 731
+  },
+  "2_hyderabad_coverage": {
+    "geographical_scope": "Greater Hyderabad Municipal Corporation (GHMC) & Metropolitan Area",
+    "total_stations": 13,
+    "nominal_daily_frequency": 96,
+    "sampling_frequency_minutes": 15.0
+  },
+  "3_stations": {
+    "Bollaram Industrial Area, Hyderabad - TSPCB": {
+      "file": "hyd-bollaram-industrial-area-tspcb-2024-25.csv",
+      "station_name": "Bollaram Industrial Area, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 78.83,
+        "PM10": 80.49,
+        "NO2": 86.33,
+        "SO2": 85.29,
+        "O3": 87.63,
+        "CO": 87.7
+      }
+    },
+    "Central University, Hyderabad - TSPCB": {
+      "file": "hyd-central-university-tspcb-2024-25.csv",
+      "station_name": "Central University, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 84.22,
+        "PM10": 79.79,
+        "NO2": 85.12,
+        "SO2": 85.66,
+        "O3": 85.32,
+        "CO": 86.75
+      }
+    },
+    "ECIL Kapra, Hyderabad - TSPCB": {
+      "file": "hyd-ecil-kapra-tspcb-2024-25.csv",
+      "station_name": "ECIL Kapra, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 83.3,
+        "PM10": 82.99,
+        "NO2": 88.87,
+        "SO2": 74.7,
+        "O3": 88.71,
+        "CO": 88.71
+      }
+    },
+    "ICRISAT Patancheru, Hyderabad - TSPCB": {
+      "file": "hyd-icrisat-patancheru-tspcb-2024-25.csv",
+      "station_name": "ICRISAT Patancheru, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 89.49,
+        "PM10": 90.87,
+        "NO2": 87.45,
+        "SO2": 89.64,
+        "O3": 88.14,
+        "CO": 92.1
+      }
+    },
+    "IDA Pashamylaram, Hyderabad - TSPCB": {
+      "file": "hyd-ida-pashamylaram-tspcb-2024-25.csv",
+      "station_name": "IDA Pashamylaram, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 59.05,
+        "PM10": 58.6,
+        "NO2": 61.86,
+        "SO2": 56.35,
+        "O3": 61.82,
+        "CO": 63.39
+      }
+    },
+    "Kokapet, Hyderabad - TSPCB": {
+      "file": "hyd-kokapet-tspcb-2024-25.csv",
+      "station_name": "Kokapet, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 83.55,
+        "PM10": 77.01,
+        "NO2": 84.48,
+        "SO2": 83.32,
+        "O3": 78.77,
+        "CO": 84.08
+      }
+    },
+    "Kompally Municipal Office, Hyderabad - TSPCB": {
+      "file": "hyd-kompally-municipal-office-tspcb-2024-25.csv",
+      "station_name": "Kompally Municipal Office, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 79.8,
+        "PM10": 75.97,
+        "NO2": 80.37,
+        "SO2": 73.92,
+        "O3": 78.01,
+        "CO": 75.64
+      }
+    },
+    "Nacharam_TSIIC IALA, Hyderabad - TSPCB": {
+      "file": "hyd-nacharam_tsiic-iala-tspcb-2024-25.csv",
+      "station_name": "Nacharam_TSIIC IALA, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 85.73,
+        "PM10": 82.69,
+        "NO2": 85.72,
+        "SO2": 85.41,
+        "O3": 85.73,
+        "CO": 82.76
+      }
+    },
+    "New Malakpet, Hyderabad - TSPCB": {
+      "file": "hyd-new-malakpet-tspcb-2024-25.csv",
+      "station_name": "New Malakpet, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 84.94,
+        "PM10": 84.74,
+        "NO2": 90.77,
+        "SO2": 89.54,
+        "O3": 91.84,
+        "CO": 90.19
+      }
+    },
+    "Ramachandrapuram, Hyderabad - TSPCB": {
+      "file": "hyd-ramachandrapuram-tspcb-2024-25.csv",
+      "station_name": "Ramachandrapuram, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 71.91,
+        "PM10": 71.94,
+        "NO2": 71.77,
+        "SO2": 67.82,
+        "O3": 69.54,
+        "CO": 68.72
+      }
+    },
+    "Sanathnagar, Hyderabad - TSPCB": {
+      "file": "hyd-sanathnagar-tspcb-2024-25.csv",
+      "station_name": "Sanathnagar, Hyderabad - TSPCB",
+      "total_rows": 68072,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 98.67,
+        "PM10": 0.0,
+        "NO2": 92.57,
+        "SO2": 92.95,
+        "O3": 91.63,
+        "CO": 96.53
+      }
+    },
+    "Somajiguda, Hyderabad - TSPCB": {
+      "file": "hyd-somajiguda-tspcb-2024-25.csv",
+      "station_name": "Somajiguda, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 71.51,
+        "PM10": 71.53,
+        "NO2": 73.55,
+        "SO2": 70.64,
+        "O3": 73.63,
+        "CO": 74.0
+      }
+    },
+    "Zoo Park, Hyderabad - TSPCB": {
+      "file": "hyd-zoo-park-tspcb-2024-25.csv",
+      "station_name": "Zoo Park, Hyderabad - TSPCB",
+      "total_rows": 70177,
+      "date_start": "2024-01-01",
+      "date_end": "2025-12-31",
+      "unique_days": 731,
+      "available_pollutants": [
+        "PM2.5",
+        "PM10",
+        "NO",
+        "NO2",
+        "NH3",
+        "SO2",
+        "CO",
+        "O3",
+        "Benzene",
+        "Toluene",
+        "Xylene"
+      ],
+      "available_meteo": [
+        "AT",
+        "RH",
+        "WS",
+        "WD",
+        "RF",
+        "TOT-RF",
+        "SR",
+        "BP",
+        "VWS"
+      ],
+      "pollutant_valid_pct": {
+        "PM2.5": 90.08,
+        "PM10": 89.55,
+        "NO2": 92.86,
+        "SO2": 89.09,
+        "O3": 92.47,
+        "CO": 93.49
+      }
+    }
+  },
+  "4_sampling_frequency": "15 minutes",
+  "5_available_pollutants": [
+    "PM2.5",
+    "PM10",
+    "NO",
+    "NO2",
+    "NOx",
+    "NH3",
+    "SO2",
+    "CO",
+    "O3",
+    "Benzene",
+    "Toluene",
+    "Xylene"
+  ],
+  "6_missing_and_invalid": {
+    "nox_present": "NOx column not in raw TSPCB files (NO and NO2 are explicitly recorded)",
+    "pm25_valid_readings": 742548,
+    "pm10_valid_readings": 663990,
+    "no2_valid_readings": 757176,
+    "so2_valid_readings": 730930,
+    "o3_valid_readings": 751238,
+    "co_valid_readings": 758732
+  },
+  "7_city_daily_completeness": {
+    "total_calendar_days": 731,
+    "days_with_all_6_criteria_valid": 718,
+    "pct_days_usable_6_targets": 98.22,
+    "pollutant_usable_days": {
+      "PM2.5": 727,
+      "PM10": 718,
+      "NO2": 730,
+      "SO2": 729,
+      "O3": 729,
+      "CO": 730
+    }
+  },
+  "8_continuous_sequences": {
+    "total_valid_blocks": 11,
+    "top_continuous_sequences": [
+      {
+        "seq_id": 13,
+        "start_date": "2024-10-16",
+        "end_date": "2025-12-31",
+        "length_days": 442
+      },
+      {
+        "seq_id": 2,
+        "start_date": "2024-01-16",
+        "end_date": "2024-05-06",
+        "length_days": 112
+      },
+      {
+        "seq_id": 10,
+        "start_date": "2024-06-17",
+        "end_date": "2024-08-24",
+        "length_days": 69
+      },
+      {
+        "seq_id": 12,
+        "start_date": "2024-09-02",
+        "end_date": "2024-10-14",
+        "length_days": 43
+      },
+      {
+        "seq_id": 0,
+        "start_date": "2024-01-01",
+        "end_date": "2024-01-13",
+        "length_days": 13
+      }
+    ],
+    "usable_37d_sequences_count": 4,
+    "total_samples_with_30d_context_7d_horizon": 522,
+    "total_samples_with_14d_context_7d_horizon": 586,
+    "total_samples_with_7d_context_7d_horizon": 614
+  },
+  "9_seasonal_coverage": {
+    "Monsoon": {
+      "total_days": 244,
+      "valid_6_days": 239
+    },
+    "Post-Monsoon": {
+      "total_days": 122,
+      "valid_6_days": 121
+    },
+    "Summer/Pre-Monsoon": {
+      "total_days": 184,
+      "valid_6_days": 179
+    },
+    "Winter": {
+      "total_days": 181,
+      "valid_6_days": 179
+    }
+  },
+  "10_meteorological_variables": {
+    "available_in_raw": [
+      "AT",
+      "RH",
+      "WS",
+      "WD",
+      "RF",
+      "TOT-RF",
+      "SR",
+      "BP",
+      "VWS"
+    ],
+    "usable_meteo_features": [
+      "AT",
+      "RH",
+      "WS",
+      "BP",
+      "SR"
+    ]
+  },
+  "11_feasibility_verdict": {
+    "sufficient_for_7day_experiment": true,
+    "usable_37d_sample_windows": 522,
+    "primary_targets": [
+      "PM2.5",
+      "PM10",
+      "NO2",
+      "SO2",
+      "O3",
+      "CO"
+    ],
+    "recommended_historical_context": "30 days (compared against 7d, 14d)"
+  }
+}

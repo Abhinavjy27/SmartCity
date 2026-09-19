@@ -1,0 +1,32 @@
+{
+  "AQI_POOR_THRESHOLD": {
+    "value": 200,
+    "compares": "AQI >= threshold",
+    "usage": "backend/agents/pollution_agent/alerts.py"
+  },
+  "AQI_VERY_POOR_THRESHOLD": {
+    "value": 300,
+    "compares": "AQI >= threshold",
+    "usage": "backend/agents/pollution_agent/alerts.py"
+  },
+  "AQI_SEVERE_THRESHOLD": {
+    "value": 400,
+    "compares": "AQI >= threshold",
+    "usage": "backend/agents/pollution_agent/alerts.py"
+  },
+  "AQI_SENSITIVE_THRESHOLD": {
+    "value": 100,
+    "compares": "AQI >= threshold",
+    "usage": "backend/agents/pollution_agent/alerts.py"
+  },
+  "RAPID_INCREASE_PCT": {
+    "value": 20,
+    "compares": "(current - previous)/previous * 100 >= threshold",
+    "usage": "backend/agents/pollution_agent/alerts.py:46"
+  },
+  "COVERAGE_WARNING_PCT": {
+    "value": 70,
+    "compares": "unused",
+    "usage": "unused"
+  }
+}

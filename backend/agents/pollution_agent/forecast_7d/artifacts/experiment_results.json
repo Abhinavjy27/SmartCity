@@ -1,0 +1,4873 @@
+{
+  "metadata": {
+    "random_seed": 42,
+    "train_period": [
+      "2024-01-01",
+      "2025-06-30"
+    ],
+    "val_period": [
+      "2025-07-01",
+      "2025-09-30"
+    ],
+    "test_period": [
+      "2025-10-01",
+      "2025-12-31"
+    ],
+    "timestamp": "2026-09-14T16:15:01Z",
+    "primary_targets": [
+      "PM2.5",
+      "PM10",
+      "NO2",
+      "SO2",
+      "O3",
+      "CO"
+    ],
+    "horizon": 7
+  },
+  "context_length_experiments": {
+    "context_7d": {
+      "context_days": 7,
+      "train_samples": 430,
+      "val_samples": 86,
+      "val_overall_MAE": 4.82,
+      "val_overall_RMSE": 7.91,
+      "val_overall_R2": 0.8684
+    },
+    "context_14d": {
+      "context_days": 14,
+      "train_samples": 402,
+      "val_samples": 86,
+      "val_overall_MAE": 5.19,
+      "val_overall_RMSE": 8.46,
+      "val_overall_R2": 0.8497
+    },
+    "context_30d": {
+      "context_days": 30,
+      "train_samples": 338,
+      "val_samples": 86,
+      "val_overall_MAE": 6.95,
+      "val_overall_RMSE": 10.95,
+      "val_overall_R2": 0.7482
+    }
+  },
+  "ablation_experiments": {
+    "pollutants": {
+      "num_features": 6,
+      "feature_columns": [
+        "PM2.5",
+        "PM10",
+        "NO2",
+        "SO2",
+        "O3",
+        "CO"
+      ],
+      "val_overall_MAE": 3.66,
+      "val_overall_RMSE": 6.33,
+      "val_overall_R2": 0.9158
+    },
+    "temporal": {
+      "num_features": 12,
+      "feature_columns": [
+        "PM2.5",
+        "PM10",
+        "NO2",
+        "SO2",
+        "O3",
+        "CO",
+        "month_sin",
+        "month_cos",
+        "day_of_year_sin",
+        "day_of_year_cos",
+        "day_of_week_sin",
+        "day_of_week_cos"
+      ],
+      "val_overall_MAE": 5.41,
+      "val_overall_RMSE": 9.15,
+      "val_overall_R2": 0.824
+    },
+    "all": {
+      "num_features": 17,
+      "feature_columns": [
+        "PM2.5",
+        "PM10",
+        "NO2",
+        "SO2",
+        "O3",
+        "CO",
+        "month_sin",
+        "month_cos",
+        "day_of_year_sin",
+        "day_of_year_cos",
+        "day_of_week_sin",
+        "day_of_week_cos",
+        "AT",
+        "RH",
+        "WS",
+        "BP",
+        "SR"
+      ],
+      "val_overall_MAE": 6.95,
+      "val_overall_RMSE": 10.95,
+      "val_overall_R2": 0.7482
+    }
+  },
+  "model_benchmarks_validation": {
+    "Persistence": {
+      "model": "Persistence",
+      "type": "baseline",
+      "training_time_seconds": 0.0,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 2.75,
+          "RMSE": 4.7,
+          "R2": 0.9535,
+          "sMAPE": 11.25
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 1.8,
+            "RMSE": 3.0,
+            "R2": 0.1409,
+            "sMAPE": 8.02
+          },
+          "D2": {
+            "MAE": 2.37,
+            "RMSE": 3.86,
+            "R2": -0.1692,
+            "sMAPE": 10.23
+          },
+          "D3": {
+            "MAE": 2.67,
+            "RMSE": 4.42,
+            "R2": -0.3509,
+            "sMAPE": 11.04
+          },
+          "D4": {
+            "MAE": 2.78,
+            "RMSE": 4.65,
+            "R2": -0.4602,
+            "sMAPE": 11.58
+          },
+          "D5": {
+            "MAE": 3.06,
+            "RMSE": 5.16,
+            "R2": -0.6418,
+            "sMAPE": 12.3
+          },
+          "D6": {
+            "MAE": 3.25,
+            "RMSE": 5.44,
+            "R2": -0.7078,
+            "sMAPE": 12.74
+          },
+          "D7": {
+            "MAE": 3.29,
+            "RMSE": 5.79,
+            "R2": -0.8646,
+            "sMAPE": 12.86
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 4.29,
+            "RMSE": 5.43,
+            "R2": -0.5521,
+            "sMAPE": 15.41,
+            "DirAcc": 45.71
+          },
+          "PM10": {
+            "MAE": 7.61,
+            "RMSE": 9.5,
+            "R2": -0.3801,
+            "sMAPE": 11.39,
+            "DirAcc": 47.23
+          },
+          "NO2": {
+            "MAE": 1.16,
+            "RMSE": 1.58,
+            "R2": -0.6071,
+            "sMAPE": 7.58,
+            "DirAcc": 48.07
+          },
+          "SO2": {
+            "MAE": 1.04,
+            "RMSE": 1.38,
+            "R2": -0.3107,
+            "sMAPE": 11.18,
+            "DirAcc": 47.56
+          },
+          "O3": {
+            "MAE": 2.3,
+            "RMSE": 2.93,
+            "R2": -0.0425,
+            "sMAPE": 8.98,
+            "DirAcc": 46.89
+          },
+          "CO": {
+            "MAE": 0.07,
+            "RMSE": 0.15,
+            "R2": -0.7249,
+            "sMAPE": 12.99,
+            "DirAcc": 47.39
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 2.88,
+              "RMSE": 3.65,
+              "R2": 0.3134
+            },
+            "D2": {
+              "MAE": 3.83,
+              "RMSE": 4.64,
+              "R2": -0.0929
+            },
+            "D3": {
+              "MAE": 4.42,
+              "RMSE": 5.36,
+              "R2": -0.4646
+            },
+            "D4": {
+              "MAE": 4.25,
+              "RMSE": 5.4,
+              "R2": -0.4918
+            },
+            "D5": {
+              "MAE": 4.63,
+              "RMSE": 5.82,
+              "R2": -0.7772
+            },
+            "D6": {
+              "MAE": 5.01,
+              "RMSE": 6.12,
+              "R2": -1.0204
+            },
+            "D7": {
+              "MAE": 5.05,
+              "RMSE": 6.52,
+              "R2": -1.3315
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 4.54,
+              "RMSE": 5.81,
+              "R2": 0.4914
+            },
+            "D2": {
+              "MAE": 6.17,
+              "RMSE": 7.57,
+              "R2": 0.1352
+            },
+            "D3": {
+              "MAE": 7.03,
+              "RMSE": 8.71,
+              "R2": -0.1492
+            },
+            "D4": {
+              "MAE": 7.66,
+              "RMSE": 9.31,
+              "R2": -0.3121
+            },
+            "D5": {
+              "MAE": 8.76,
+              "RMSE": 10.52,
+              "R2": -0.687
+            },
+            "D6": {
+              "MAE": 9.45,
+              "RMSE": 11.14,
+              "R2": -0.9252
+            },
+            "D7": {
+              "MAE": 9.66,
+              "RMSE": 11.95,
+              "R2": -1.2137
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 0.92,
+              "RMSE": 1.18,
+              "R2": -0.0718
+            },
+            "D2": {
+              "MAE": 1.18,
+              "RMSE": 1.53,
+              "R2": -0.5223
+            },
+            "D3": {
+              "MAE": 1.17,
+              "RMSE": 1.54,
+              "R2": -0.5392
+            },
+            "D4": {
+              "MAE": 1.18,
+              "RMSE": 1.53,
+              "R2": -0.4959
+            },
+            "D5": {
+              "MAE": 1.23,
+              "RMSE": 1.66,
+              "R2": -0.7387
+            },
+            "D6": {
+              "MAE": 1.18,
+              "RMSE": 1.7,
+              "R2": -0.818
+            },
+            "D7": {
+              "MAE": 1.27,
+              "RMSE": 1.82,
+              "R2": -1.0634
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 0.73,
+              "RMSE": 1.04,
+              "R2": 0.2517
+            },
+            "D2": {
+              "MAE": 0.97,
+              "RMSE": 1.25,
+              "R2": -0.0864
+            },
+            "D3": {
+              "MAE": 1.11,
+              "RMSE": 1.44,
+              "R2": -0.4271
+            },
+            "D4": {
+              "MAE": 1.12,
+              "RMSE": 1.47,
+              "R2": -0.4881
+            },
+            "D5": {
+              "MAE": 1.14,
+              "RMSE": 1.48,
+              "R2": -0.5259
+            },
+            "D6": {
+              "MAE": 1.14,
+              "RMSE": 1.47,
+              "R2": -0.4913
+            },
+            "D7": {
+              "MAE": 1.09,
+              "RMSE": 1.43,
+              "R2": -0.4076
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 1.67,
+              "RMSE": 2.08,
+              "R2": 0.4853
+            },
+            "D2": {
+              "MAE": 2.03,
+              "RMSE": 2.61,
+              "R2": 0.192
+            },
+            "D3": {
+              "MAE": 2.23,
+              "RMSE": 2.83,
+              "R2": 0.0159
+            },
+            "D4": {
+              "MAE": 2.42,
+              "RMSE": 3.09,
+              "R2": -0.164
+            },
+            "D5": {
+              "MAE": 2.54,
+              "RMSE": 3.23,
+              "R2": -0.2759
+            },
+            "D6": {
+              "MAE": 2.66,
+              "RMSE": 3.28,
+              "R2": -0.3147
+            },
+            "D7": {
+              "MAE": 2.57,
+              "RMSE": 3.2,
+              "R2": -0.2363
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.06,
+              "RMSE": 0.14,
+              "R2": -0.6244
+            },
+            "D2": {
+              "MAE": 0.07,
+              "RMSE": 0.14,
+              "R2": -0.6406
+            },
+            "D3": {
+              "MAE": 0.07,
+              "RMSE": 0.14,
+              "R2": -0.5414
+            },
+            "D4": {
+              "MAE": 0.08,
+              "RMSE": 0.15,
+              "R2": -0.8094
+            },
+            "D5": {
+              "MAE": 0.08,
+              "RMSE": 0.15,
+              "R2": -0.8461
+            },
+            "D6": {
+              "MAE": 0.08,
+              "RMSE": 0.15,
+              "R2": -0.6774
+            },
+            "D7": {
+              "MAE": 0.08,
+              "RMSE": 0.16,
+              "R2": -0.935
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 7.46,
+          "AQI_RMSE": 9.33,
+          "Category_Accuracy_Pct": 100.0
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 4.5,
+            "AQI_RMSE": 5.76,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 47.06
+          },
+          "D2": {
+            "AQI_MAE": 6.01,
+            "AQI_RMSE": 7.42,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 36.47
+          },
+          "D3": {
+            "AQI_MAE": 6.87,
+            "AQI_RMSE": 8.53,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 42.35
+          },
+          "D4": {
+            "AQI_MAE": 7.49,
+            "AQI_RMSE": 9.11,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 52.94
+          },
+          "D5": {
+            "AQI_MAE": 8.59,
+            "AQI_RMSE": 10.34,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 41.18
+          },
+          "D6": {
+            "AQI_MAE": 9.29,
+            "AQI_RMSE": 10.95,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          },
+          "D7": {
+            "AQI_MAE": 9.47,
+            "AQI_RMSE": 11.75,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              602
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 2.75,
+      "overall_pollutant_RMSE": 4.7,
+      "overall_pollutant_R2": 0.9535,
+      "overall_AQI_MAE": 7.46,
+      "overall_Category_Accuracy_Pct": 100.0
+    },
+    "Seasonal_Naive": {
+      "model": "Seasonal_Naive",
+      "type": "baseline",
+      "training_time_seconds": 0.0,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 3.26,
+          "RMSE": 5.77,
+          "R2": 0.9301,
+          "sMAPE": 12.56
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 3.22,
+            "RMSE": 5.72,
+            "R2": -0.5929,
+            "sMAPE": 12.26
+          },
+          "D2": {
+            "MAE": 3.23,
+            "RMSE": 5.73,
+            "R2": -0.6417,
+            "sMAPE": 12.36
+          },
+          "D3": {
+            "MAE": 3.22,
+            "RMSE": 5.73,
+            "R2": -0.6536,
+            "sMAPE": 12.36
+          },
+          "D4": {
+            "MAE": 3.28,
+            "RMSE": 5.8,
+            "R2": -0.6958,
+            "sMAPE": 12.56
+          },
+          "D5": {
+            "MAE": 3.29,
+            "RMSE": 5.8,
+            "R2": -0.821,
+            "sMAPE": 12.76
+          },
+          "D6": {
+            "MAE": 3.28,
+            "RMSE": 5.79,
+            "R2": -0.8448,
+            "sMAPE": 12.77
+          },
+          "D7": {
+            "MAE": 3.29,
+            "RMSE": 5.79,
+            "R2": -0.8646,
+            "sMAPE": 12.86
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 5.0,
+            "RMSE": 6.47,
+            "R2": -1.1897,
+            "sMAPE": 17.94,
+            "DirAcc": 36.3
+          },
+          "PM10": {
+            "MAE": 9.73,
+            "RMSE": 11.97,
+            "R2": -1.1844,
+            "sMAPE": 14.55,
+            "DirAcc": 45.71
+          },
+          "NO2": {
+            "MAE": 1.22,
+            "RMSE": 1.75,
+            "R2": -0.9796,
+            "sMAPE": 7.96,
+            "DirAcc": 56.64
+          },
+          "SO2": {
+            "MAE": 1.06,
+            "RMSE": 1.38,
+            "R2": -0.3271,
+            "sMAPE": 11.36,
+            "DirAcc": 53.61
+          },
+          "O3": {
+            "MAE": 2.46,
+            "RMSE": 3.06,
+            "R2": -0.1337,
+            "sMAPE": 9.66,
+            "DirAcc": 52.1
+          },
+          "CO": {
+            "MAE": 0.08,
+            "RMSE": 0.14,
+            "R2": -0.5692,
+            "sMAPE": 13.9,
+            "DirAcc": 45.88
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 4.91,
+              "RMSE": 6.4,
+              "R2": -1.1141
+            },
+            "D2": {
+              "MAE": 4.92,
+              "RMSE": 6.4,
+              "R2": -1.0837
+            },
+            "D3": {
+              "MAE": 4.92,
+              "RMSE": 6.4,
+              "R2": -1.0881
+            },
+            "D4": {
+              "MAE": 5.04,
+              "RMSE": 6.49,
+              "R2": -1.1579
+            },
+            "D5": {
+              "MAE": 5.1,
+              "RMSE": 6.55,
+              "R2": -1.2476
+            },
+            "D6": {
+              "MAE": 5.08,
+              "RMSE": 6.54,
+              "R2": -1.3047
+            },
+            "D7": {
+              "MAE": 5.05,
+              "RMSE": 6.52,
+              "R2": -1.3315
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 9.77,
+              "RMSE": 11.95,
+              "R2": -1.1522
+            },
+            "D2": {
+              "MAE": 9.73,
+              "RMSE": 11.94,
+              "R2": -1.1483
+            },
+            "D3": {
+              "MAE": 9.69,
+              "RMSE": 11.93,
+              "R2": -1.1574
+            },
+            "D4": {
+              "MAE": 9.82,
+              "RMSE": 12.06,
+              "R2": -1.2039
+            },
+            "D5": {
+              "MAE": 9.76,
+              "RMSE": 12.0,
+              "R2": -1.197
+            },
+            "D6": {
+              "MAE": 9.67,
+              "RMSE": 11.96,
+              "R2": -1.2181
+            },
+            "D7": {
+              "MAE": 9.66,
+              "RMSE": 11.95,
+              "R2": -1.2137
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.1,
+              "RMSE": 1.46,
+              "R2": -0.6397
+            },
+            "D2": {
+              "MAE": 1.19,
+              "RMSE": 1.73,
+              "R2": -0.9615
+            },
+            "D3": {
+              "MAE": 1.22,
+              "RMSE": 1.77,
+              "R2": -1.0317
+            },
+            "D4": {
+              "MAE": 1.25,
+              "RMSE": 1.8,
+              "R2": -1.0735
+            },
+            "D5": {
+              "MAE": 1.25,
+              "RMSE": 1.8,
+              "R2": -1.044
+            },
+            "D6": {
+              "MAE": 1.25,
+              "RMSE": 1.8,
+              "R2": -1.0436
+            },
+            "D7": {
+              "MAE": 1.27,
+              "RMSE": 1.82,
+              "R2": -1.0634
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.05,
+              "RMSE": 1.38,
+              "R2": -0.3181
+            },
+            "D2": {
+              "MAE": 1.06,
+              "RMSE": 1.38,
+              "R2": -0.327
+            },
+            "D3": {
+              "MAE": 1.05,
+              "RMSE": 1.37,
+              "R2": -0.2979
+            },
+            "D4": {
+              "MAE": 1.06,
+              "RMSE": 1.37,
+              "R2": -0.3027
+            },
+            "D5": {
+              "MAE": 1.04,
+              "RMSE": 1.37,
+              "R2": -0.296
+            },
+            "D6": {
+              "MAE": 1.06,
+              "RMSE": 1.39,
+              "R2": -0.3406
+            },
+            "D7": {
+              "MAE": 1.09,
+              "RMSE": 1.43,
+              "R2": -0.4076
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 2.4,
+              "RMSE": 2.97,
+              "R2": -0.0453
+            },
+            "D2": {
+              "MAE": 2.4,
+              "RMSE": 2.96,
+              "R2": -0.0414
+            },
+            "D3": {
+              "MAE": 2.37,
+              "RMSE": 2.91,
+              "R2": -0.0395
+            },
+            "D4": {
+              "MAE": 2.44,
+              "RMSE": 3.05,
+              "R2": -0.1328
+            },
+            "D5": {
+              "MAE": 2.51,
+              "RMSE": 3.15,
+              "R2": -0.2111
+            },
+            "D6": {
+              "MAE": 2.54,
+              "RMSE": 3.17,
+              "R2": -0.2293
+            },
+            "D7": {
+              "MAE": 2.57,
+              "RMSE": 3.2,
+              "R2": -0.2363
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.07,
+              "RMSE": 0.13,
+              "R2": -0.2881
+            },
+            "D2": {
+              "MAE": 0.07,
+              "RMSE": 0.13,
+              "R2": -0.2881
+            },
+            "D3": {
+              "MAE": 0.07,
+              "RMSE": 0.13,
+              "R2": -0.3068
+            },
+            "D4": {
+              "MAE": 0.07,
+              "RMSE": 0.13,
+              "R2": -0.3039
+            },
+            "D5": {
+              "MAE": 0.08,
+              "RMSE": 0.16,
+              "R2": -0.9304
+            },
+            "D6": {
+              "MAE": 0.08,
+              "RMSE": 0.16,
+              "R2": -0.9322
+            },
+            "D7": {
+              "MAE": 0.08,
+              "RMSE": 0.16,
+              "R2": -0.935
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 9.53,
+          "AQI_RMSE": 11.76,
+          "Category_Accuracy_Pct": 100.0
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 9.57,
+            "AQI_RMSE": 11.73,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D2": {
+            "AQI_MAE": 9.52,
+            "AQI_RMSE": 11.72,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          },
+          "D3": {
+            "AQI_MAE": 9.49,
+            "AQI_RMSE": 11.71,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D4": {
+            "AQI_MAE": 9.62,
+            "AQI_RMSE": 11.85,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D5": {
+            "AQI_MAE": 9.57,
+            "AQI_RMSE": 11.8,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D6": {
+            "AQI_MAE": 9.48,
+            "AQI_RMSE": 11.76,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          },
+          "D7": {
+            "AQI_MAE": 9.47,
+            "AQI_RMSE": 11.75,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              602
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 3.26,
+      "overall_pollutant_RMSE": 5.77,
+      "overall_pollutant_R2": 0.9301,
+      "overall_AQI_MAE": 9.53,
+      "overall_Category_Accuracy_Pct": 100.0
+    },
+    "Ridge_Regression": {
+      "model": "Ridge_Regression",
+      "type": "classical",
+      "training_time_seconds": 0.01,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 6.95,
+          "RMSE": 10.95,
+          "R2": 0.7482,
+          "sMAPE": 36.9
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 5.01,
+            "RMSE": 7.63,
+            "R2": -5.6789,
+            "sMAPE": 25.24
+          },
+          "D2": {
+            "MAE": 6.37,
+            "RMSE": 10.06,
+            "R2": -8.023,
+            "sMAPE": 32.37
+          },
+          "D3": {
+            "MAE": 7.36,
+            "RMSE": 11.56,
+            "R2": -9.5123,
+            "sMAPE": 38.59
+          },
+          "D4": {
+            "MAE": 7.63,
+            "RMSE": 11.81,
+            "R2": -10.1077,
+            "sMAPE": 40.98
+          },
+          "D5": {
+            "MAE": 7.49,
+            "RMSE": 11.63,
+            "R2": -9.5184,
+            "sMAPE": 40.4
+          },
+          "D6": {
+            "MAE": 7.5,
+            "RMSE": 11.71,
+            "R2": -9.3104,
+            "sMAPE": 40.89
+          },
+          "D7": {
+            "MAE": 7.3,
+            "RMSE": 11.57,
+            "R2": -8.8517,
+            "sMAPE": 39.8
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 16.2,
+            "RMSE": 18.94,
+            "R2": -17.7609,
+            "sMAPE": 90.32,
+            "DirAcc": 41.85
+          },
+          "PM10": {
+            "MAE": 13.27,
+            "RMSE": 16.63,
+            "R2": -3.2257,
+            "sMAPE": 22.05,
+            "DirAcc": 47.56
+          },
+          "NO2": {
+            "MAE": 3.67,
+            "RMSE": 4.75,
+            "R2": -13.597,
+            "sMAPE": 23.44,
+            "DirAcc": 55.13
+          },
+          "SO2": {
+            "MAE": 3.38,
+            "RMSE": 4.11,
+            "R2": -10.7155,
+            "sMAPE": 31.87,
+            "DirAcc": 49.24
+          },
+          "O3": {
+            "MAE": 5.0,
+            "RMSE": 6.64,
+            "R2": -4.3536,
+            "sMAPE": 21.04,
+            "DirAcc": 53.61
+          },
+          "CO": {
+            "MAE": 0.18,
+            "RMSE": 0.22,
+            "R2": -2.6349,
+            "sMAPE": 32.66,
+            "DirAcc": 45.55
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 9.79,
+              "RMSE": 12.13,
+              "R2": -6.5932
+            },
+            "D2": {
+              "MAE": 14.52,
+              "RMSE": 17.77,
+              "R2": -15.0611
+            },
+            "D3": {
+              "MAE": 18.51,
+              "RMSE": 21.18,
+              "R2": -21.8615
+            },
+            "D4": {
+              "MAE": 18.17,
+              "RMSE": 20.69,
+              "R2": -20.9134
+            },
+            "D5": {
+              "MAE": 17.51,
+              "RMSE": 19.84,
+              "R2": -19.6357
+            },
+            "D6": {
+              "MAE": 18.09,
+              "RMSE": 20.19,
+              "R2": -20.9524
+            },
+            "D7": {
+              "MAE": 16.83,
+              "RMSE": 19.23,
+              "R2": -19.3093
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 9.52,
+              "RMSE": 11.89,
+              "R2": -1.1318
+            },
+            "D2": {
+              "MAE": 11.85,
+              "RMSE": 14.62,
+              "R2": -2.2208
+            },
+            "D3": {
+              "MAE": 13.34,
+              "RMSE": 16.26,
+              "R2": -3.0095
+            },
+            "D4": {
+              "MAE": 14.47,
+              "RMSE": 17.71,
+              "R2": -3.7547
+            },
+            "D5": {
+              "MAE": 14.45,
+              "RMSE": 17.99,
+              "R2": -3.9348
+            },
+            "D6": {
+              "MAE": 14.51,
+              "RMSE": 18.13,
+              "R2": -4.0949
+            },
+            "D7": {
+              "MAE": 14.72,
+              "RMSE": 18.73,
+              "R2": -4.4331
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 2.79,
+              "RMSE": 3.64,
+              "R2": -9.1548
+            },
+            "D2": {
+              "MAE": 3.32,
+              "RMSE": 4.51,
+              "R2": -12.2743
+            },
+            "D3": {
+              "MAE": 3.46,
+              "RMSE": 4.84,
+              "R2": -14.1402
+            },
+            "D4": {
+              "MAE": 4.01,
+              "RMSE": 5.1,
+              "R2": -15.6659
+            },
+            "D5": {
+              "MAE": 4.09,
+              "RMSE": 5.08,
+              "R2": -15.2602
+            },
+            "D6": {
+              "MAE": 4.03,
+              "RMSE": 5.0,
+              "R2": -14.7156
+            },
+            "D7": {
+              "MAE": 3.97,
+              "RMSE": 4.89,
+              "R2": -13.9683
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 3.7,
+              "RMSE": 4.62,
+              "R2": -13.8348
+            },
+            "D2": {
+              "MAE": 3.82,
+              "RMSE": 4.64,
+              "R2": -13.9663
+            },
+            "D3": {
+              "MAE": 3.43,
+              "RMSE": 4.17,
+              "R2": -11.0125
+            },
+            "D4": {
+              "MAE": 3.55,
+              "RMSE": 4.33,
+              "R2": -11.9353
+            },
+            "D5": {
+              "MAE": 3.22,
+              "RMSE": 3.91,
+              "R2": -9.6028
+            },
+            "D6": {
+              "MAE": 2.99,
+              "RMSE": 3.52,
+              "R2": -7.5708
+            },
+            "D7": {
+              "MAE": 2.97,
+              "RMSE": 3.42,
+              "R2": -7.0863
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 4.1,
+              "RMSE": 5.11,
+              "R2": -2.0921
+            },
+            "D2": {
+              "MAE": 4.54,
+              "RMSE": 5.98,
+              "R2": -3.2604
+            },
+            "D3": {
+              "MAE": 5.25,
+              "RMSE": 6.95,
+              "R2": -4.937
+            },
+            "D4": {
+              "MAE": 5.36,
+              "RMSE": 7.13,
+              "R2": -5.2017
+            },
+            "D5": {
+              "MAE": 5.47,
+              "RMSE": 7.27,
+              "R2": -5.4449
+            },
+            "D6": {
+              "MAE": 5.19,
+              "RMSE": 6.97,
+              "R2": -4.942
+            },
+            "D7": {
+              "MAE": 5.1,
+              "RMSE": 6.81,
+              "R2": -4.5973
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.14,
+              "RMSE": 0.17,
+              "R2": -1.2671
+            },
+            "D2": {
+              "MAE": 0.15,
+              "RMSE": 0.17,
+              "R2": -1.355
+            },
+            "D3": {
+              "MAE": 0.17,
+              "RMSE": 0.2,
+              "R2": -2.1131
+            },
+            "D4": {
+              "MAE": 0.2,
+              "RMSE": 0.23,
+              "R2": -3.1749
+            },
+            "D5": {
+              "MAE": 0.2,
+              "RMSE": 0.23,
+              "R2": -3.2318
+            },
+            "D6": {
+              "MAE": 0.2,
+              "RMSE": 0.24,
+              "R2": -3.5868
+            },
+            "D7": {
+              "MAE": 0.2,
+              "RMSE": 0.25,
+              "R2": -3.7157
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 13.26,
+          "AQI_RMSE": 16.68,
+          "Category_Accuracy_Pct": 75.25
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 9.43,
+            "AQI_RMSE": 11.76,
+            "Category_Accuracy_Pct": 91.86,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D2": {
+            "AQI_MAE": 11.78,
+            "AQI_RMSE": 14.52,
+            "Category_Accuracy_Pct": 82.56,
+            "Directional_Accuracy_Pct": 35.29
+          },
+          "D3": {
+            "AQI_MAE": 13.35,
+            "AQI_RMSE": 16.29,
+            "Category_Accuracy_Pct": 73.26,
+            "Directional_Accuracy_Pct": 36.47
+          },
+          "D4": {
+            "AQI_MAE": 14.45,
+            "AQI_RMSE": 17.77,
+            "Category_Accuracy_Pct": 70.93,
+            "Directional_Accuracy_Pct": 43.53
+          },
+          "D5": {
+            "AQI_MAE": 14.49,
+            "AQI_RMSE": 18.1,
+            "Category_Accuracy_Pct": 69.77,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D6": {
+            "AQI_MAE": 14.57,
+            "AQI_RMSE": 18.3,
+            "Category_Accuracy_Pct": 69.77,
+            "Directional_Accuracy_Pct": 48.24
+          },
+          "D7": {
+            "AQI_MAE": 14.78,
+            "AQI_RMSE": 18.84,
+            "Category_Accuracy_Pct": 68.6,
+            "Directional_Accuracy_Pct": 44.71
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Good",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              0,
+              0
+            ],
+            [
+              149,
+              453
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 6.95,
+      "overall_pollutant_RMSE": 10.95,
+      "overall_pollutant_R2": 0.7482,
+      "overall_AQI_MAE": 13.26,
+      "overall_Category_Accuracy_Pct": 75.25
+    },
+    "MultiOutput_GRU": {
+      "model": "MultiOutput_GRU",
+      "type": "deep_learning",
+      "training_time_seconds": 9.61,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 2.74,
+          "RMSE": 4.44,
+          "R2": 0.9585,
+          "sMAPE": 13.25
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 2.68,
+            "RMSE": 4.39,
+            "R2": -0.3969,
+            "sMAPE": 12.4
+          },
+          "D2": {
+            "MAE": 2.55,
+            "RMSE": 4.11,
+            "R2": -0.3021,
+            "sMAPE": 12.26
+          },
+          "D3": {
+            "MAE": 2.68,
+            "RMSE": 4.29,
+            "R2": -0.5665,
+            "sMAPE": 12.96
+          },
+          "D4": {
+            "MAE": 2.79,
+            "RMSE": 4.56,
+            "R2": -0.5972,
+            "sMAPE": 13.41
+          },
+          "D5": {
+            "MAE": 2.85,
+            "RMSE": 4.58,
+            "R2": -0.9136,
+            "sMAPE": 14.89
+          },
+          "D6": {
+            "MAE": 2.89,
+            "RMSE": 4.61,
+            "R2": -0.8238,
+            "sMAPE": 13.89
+          },
+          "D7": {
+            "MAE": 2.74,
+            "RMSE": 4.56,
+            "R2": -0.5209,
+            "sMAPE": 12.97
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 3.73,
+            "RMSE": 4.53,
+            "R2": -0.0755,
+            "sMAPE": 13.04,
+            "DirAcc": 48.57
+          },
+          "PM10": {
+            "MAE": 7.29,
+            "RMSE": 8.99,
+            "R2": -0.2335,
+            "sMAPE": 10.83,
+            "DirAcc": 45.55
+          },
+          "NO2": {
+            "MAE": 1.59,
+            "RMSE": 2.04,
+            "R2": -1.6781,
+            "sMAPE": 9.9,
+            "DirAcc": 44.87
+          },
+          "SO2": {
+            "MAE": 1.07,
+            "RMSE": 1.35,
+            "R2": -0.2625,
+            "sMAPE": 11.44,
+            "DirAcc": 53.11
+          },
+          "O3": {
+            "MAE": 2.64,
+            "RMSE": 3.33,
+            "R2": -0.3419,
+            "sMAPE": 10.27,
+            "DirAcc": 44.54
+          },
+          "CO": {
+            "MAE": 0.13,
+            "RMSE": 0.16,
+            "R2": -0.9408,
+            "sMAPE": 24.05,
+            "DirAcc": 53.11
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 3.95,
+              "RMSE": 4.83,
+              "R2": -0.2065
+            },
+            "D2": {
+              "MAE": 3.48,
+              "RMSE": 4.27,
+              "R2": 0.071
+            },
+            "D3": {
+              "MAE": 3.54,
+              "RMSE": 4.25,
+              "R2": 0.0811
+            },
+            "D4": {
+              "MAE": 3.78,
+              "RMSE": 4.54,
+              "R2": -0.0574
+            },
+            "D5": {
+              "MAE": 3.78,
+              "RMSE": 4.53,
+              "R2": -0.0753
+            },
+            "D6": {
+              "MAE": 3.64,
+              "RMSE": 4.42,
+              "R2": -0.0531
+            },
+            "D7": {
+              "MAE": 3.93,
+              "RMSE": 4.84,
+              "R2": -0.2885
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 7.32,
+              "RMSE": 8.84,
+              "R2": -0.1786
+            },
+            "D2": {
+              "MAE": 6.76,
+              "RMSE": 8.17,
+              "R2": -0.0059
+            },
+            "D3": {
+              "MAE": 7.26,
+              "RMSE": 8.73,
+              "R2": -0.1554
+            },
+            "D4": {
+              "MAE": 7.56,
+              "RMSE": 9.33,
+              "R2": -0.3199
+            },
+            "D5": {
+              "MAE": 7.43,
+              "RMSE": 9.33,
+              "R2": -0.3278
+            },
+            "D6": {
+              "MAE": 7.28,
+              "RMSE": 9.21,
+              "R2": -0.3158
+            },
+            "D7": {
+              "MAE": 7.4,
+              "RMSE": 9.27,
+              "R2": -0.3311
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.14,
+              "RMSE": 1.55,
+              "R2": -0.8325
+            },
+            "D2": {
+              "MAE": 1.18,
+              "RMSE": 1.56,
+              "R2": -0.5865
+            },
+            "D3": {
+              "MAE": 1.72,
+              "RMSE": 2.21,
+              "R2": -2.1655
+            },
+            "D4": {
+              "MAE": 1.57,
+              "RMSE": 2.01,
+              "R2": -1.593
+            },
+            "D5": {
+              "MAE": 2.04,
+              "RMSE": 2.43,
+              "R2": -2.725
+            },
+            "D6": {
+              "MAE": 1.95,
+              "RMSE": 2.38,
+              "R2": -2.5778
+            },
+            "D7": {
+              "MAE": 1.52,
+              "RMSE": 1.9,
+              "R2": -1.2664
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.09,
+              "RMSE": 1.45,
+              "R2": -0.4616
+            },
+            "D2": {
+              "MAE": 1.02,
+              "RMSE": 1.31,
+              "R2": -0.1855
+            },
+            "D3": {
+              "MAE": 1.04,
+              "RMSE": 1.32,
+              "R2": -0.1974
+            },
+            "D4": {
+              "MAE": 1.06,
+              "RMSE": 1.35,
+              "R2": -0.2535
+            },
+            "D5": {
+              "MAE": 1.14,
+              "RMSE": 1.34,
+              "R2": -0.2556
+            },
+            "D6": {
+              "MAE": 1.14,
+              "RMSE": 1.39,
+              "R2": -0.3386
+            },
+            "D7": {
+              "MAE": 0.97,
+              "RMSE": 1.29,
+              "R2": -0.1452
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 2.5,
+              "RMSE": 3.1,
+              "R2": -0.1353
+            },
+            "D2": {
+              "MAE": 2.72,
+              "RMSE": 3.46,
+              "R2": -0.4261
+            },
+            "D3": {
+              "MAE": 2.4,
+              "RMSE": 3.05,
+              "R2": -0.1403
+            },
+            "D4": {
+              "MAE": 2.61,
+              "RMSE": 3.33,
+              "R2": -0.3516
+            },
+            "D5": {
+              "MAE": 2.52,
+              "RMSE": 3.22,
+              "R2": -0.2616
+            },
+            "D6": {
+              "MAE": 3.22,
+              "RMSE": 3.92,
+              "R2": -0.8786
+            },
+            "D7": {
+              "MAE": 2.48,
+              "RMSE": 3.15,
+              "R2": -0.2001
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.11,
+              "RMSE": 0.14,
+              "R2": -0.567
+            },
+            "D2": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.6798
+            },
+            "D3": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.8213
+            },
+            "D4": {
+              "MAE": 0.13,
+              "RMSE": 0.16,
+              "R2": -1.008
+            },
+            "D5": {
+              "MAE": 0.17,
+              "RMSE": 0.19,
+              "R2": -1.8361
+            },
+            "D6": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.7791
+            },
+            "D7": {
+              "MAE": 0.13,
+              "RMSE": 0.16,
+              "R2": -0.894
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 7.17,
+          "AQI_RMSE": 8.87,
+          "Category_Accuracy_Pct": 100.0
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 7.16,
+            "AQI_RMSE": 8.72,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 17.65
+          },
+          "D2": {
+            "AQI_MAE": 6.67,
+            "AQI_RMSE": 8.04,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 17.65
+          },
+          "D3": {
+            "AQI_MAE": 7.14,
+            "AQI_RMSE": 8.6,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 20.0
+          },
+          "D4": {
+            "AQI_MAE": 7.41,
+            "AQI_RMSE": 9.2,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 18.82
+          },
+          "D5": {
+            "AQI_MAE": 7.31,
+            "AQI_RMSE": 9.23,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 16.47
+          },
+          "D6": {
+            "AQI_MAE": 7.17,
+            "AQI_RMSE": 9.11,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 20.0
+          },
+          "D7": {
+            "AQI_MAE": 7.29,
+            "AQI_RMSE": 9.16,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 24.71
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              602
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 2.74,
+      "overall_pollutant_RMSE": 4.44,
+      "overall_pollutant_R2": 0.9585,
+      "overall_AQI_MAE": 7.17,
+      "overall_Category_Accuracy_Pct": 100.0
+    },
+    "TCN": {
+      "model": "TCN",
+      "type": "deep_learning",
+      "training_time_seconds": 8.37,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 2.79,
+          "RMSE": 4.47,
+          "R2": 0.958,
+          "sMAPE": 13.42
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 2.58,
+            "RMSE": 3.98,
+            "R2": -0.5398,
+            "sMAPE": 12.7
+          },
+          "D2": {
+            "MAE": 2.62,
+            "RMSE": 4.13,
+            "R2": -0.4368,
+            "sMAPE": 12.87
+          },
+          "D3": {
+            "MAE": 2.63,
+            "RMSE": 4.23,
+            "R2": -0.4109,
+            "sMAPE": 12.88
+          },
+          "D4": {
+            "MAE": 2.83,
+            "RMSE": 4.48,
+            "R2": -0.6284,
+            "sMAPE": 13.67
+          },
+          "D5": {
+            "MAE": 2.95,
+            "RMSE": 4.72,
+            "R2": -0.641,
+            "sMAPE": 13.74
+          },
+          "D6": {
+            "MAE": 2.99,
+            "RMSE": 4.85,
+            "R2": -0.722,
+            "sMAPE": 13.96
+          },
+          "D7": {
+            "MAE": 2.96,
+            "RMSE": 4.79,
+            "R2": -0.6863,
+            "sMAPE": 14.11
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 4.0,
+            "RMSE": 4.84,
+            "R2": -0.2294,
+            "sMAPE": 14.12,
+            "DirAcc": 46.22
+          },
+          "PM10": {
+            "MAE": 7.15,
+            "RMSE": 8.77,
+            "R2": -0.1753,
+            "sMAPE": 10.64,
+            "DirAcc": 46.05
+          },
+          "NO2": {
+            "MAE": 1.45,
+            "RMSE": 1.87,
+            "R2": -1.2895,
+            "sMAPE": 9.17,
+            "DirAcc": 48.4
+          },
+          "SO2": {
+            "MAE": 1.04,
+            "RMSE": 1.33,
+            "R2": -0.2274,
+            "sMAPE": 11.22,
+            "DirAcc": 50.92
+          },
+          "O3": {
+            "MAE": 2.99,
+            "RMSE": 3.75,
+            "R2": -0.7052,
+            "sMAPE": 11.77,
+            "DirAcc": 50.25
+          },
+          "CO": {
+            "MAE": 0.13,
+            "RMSE": 0.15,
+            "R2": -0.8577,
+            "sMAPE": 23.59,
+            "DirAcc": 52.27
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 3.6,
+              "RMSE": 4.37,
+              "R2": 0.0163
+            },
+            "D2": {
+              "MAE": 3.6,
+              "RMSE": 4.32,
+              "R2": 0.0497
+            },
+            "D3": {
+              "MAE": 3.6,
+              "RMSE": 4.4,
+              "R2": 0.0115
+            },
+            "D4": {
+              "MAE": 4.23,
+              "RMSE": 5.08,
+              "R2": -0.3224
+            },
+            "D5": {
+              "MAE": 4.3,
+              "RMSE": 5.12,
+              "R2": -0.3752
+            },
+            "D6": {
+              "MAE": 4.28,
+              "RMSE": 5.11,
+              "R2": -0.4051
+            },
+            "D7": {
+              "MAE": 4.4,
+              "RMSE": 5.37,
+              "R2": -0.5806
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 6.19,
+              "RMSE": 7.5,
+              "R2": 0.1525
+            },
+            "D2": {
+              "MAE": 6.64,
+              "RMSE": 8.08,
+              "R2": 0.0173
+            },
+            "D3": {
+              "MAE": 6.82,
+              "RMSE": 8.41,
+              "R2": -0.072
+            },
+            "D4": {
+              "MAE": 7.15,
+              "RMSE": 8.67,
+              "R2": -0.14
+            },
+            "D5": {
+              "MAE": 7.8,
+              "RMSE": 9.38,
+              "R2": -0.3432
+            },
+            "D6": {
+              "MAE": 7.8,
+              "RMSE": 9.71,
+              "R2": -0.4618
+            },
+            "D7": {
+              "MAE": 7.63,
+              "RMSE": 9.44,
+              "R2": -0.3796
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.45,
+              "RMSE": 1.89,
+              "R2": -1.7348
+            },
+            "D2": {
+              "MAE": 1.36,
+              "RMSE": 1.77,
+              "R2": -1.0425
+            },
+            "D3": {
+              "MAE": 1.23,
+              "RMSE": 1.63,
+              "R2": -0.7161
+            },
+            "D4": {
+              "MAE": 1.51,
+              "RMSE": 1.97,
+              "R2": -1.4707
+            },
+            "D5": {
+              "MAE": 1.51,
+              "RMSE": 1.92,
+              "R2": -1.3137
+            },
+            "D6": {
+              "MAE": 1.62,
+              "RMSE": 2.03,
+              "R2": -1.6043
+            },
+            "D7": {
+              "MAE": 1.49,
+              "RMSE": 1.85,
+              "R2": -1.1444
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.04,
+              "RMSE": 1.37,
+              "R2": -0.3104
+            },
+            "D2": {
+              "MAE": 0.99,
+              "RMSE": 1.29,
+              "R2": -0.1645
+            },
+            "D3": {
+              "MAE": 1.11,
+              "RMSE": 1.36,
+              "R2": -0.2681
+            },
+            "D4": {
+              "MAE": 1.05,
+              "RMSE": 1.34,
+              "R2": -0.2308
+            },
+            "D5": {
+              "MAE": 1.02,
+              "RMSE": 1.34,
+              "R2": -0.238
+            },
+            "D6": {
+              "MAE": 1.06,
+              "RMSE": 1.3,
+              "R2": -0.1698
+            },
+            "D7": {
+              "MAE": 1.05,
+              "RMSE": 1.32,
+              "R2": -0.21
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 3.06,
+              "RMSE": 3.8,
+              "R2": -0.7113
+            },
+            "D2": {
+              "MAE": 3.0,
+              "RMSE": 3.71,
+              "R2": -0.6384
+            },
+            "D3": {
+              "MAE": 2.87,
+              "RMSE": 3.6,
+              "R2": -0.5946
+            },
+            "D4": {
+              "MAE": 2.92,
+              "RMSE": 3.72,
+              "R2": -0.6898
+            },
+            "D5": {
+              "MAE": 2.96,
+              "RMSE": 3.75,
+              "R2": -0.7131
+            },
+            "D6": {
+              "MAE": 3.07,
+              "RMSE": 3.86,
+              "R2": -0.8254
+            },
+            "D7": {
+              "MAE": 3.05,
+              "RMSE": 3.82,
+              "R2": -0.7638
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.6513
+            },
+            "D2": {
+              "MAE": 0.13,
+              "RMSE": 0.15,
+              "R2": -0.8423
+            },
+            "D3": {
+              "MAE": 0.13,
+              "RMSE": 0.15,
+              "R2": -0.8258
+            },
+            "D4": {
+              "MAE": 0.13,
+              "RMSE": 0.16,
+              "R2": -0.9169
+            },
+            "D5": {
+              "MAE": 0.13,
+              "RMSE": 0.15,
+              "R2": -0.8627
+            },
+            "D6": {
+              "MAE": 0.13,
+              "RMSE": 0.15,
+              "R2": -0.8657
+            },
+            "D7": {
+              "MAE": 0.14,
+              "RMSE": 0.16,
+              "R2": -1.0393
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 7.02,
+          "AQI_RMSE": 8.64,
+          "Category_Accuracy_Pct": 100.0
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 6.1,
+            "AQI_RMSE": 7.4,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 32.94
+          },
+          "D2": {
+            "AQI_MAE": 6.48,
+            "AQI_RMSE": 7.92,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 29.41
+          },
+          "D3": {
+            "AQI_MAE": 6.67,
+            "AQI_RMSE": 8.25,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 31.76
+          },
+          "D4": {
+            "AQI_MAE": 6.97,
+            "AQI_RMSE": 8.48,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 34.12
+          },
+          "D5": {
+            "AQI_MAE": 7.67,
+            "AQI_RMSE": 9.23,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 37.65
+          },
+          "D6": {
+            "AQI_MAE": 7.7,
+            "AQI_RMSE": 9.62,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 29.41
+          },
+          "D7": {
+            "AQI_MAE": 7.53,
+            "AQI_RMSE": 9.34,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 29.41
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              602
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 2.79,
+      "overall_pollutant_RMSE": 4.47,
+      "overall_pollutant_R2": 0.958,
+      "overall_AQI_MAE": 7.02,
+      "overall_Category_Accuracy_Pct": 100.0
+    },
+    "PatchTST": {
+      "model": "PatchTST",
+      "type": "modern_transformer",
+      "training_time_seconds": 78.48,
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 2.94,
+          "RMSE": 4.77,
+          "R2": 0.9522,
+          "sMAPE": 13.56
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 2.67,
+            "RMSE": 4.18,
+            "R2": -0.4221,
+            "sMAPE": 13.28
+          },
+          "D2": {
+            "MAE": 2.78,
+            "RMSE": 4.43,
+            "R2": -0.4055,
+            "sMAPE": 12.59
+          },
+          "D3": {
+            "MAE": 2.71,
+            "RMSE": 4.38,
+            "R2": -0.2421,
+            "sMAPE": 12.12
+          },
+          "D4": {
+            "MAE": 3.23,
+            "RMSE": 5.36,
+            "R2": -0.7406,
+            "sMAPE": 14.96
+          },
+          "D5": {
+            "MAE": 3.19,
+            "RMSE": 5.09,
+            "R2": -0.8498,
+            "sMAPE": 14.49
+          },
+          "D6": {
+            "MAE": 3.14,
+            "RMSE": 4.99,
+            "R2": -0.9276,
+            "sMAPE": 14.47
+          },
+          "D7": {
+            "MAE": 2.85,
+            "RMSE": 4.82,
+            "R2": -0.4718,
+            "sMAPE": 13.0
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 4.42,
+            "RMSE": 5.34,
+            "R2": -0.4923,
+            "sMAPE": 15.68,
+            "DirAcc": 48.91
+          },
+          "PM10": {
+            "MAE": 7.55,
+            "RMSE": 9.39,
+            "R2": -0.3466,
+            "sMAPE": 11.16,
+            "DirAcc": 49.41
+          },
+          "NO2": {
+            "MAE": 1.39,
+            "RMSE": 1.76,
+            "R2": -1.0053,
+            "sMAPE": 8.8,
+            "DirAcc": 50.08
+          },
+          "SO2": {
+            "MAE": 1.03,
+            "RMSE": 1.26,
+            "R2": -0.0943,
+            "sMAPE": 11.07,
+            "DirAcc": 52.77
+          },
+          "O3": {
+            "MAE": 3.12,
+            "RMSE": 3.86,
+            "R2": -0.7981,
+            "sMAPE": 12.37,
+            "DirAcc": 51.93
+          },
+          "CO": {
+            "MAE": 0.12,
+            "RMSE": 0.15,
+            "R2": -0.743,
+            "sMAPE": 22.27,
+            "DirAcc": 51.09
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 3.73,
+              "RMSE": 4.49,
+              "R2": -0.0396
+            },
+            "D2": {
+              "MAE": 4.14,
+              "RMSE": 4.86,
+              "R2": -0.1998
+            },
+            "D3": {
+              "MAE": 4.24,
+              "RMSE": 5.1,
+              "R2": -0.324
+            },
+            "D4": {
+              "MAE": 5.24,
+              "RMSE": 6.21,
+              "R2": -0.975
+            },
+            "D5": {
+              "MAE": 4.75,
+              "RMSE": 5.62,
+              "R2": -0.6533
+            },
+            "D6": {
+              "MAE": 4.57,
+              "RMSE": 5.75,
+              "R2": -0.7814
+            },
+            "D7": {
+              "MAE": 4.29,
+              "RMSE": 5.18,
+              "R2": -0.4731
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 6.64,
+              "RMSE": 8.09,
+              "R2": 0.0122
+            },
+            "D2": {
+              "MAE": 6.96,
+              "RMSE": 8.55,
+              "R2": -0.1028
+            },
+            "D3": {
+              "MAE": 7.2,
+              "RMSE": 8.72,
+              "R2": -0.1519
+            },
+            "D4": {
+              "MAE": 8.64,
+              "RMSE": 10.71,
+              "R2": -0.7372
+            },
+            "D5": {
+              "MAE": 8.07,
+              "RMSE": 10.05,
+              "R2": -0.5399
+            },
+            "D6": {
+              "MAE": 7.95,
+              "RMSE": 9.69,
+              "R2": -0.4564
+            },
+            "D7": {
+              "MAE": 7.36,
+              "RMSE": 9.68,
+              "R2": -0.4504
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.1,
+              "RMSE": 1.37,
+              "R2": -0.4364
+            },
+            "D2": {
+              "MAE": 1.23,
+              "RMSE": 1.58,
+              "R2": -0.6257
+            },
+            "D3": {
+              "MAE": 1.22,
+              "RMSE": 1.49,
+              "R2": -0.433
+            },
+            "D4": {
+              "MAE": 1.12,
+              "RMSE": 1.48,
+              "R2": -0.4039
+            },
+            "D5": {
+              "MAE": 1.81,
+              "RMSE": 2.18,
+              "R2": -1.9928
+            },
+            "D6": {
+              "MAE": 2.08,
+              "RMSE": 2.41,
+              "R2": -2.6538
+            },
+            "D7": {
+              "MAE": 1.16,
+              "RMSE": 1.54,
+              "R2": -0.4912
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.14,
+              "RMSE": 1.36,
+              "R2": -0.2859
+            },
+            "D2": {
+              "MAE": 0.91,
+              "RMSE": 1.22,
+              "R2": -0.0318
+            },
+            "D3": {
+              "MAE": 1.02,
+              "RMSE": 1.23,
+              "R2": -0.0454
+            },
+            "D4": {
+              "MAE": 1.12,
+              "RMSE": 1.31,
+              "R2": -0.1911
+            },
+            "D5": {
+              "MAE": 1.06,
+              "RMSE": 1.28,
+              "R2": -0.131
+            },
+            "D6": {
+              "MAE": 0.98,
+              "RMSE": 1.19,
+              "R2": 0.0183
+            },
+            "D7": {
+              "MAE": 0.99,
+              "RMSE": 1.2,
+              "R2": 0.0065
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 3.28,
+              "RMSE": 3.96,
+              "R2": -0.8525
+            },
+            "D2": {
+              "MAE": 3.35,
+              "RMSE": 4.14,
+              "R2": -1.0366
+            },
+            "D3": {
+              "MAE": 2.46,
+              "RMSE": 3.02,
+              "R2": -0.1232
+            },
+            "D4": {
+              "MAE": 3.12,
+              "RMSE": 3.92,
+              "R2": -0.8716
+            },
+            "D5": {
+              "MAE": 3.32,
+              "RMSE": 4.09,
+              "R2": -1.0373
+            },
+            "D6": {
+              "MAE": 3.15,
+              "RMSE": 3.87,
+              "R2": -0.8325
+            },
+            "D7": {
+              "MAE": 3.2,
+              "RMSE": 3.9,
+              "R2": -0.8333
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.13,
+              "RMSE": 0.16,
+              "R2": -0.9306
+            },
+            "D2": {
+              "MAE": 0.1,
+              "RMSE": 0.14,
+              "R2": -0.4364
+            },
+            "D3": {
+              "MAE": 0.1,
+              "RMSE": 0.13,
+              "R2": -0.3752
+            },
+            "D4": {
+              "MAE": 0.15,
+              "RMSE": 0.17,
+              "R2": -1.2648
+            },
+            "D5": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.7447
+            },
+            "D6": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.8601
+            },
+            "D7": {
+              "MAE": 0.11,
+              "RMSE": 0.14,
+              "R2": -0.5895
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 7.4,
+          "AQI_RMSE": 9.23,
+          "Category_Accuracy_Pct": 100.0
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 6.51,
+            "AQI_RMSE": 7.95,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 38.82
+          },
+          "D2": {
+            "AQI_MAE": 6.84,
+            "AQI_RMSE": 8.4,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 32.94
+          },
+          "D3": {
+            "AQI_MAE": 7.0,
+            "AQI_RMSE": 8.56,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 30.59
+          },
+          "D4": {
+            "AQI_MAE": 8.45,
+            "AQI_RMSE": 10.49,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 42.35
+          },
+          "D5": {
+            "AQI_MAE": 7.87,
+            "AQI_RMSE": 9.86,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 43.53
+          },
+          "D6": {
+            "AQI_MAE": 7.86,
+            "AQI_RMSE": 9.56,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 48.24
+          },
+          "D7": {
+            "AQI_MAE": 7.27,
+            "AQI_RMSE": 9.55,
+            "Category_Accuracy_Pct": 100.0,
+            "Directional_Accuracy_Pct": 49.41
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              602
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 2.94,
+      "overall_pollutant_RMSE": 4.77,
+      "overall_pollutant_R2": 0.9522,
+      "overall_AQI_MAE": 7.4,
+      "overall_Category_Accuracy_Pct": 100.0
+    }
+  },
+  "model_benchmarks_test": {
+    "Persistence": {
+      "model": "Persistence",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 4.08,
+          "RMSE": 8.03,
+          "R2": 0.933,
+          "sMAPE": 11.56
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 2.26,
+            "RMSE": 4.24,
+            "R2": 0.5571,
+            "sMAPE": 7.11
+          },
+          "D2": {
+            "MAE": 3.33,
+            "RMSE": 6.42,
+            "R2": 0.1365,
+            "sMAPE": 9.89
+          },
+          "D3": {
+            "MAE": 4.17,
+            "RMSE": 8.01,
+            "R2": -0.1254,
+            "sMAPE": 11.65
+          },
+          "D4": {
+            "MAE": 4.63,
+            "RMSE": 8.88,
+            "R2": -0.2675,
+            "sMAPE": 12.66
+          },
+          "D5": {
+            "MAE": 4.79,
+            "RMSE": 9.21,
+            "R2": -0.3343,
+            "sMAPE": 13.08
+          },
+          "D6": {
+            "MAE": 4.77,
+            "RMSE": 9.18,
+            "R2": -0.3507,
+            "sMAPE": 13.22
+          },
+          "D7": {
+            "MAE": 4.64,
+            "RMSE": 8.95,
+            "R2": -0.3679,
+            "sMAPE": 13.28
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 6.83,
+            "RMSE": 9.12,
+            "R2": -0.1591,
+            "sMAPE": 17.69,
+            "DirAcc": 46.89
+          },
+          "PM10": {
+            "MAE": 13.03,
+            "RMSE": 17.06,
+            "R2": -0.164,
+            "sMAPE": 14.73,
+            "DirAcc": 47.39
+          },
+          "NO2": {
+            "MAE": 1.36,
+            "RMSE": 1.8,
+            "R2": -0.5308,
+            "sMAPE": 8.23,
+            "DirAcc": 46.39
+          },
+          "SO2": {
+            "MAE": 1.13,
+            "RMSE": 1.47,
+            "R2": -0.0137,
+            "sMAPE": 11.53,
+            "DirAcc": 50.25
+          },
+          "O3": {
+            "MAE": 2.1,
+            "RMSE": 2.74,
+            "R2": -0.4467,
+            "sMAPE": 8.23,
+            "DirAcc": 47.9
+          },
+          "CO": {
+            "MAE": 0.05,
+            "RMSE": 0.07,
+            "R2": 0.6696,
+            "sMAPE": 8.94,
+            "DirAcc": 48.07
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 3.52,
+              "RMSE": 4.74,
+              "R2": 0.7091
+            },
+            "D2": {
+              "MAE": 5.17,
+              "RMSE": 7.25,
+              "R2": 0.3053
+            },
+            "D3": {
+              "MAE": 7.03,
+              "RMSE": 9.1,
+              "R2": -0.1195
+            },
+            "D4": {
+              "MAE": 7.93,
+              "RMSE": 10.11,
+              "R2": -0.4129
+            },
+            "D5": {
+              "MAE": 8.33,
+              "RMSE": 10.58,
+              "R2": -0.5741
+            },
+            "D6": {
+              "MAE": 8.18,
+              "RMSE": 10.45,
+              "R2": -0.5604
+            },
+            "D7": {
+              "MAE": 7.68,
+              "RMSE": 10.04,
+              "R2": -0.4611
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 6.86,
+              "RMSE": 8.92,
+              "R2": 0.7173
+            },
+            "D2": {
+              "MAE": 10.4,
+              "RMSE": 13.55,
+              "R2": 0.3285
+            },
+            "D3": {
+              "MAE": 13.28,
+              "RMSE": 16.99,
+              "R2": -0.0979
+            },
+            "D4": {
+              "MAE": 14.93,
+              "RMSE": 18.89,
+              "R2": -0.4069
+            },
+            "D5": {
+              "MAE": 15.47,
+              "RMSE": 19.55,
+              "R2": -0.553
+            },
+            "D6": {
+              "MAE": 15.34,
+              "RMSE": 19.54,
+              "R2": -0.5886
+            },
+            "D7": {
+              "MAE": 14.91,
+              "RMSE": 19.1,
+              "R2": -0.5471
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.01,
+              "RMSE": 1.34,
+              "R2": 0.0946
+            },
+            "D2": {
+              "MAE": 1.29,
+              "RMSE": 1.79,
+              "R2": -0.5309
+            },
+            "D3": {
+              "MAE": 1.39,
+              "RMSE": 1.88,
+              "R2": -0.6745
+            },
+            "D4": {
+              "MAE": 1.53,
+              "RMSE": 1.94,
+              "R2": -0.7584
+            },
+            "D5": {
+              "MAE": 1.41,
+              "RMSE": 1.89,
+              "R2": -0.6479
+            },
+            "D6": {
+              "MAE": 1.4,
+              "RMSE": 1.84,
+              "R2": -0.5758
+            },
+            "D7": {
+              "MAE": 1.46,
+              "RMSE": 1.87,
+              "R2": -0.6229
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 0.71,
+              "RMSE": 0.95,
+              "R2": 0.5829
+            },
+            "D2": {
+              "MAE": 1.03,
+              "RMSE": 1.33,
+              "R2": 0.1861
+            },
+            "D3": {
+              "MAE": 1.16,
+              "RMSE": 1.5,
+              "R2": -0.0458
+            },
+            "D4": {
+              "MAE": 1.21,
+              "RMSE": 1.53,
+              "R2": -0.1079
+            },
+            "D5": {
+              "MAE": 1.22,
+              "RMSE": 1.58,
+              "R2": -0.1767
+            },
+            "D6": {
+              "MAE": 1.25,
+              "RMSE": 1.59,
+              "R2": -0.19
+            },
+            "D7": {
+              "MAE": 1.34,
+              "RMSE": 1.68,
+              "R2": -0.3448
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 1.44,
+              "RMSE": 1.79,
+              "R2": 0.3933
+            },
+            "D2": {
+              "MAE": 2.02,
+              "RMSE": 2.52,
+              "R2": -0.1977
+            },
+            "D3": {
+              "MAE": 2.13,
+              "RMSE": 2.82,
+              "R2": -0.4964
+            },
+            "D4": {
+              "MAE": 2.15,
+              "RMSE": 2.87,
+              "R2": -0.5741
+            },
+            "D5": {
+              "MAE": 2.23,
+              "RMSE": 2.95,
+              "R2": -0.6695
+            },
+            "D6": {
+              "MAE": 2.36,
+              "RMSE": 2.99,
+              "R2": -0.7812
+            },
+            "D7": {
+              "MAE": 2.36,
+              "RMSE": 2.99,
+              "R2": -0.8013
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.04,
+              "RMSE": 0.05,
+              "R2": 0.8458
+            },
+            "D2": {
+              "MAE": 0.05,
+              "RMSE": 0.06,
+              "R2": 0.7278
+            },
+            "D3": {
+              "MAE": 0.05,
+              "RMSE": 0.07,
+              "R2": 0.6818
+            },
+            "D4": {
+              "MAE": 0.05,
+              "RMSE": 0.07,
+              "R2": 0.655
+            },
+            "D5": {
+              "MAE": 0.06,
+              "RMSE": 0.07,
+              "R2": 0.6156
+            },
+            "D6": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5919
+            },
+            "D7": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5698
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 12.08,
+          "AQI_RMSE": 15.91,
+          "Category_Accuracy_Pct": 59.97
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 6.26,
+            "AQI_RMSE": 8.19,
+            "Category_Accuracy_Pct": 81.4,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D2": {
+            "AQI_MAE": 9.44,
+            "AQI_RMSE": 12.43,
+            "Category_Accuracy_Pct": 69.77,
+            "Directional_Accuracy_Pct": 48.24
+          },
+          "D3": {
+            "AQI_MAE": 12.3,
+            "AQI_RMSE": 15.7,
+            "Category_Accuracy_Pct": 50.0,
+            "Directional_Accuracy_Pct": 36.47
+          },
+          "D4": {
+            "AQI_MAE": 13.86,
+            "AQI_RMSE": 17.56,
+            "Category_Accuracy_Pct": 50.0,
+            "Directional_Accuracy_Pct": 38.82
+          },
+          "D5": {
+            "AQI_MAE": 14.43,
+            "AQI_RMSE": 18.3,
+            "Category_Accuracy_Pct": 50.0,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D6": {
+            "AQI_MAE": 14.33,
+            "AQI_RMSE": 18.35,
+            "Category_Accuracy_Pct": 58.14,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D7": {
+            "AQI_MAE": 13.92,
+            "AQI_RMSE": 17.98,
+            "Category_Accuracy_Pct": 60.47,
+            "Directional_Accuracy_Pct": 43.53
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              72,
+              145
+            ],
+            [
+              96,
+              289
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 4.08,
+      "overall_pollutant_RMSE": 8.03,
+      "overall_pollutant_R2": 0.933,
+      "overall_AQI_MAE": 12.08,
+      "overall_Category_Accuracy_Pct": 59.97
+    },
+    "Seasonal_Naive": {
+      "model": "Seasonal_Naive",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 4.65,
+          "RMSE": 8.95,
+          "R2": 0.9169,
+          "sMAPE": 13.47
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 4.69,
+            "RMSE": 8.99,
+            "R2": -0.3203,
+            "sMAPE": 13.66
+          },
+          "D2": {
+            "MAE": 4.66,
+            "RMSE": 8.95,
+            "R2": -0.3166,
+            "sMAPE": 13.59
+          },
+          "D3": {
+            "MAE": 4.64,
+            "RMSE": 8.93,
+            "R2": -0.3177,
+            "sMAPE": 13.54
+          },
+          "D4": {
+            "MAE": 4.63,
+            "RMSE": 8.93,
+            "R2": -0.3337,
+            "sMAPE": 13.48
+          },
+          "D5": {
+            "MAE": 4.64,
+            "RMSE": 8.94,
+            "R2": -0.3394,
+            "sMAPE": 13.4
+          },
+          "D6": {
+            "MAE": 4.64,
+            "RMSE": 8.95,
+            "R2": -0.3543,
+            "sMAPE": 13.32
+          },
+          "D7": {
+            "MAE": 4.64,
+            "RMSE": 8.95,
+            "R2": -0.3679,
+            "sMAPE": 13.28
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 7.73,
+            "RMSE": 10.07,
+            "R2": -0.3956,
+            "sMAPE": 20.56,
+            "DirAcc": 51.09
+          },
+          "PM10": {
+            "MAE": 14.9,
+            "RMSE": 19.06,
+            "R2": -0.4235,
+            "sMAPE": 17.16,
+            "DirAcc": 50.25
+          },
+          "NO2": {
+            "MAE": 1.48,
+            "RMSE": 1.89,
+            "R2": -0.6941,
+            "sMAPE": 8.93,
+            "DirAcc": 50.08
+          },
+          "SO2": {
+            "MAE": 1.32,
+            "RMSE": 1.66,
+            "R2": -0.2879,
+            "sMAPE": 13.48,
+            "DirAcc": 51.09
+          },
+          "O3": {
+            "MAE": 2.41,
+            "RMSE": 3.04,
+            "R2": -0.7806,
+            "sMAPE": 9.4,
+            "DirAcc": 48.07
+          },
+          "CO": {
+            "MAE": 0.06,
+            "RMSE": 0.08,
+            "R2": 0.5674,
+            "sMAPE": 11.27,
+            "DirAcc": 50.92
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 7.77,
+              "RMSE": 10.11,
+              "R2": -0.3242
+            },
+            "D2": {
+              "MAE": 7.76,
+              "RMSE": 10.1,
+              "R2": -0.3461
+            },
+            "D3": {
+              "MAE": 7.72,
+              "RMSE": 10.07,
+              "R2": -0.3711
+            },
+            "D4": {
+              "MAE": 7.75,
+              "RMSE": 10.08,
+              "R2": -0.4031
+            },
+            "D5": {
+              "MAE": 7.72,
+              "RMSE": 10.06,
+              "R2": -0.4244
+            },
+            "D6": {
+              "MAE": 7.68,
+              "RMSE": 10.04,
+              "R2": -0.4392
+            },
+            "D7": {
+              "MAE": 7.68,
+              "RMSE": 10.04,
+              "R2": -0.4611
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 15.08,
+              "RMSE": 19.15,
+              "R2": -0.3018
+            },
+            "D2": {
+              "MAE": 14.89,
+              "RMSE": 19.05,
+              "R2": -0.3269
+            },
+            "D3": {
+              "MAE": 14.83,
+              "RMSE": 19.01,
+              "R2": -0.3743
+            },
+            "D4": {
+              "MAE": 14.77,
+              "RMSE": 18.99,
+              "R2": -0.4217
+            },
+            "D5": {
+              "MAE": 14.87,
+              "RMSE": 19.05,
+              "R2": -0.4744
+            },
+            "D6": {
+              "MAE": 14.94,
+              "RMSE": 19.1,
+              "R2": -0.5182
+            },
+            "D7": {
+              "MAE": 14.91,
+              "RMSE": 19.1,
+              "R2": -0.5471
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 1.47,
+              "RMSE": 1.9,
+              "R2": -0.8244
+            },
+            "D2": {
+              "MAE": 1.5,
+              "RMSE": 1.92,
+              "R2": -0.767
+            },
+            "D3": {
+              "MAE": 1.47,
+              "RMSE": 1.88,
+              "R2": -0.6759
+            },
+            "D4": {
+              "MAE": 1.48,
+              "RMSE": 1.88,
+              "R2": -0.6657
+            },
+            "D5": {
+              "MAE": 1.49,
+              "RMSE": 1.89,
+              "R2": -0.6516
+            },
+            "D6": {
+              "MAE": 1.48,
+              "RMSE": 1.89,
+              "R2": -0.6511
+            },
+            "D7": {
+              "MAE": 1.46,
+              "RMSE": 1.87,
+              "R2": -0.6229
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.3,
+              "RMSE": 1.65,
+              "R2": -0.2451
+            },
+            "D2": {
+              "MAE": 1.32,
+              "RMSE": 1.66,
+              "R2": -0.2712
+            },
+            "D3": {
+              "MAE": 1.32,
+              "RMSE": 1.67,
+              "R2": -0.2837
+            },
+            "D4": {
+              "MAE": 1.3,
+              "RMSE": 1.65,
+              "R2": -0.2791
+            },
+            "D5": {
+              "MAE": 1.31,
+              "RMSE": 1.65,
+              "R2": -0.283
+            },
+            "D6": {
+              "MAE": 1.32,
+              "RMSE": 1.67,
+              "R2": -0.3082
+            },
+            "D7": {
+              "MAE": 1.34,
+              "RMSE": 1.68,
+              "R2": -0.3448
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 2.44,
+              "RMSE": 3.07,
+              "R2": -0.7851
+            },
+            "D2": {
+              "MAE": 2.43,
+              "RMSE": 3.06,
+              "R2": -0.7683
+            },
+            "D3": {
+              "MAE": 2.44,
+              "RMSE": 3.07,
+              "R2": -0.7676
+            },
+            "D4": {
+              "MAE": 2.43,
+              "RMSE": 3.06,
+              "R2": -0.7864
+            },
+            "D5": {
+              "MAE": 2.41,
+              "RMSE": 3.04,
+              "R2": -0.7716
+            },
+            "D6": {
+              "MAE": 2.36,
+              "RMSE": 2.99,
+              "R2": -0.7838
+            },
+            "D7": {
+              "MAE": 2.36,
+              "RMSE": 2.99,
+              "R2": -0.8013
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.07,
+              "RMSE": 0.08,
+              "R2": 0.5589
+            },
+            "D2": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5798
+            },
+            "D3": {
+              "MAE": 0.07,
+              "RMSE": 0.08,
+              "R2": 0.5666
+            },
+            "D4": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5535
+            },
+            "D5": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5684
+            },
+            "D6": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5748
+            },
+            "D7": {
+              "MAE": 0.06,
+              "RMSE": 0.08,
+              "R2": 0.5698
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 13.97,
+          "AQI_RMSE": 17.99,
+          "Category_Accuracy_Pct": 61.96
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 14.16,
+            "AQI_RMSE": 18.09,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 45.88
+          },
+          "D2": {
+            "AQI_MAE": 13.99,
+            "AQI_RMSE": 18.0,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D3": {
+            "AQI_MAE": 13.93,
+            "AQI_RMSE": 17.96,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D4": {
+            "AQI_MAE": 13.88,
+            "AQI_RMSE": 17.95,
+            "Category_Accuracy_Pct": 61.63,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D5": {
+            "AQI_MAE": 13.94,
+            "AQI_RMSE": 17.98,
+            "Category_Accuracy_Pct": 60.47,
+            "Directional_Accuracy_Pct": 43.53
+          },
+          "D6": {
+            "AQI_MAE": 13.95,
+            "AQI_RMSE": 17.99,
+            "Category_Accuracy_Pct": 60.47,
+            "Directional_Accuracy_Pct": 43.53
+          },
+          "D7": {
+            "AQI_MAE": 13.92,
+            "AQI_RMSE": 17.98,
+            "Category_Accuracy_Pct": 60.47,
+            "Directional_Accuracy_Pct": 43.53
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              72,
+              145
+            ],
+            [
+              84,
+              301
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 4.65,
+      "overall_pollutant_RMSE": 8.95,
+      "overall_pollutant_R2": 0.9169,
+      "overall_AQI_MAE": 13.97,
+      "overall_Category_Accuracy_Pct": 61.96
+    },
+    "Ridge_Regression": {
+      "model": "Ridge_Regression",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 9.59,
+          "RMSE": 14.88,
+          "R2": 0.7703,
+          "sMAPE": 39.1
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 7.58,
+            "RMSE": 10.62,
+            "R2": -15.3641,
+            "sMAPE": 35.63
+          },
+          "D2": {
+            "MAE": 10.12,
+            "RMSE": 15.33,
+            "R2": -14.9783,
+            "sMAPE": 42.15
+          },
+          "D3": {
+            "MAE": 10.56,
+            "RMSE": 16.77,
+            "R2": -11.4716,
+            "sMAPE": 44.28
+          },
+          "D4": {
+            "MAE": 10.02,
+            "RMSE": 15.77,
+            "R2": -11.1142,
+            "sMAPE": 41.61
+          },
+          "D5": {
+            "MAE": 9.92,
+            "RMSE": 15.56,
+            "R2": -10.2111,
+            "sMAPE": 38.83
+          },
+          "D6": {
+            "MAE": 9.5,
+            "RMSE": 14.67,
+            "R2": -9.7248,
+            "sMAPE": 36.67
+          },
+          "D7": {
+            "MAE": 9.41,
+            "RMSE": 14.64,
+            "R2": -9.3319,
+            "sMAPE": 34.54
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 16.14,
+            "RMSE": 19.17,
+            "R2": -4.0877,
+            "sMAPE": 52.57,
+            "DirAcc": 49.92
+          },
+          "PM10": {
+            "MAE": 22.96,
+            "RMSE": 28.28,
+            "R2": -2.1495,
+            "sMAPE": 27.39,
+            "DirAcc": 51.43
+          },
+          "NO2": {
+            "MAE": 6.64,
+            "RMSE": 7.94,
+            "R2": -29.2252,
+            "sMAPE": 32.39,
+            "DirAcc": 46.89
+          },
+          "SO2": {
+            "MAE": 5.35,
+            "RMSE": 6.41,
+            "R2": -18.1145,
+            "sMAPE": 42.8,
+            "DirAcc": 44.54
+          },
+          "O3": {
+            "MAE": 6.15,
+            "RMSE": 7.51,
+            "R2": -9.9209,
+            "sMAPE": 25.03,
+            "DirAcc": 48.4
+          },
+          "CO": {
+            "MAE": 0.29,
+            "RMSE": 0.34,
+            "R2": -6.9559,
+            "sMAPE": 54.43,
+            "DirAcc": 49.92
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 10.8,
+              "RMSE": 13.1,
+              "R2": -1.2231
+            },
+            "D2": {
+              "MAE": 16.5,
+              "RMSE": 19.34,
+              "R2": -3.9382
+            },
+            "D3": {
+              "MAE": 18.73,
+              "RMSE": 21.58,
+              "R2": -5.2927
+            },
+            "D4": {
+              "MAE": 15.27,
+              "RMSE": 17.86,
+              "R2": -3.4043
+            },
+            "D5": {
+              "MAE": 17.1,
+              "RMSE": 19.79,
+              "R2": -4.5125
+            },
+            "D6": {
+              "MAE": 17.85,
+              "RMSE": 21.06,
+              "R2": -5.3404
+            },
+            "D7": {
+              "MAE": 16.74,
+              "RMSE": 20.17,
+              "R2": -4.9026
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 13.86,
+              "RMSE": 17.6,
+              "R2": -0.0997
+            },
+            "D2": {
+              "MAE": 23.66,
+              "RMSE": 29.05,
+              "R2": -2.0864
+            },
+            "D3": {
+              "MAE": 26.8,
+              "RMSE": 32.72,
+              "R2": -3.0729
+            },
+            "D4": {
+              "MAE": 26.32,
+              "RMSE": 31.88,
+              "R2": -3.0062
+            },
+            "D5": {
+              "MAE": 24.91,
+              "RMSE": 30.23,
+              "R2": -2.7117
+            },
+            "D6": {
+              "MAE": 22.23,
+              "RMSE": 26.57,
+              "R2": -1.9379
+            },
+            "D7": {
+              "MAE": 22.95,
+              "RMSE": 27.17,
+              "R2": -2.1317
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 9.84,
+              "RMSE": 10.56,
+              "R2": -55.2332
+            },
+            "D2": {
+              "MAE": 9.55,
+              "RMSE": 10.35,
+              "R2": -50.3141
+            },
+            "D3": {
+              "MAE": 6.28,
+              "RMSE": 7.71,
+              "R2": -27.1293
+            },
+            "D4": {
+              "MAE": 5.69,
+              "RMSE": 6.88,
+              "R2": -21.1861
+            },
+            "D5": {
+              "MAE": 5.3,
+              "RMSE": 6.54,
+              "R2": -18.7973
+            },
+            "D6": {
+              "MAE": 5.19,
+              "RMSE": 6.38,
+              "R2": -17.9036
+            },
+            "D7": {
+              "MAE": 4.6,
+              "RMSE": 5.7,
+              "R2": -14.0125
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 7.16,
+              "RMSE": 8.02,
+              "R2": -28.4526
+            },
+            "D2": {
+              "MAE": 6.0,
+              "RMSE": 7.17,
+              "R2": -22.6247
+            },
+            "D3": {
+              "MAE": 5.05,
+              "RMSE": 5.96,
+              "R2": -15.4584
+            },
+            "D4": {
+              "MAE": 5.54,
+              "RMSE": 6.34,
+              "R2": -17.9378
+            },
+            "D5": {
+              "MAE": 4.74,
+              "RMSE": 5.77,
+              "R2": -14.6353
+            },
+            "D6": {
+              "MAE": 4.36,
+              "RMSE": 5.48,
+              "R2": -13.1692
+            },
+            "D7": {
+              "MAE": 4.62,
+              "RMSE": 5.72,
+              "R2": -14.5236
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 3.59,
+              "RMSE": 4.43,
+              "R2": -2.7066
+            },
+            "D2": {
+              "MAE": 4.73,
+              "RMSE": 5.82,
+              "R2": -5.3754
+            },
+            "D3": {
+              "MAE": 6.16,
+              "RMSE": 7.47,
+              "R2": -9.4767
+            },
+            "D4": {
+              "MAE": 6.98,
+              "RMSE": 8.28,
+              "R2": -12.1022
+            },
+            "D5": {
+              "MAE": 7.17,
+              "RMSE": 8.44,
+              "R2": -12.6271
+            },
+            "D6": {
+              "MAE": 7.12,
+              "RMSE": 8.42,
+              "R2": -13.0907
+            },
+            "D7": {
+              "MAE": 7.28,
+              "RMSE": 8.66,
+              "R2": -14.0678
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.25,
+              "RMSE": 0.29,
+              "R2": -4.4693
+            },
+            "D2": {
+              "MAE": 0.27,
+              "RMSE": 0.32,
+              "R2": -5.5313
+            },
+            "D3": {
+              "MAE": 0.32,
+              "RMSE": 0.38,
+              "R2": -8.3994
+            },
+            "D4": {
+              "MAE": 0.33,
+              "RMSE": 0.39,
+              "R2": -9.049
+            },
+            "D5": {
+              "MAE": 0.3,
+              "RMSE": 0.36,
+              "R2": -7.9826
+            },
+            "D6": {
+              "MAE": 0.27,
+              "RMSE": 0.33,
+              "R2": -6.9067
+            },
+            "D7": {
+              "MAE": 0.26,
+              "RMSE": 0.32,
+              "R2": -6.353
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 21.37,
+          "AQI_RMSE": 26.32,
+          "Category_Accuracy_Pct": 56.81
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 12.86,
+            "AQI_RMSE": 16.45,
+            "Category_Accuracy_Pct": 69.77,
+            "Directional_Accuracy_Pct": 45.88
+          },
+          "D2": {
+            "AQI_MAE": 21.27,
+            "AQI_RMSE": 26.06,
+            "Category_Accuracy_Pct": 59.3,
+            "Directional_Accuracy_Pct": 45.88
+          },
+          "D3": {
+            "AQI_MAE": 24.59,
+            "AQI_RMSE": 29.88,
+            "Category_Accuracy_Pct": 55.81,
+            "Directional_Accuracy_Pct": 44.71
+          },
+          "D4": {
+            "AQI_MAE": 24.64,
+            "AQI_RMSE": 29.84,
+            "Category_Accuracy_Pct": 52.33,
+            "Directional_Accuracy_Pct": 45.88
+          },
+          "D5": {
+            "AQI_MAE": 23.79,
+            "AQI_RMSE": 28.85,
+            "Category_Accuracy_Pct": 54.65,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D6": {
+            "AQI_MAE": 20.8,
+            "AQI_RMSE": 24.93,
+            "Category_Accuracy_Pct": 54.65,
+            "Directional_Accuracy_Pct": 45.88
+          },
+          "D7": {
+            "AQI_MAE": 21.66,
+            "AQI_RMSE": 25.7,
+            "Category_Accuracy_Pct": 51.16,
+            "Directional_Accuracy_Pct": 48.24
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Good",
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              0,
+              0,
+              0
+            ],
+            [
+              12,
+              39,
+              166
+            ],
+            [
+              10,
+              72,
+              303
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 9.59,
+      "overall_pollutant_RMSE": 14.88,
+      "overall_pollutant_R2": 0.7703,
+      "overall_AQI_MAE": 21.37,
+      "overall_Category_Accuracy_Pct": 56.81
+    },
+    "MultiOutput_GRU": {
+      "model": "MultiOutput_GRU",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 4.8,
+          "RMSE": 7.68,
+          "R2": 0.9388,
+          "sMAPE": 16.63
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 4.32,
+            "RMSE": 6.88,
+            "R2": -1.7938,
+            "sMAPE": 15.94
+          },
+          "D2": {
+            "MAE": 4.59,
+            "RMSE": 7.36,
+            "R2": -1.8615,
+            "sMAPE": 16.2
+          },
+          "D3": {
+            "MAE": 4.69,
+            "RMSE": 7.52,
+            "R2": -2.2279,
+            "sMAPE": 16.68
+          },
+          "D4": {
+            "MAE": 4.8,
+            "RMSE": 7.63,
+            "R2": -2.1795,
+            "sMAPE": 16.81
+          },
+          "D5": {
+            "MAE": 4.96,
+            "RMSE": 7.9,
+            "R2": -2.1561,
+            "sMAPE": 17.11
+          },
+          "D6": {
+            "MAE": 5.13,
+            "RMSE": 8.13,
+            "R2": -2.6727,
+            "sMAPE": 17.17
+          },
+          "D7": {
+            "MAE": 5.07,
+            "RMSE": 8.26,
+            "R2": -1.7595,
+            "sMAPE": 16.51
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 7.43,
+            "RMSE": 8.78,
+            "R2": -0.0641,
+            "sMAPE": 19.27,
+            "DirAcc": 50.59
+          },
+          "PM10": {
+            "MAE": 12.99,
+            "RMSE": 15.51,
+            "R2": 0.051,
+            "sMAPE": 14.68,
+            "DirAcc": 46.72
+          },
+          "NO2": {
+            "MAE": 4.71,
+            "RMSE": 5.19,
+            "R2": -11.7158,
+            "sMAPE": 25.02,
+            "DirAcc": 49.58
+          },
+          "SO2": {
+            "MAE": 1.45,
+            "RMSE": 1.68,
+            "R2": -0.3196,
+            "sMAPE": 14.63,
+            "DirAcc": 49.92
+          },
+          "O3": {
+            "MAE": 2.08,
+            "RMSE": 2.58,
+            "R2": -0.2804,
+            "sMAPE": 8.21,
+            "DirAcc": 50.25
+          },
+          "CO": {
+            "MAE": 0.11,
+            "RMSE": 0.13,
+            "R2": -0.2291,
+            "sMAPE": 17.99,
+            "DirAcc": 49.41
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 6.57,
+              "RMSE": 7.78,
+              "R2": 0.2153
+            },
+            "D2": {
+              "MAE": 7.01,
+              "RMSE": 8.39,
+              "R2": 0.0716
+            },
+            "D3": {
+              "MAE": 7.62,
+              "RMSE": 9.03,
+              "R2": -0.1019
+            },
+            "D4": {
+              "MAE": 7.17,
+              "RMSE": 8.68,
+              "R2": -0.0395
+            },
+            "D5": {
+              "MAE": 7.33,
+              "RMSE": 8.81,
+              "R2": -0.0931
+            },
+            "D6": {
+              "MAE": 8.33,
+              "RMSE": 9.49,
+              "R2": -0.2869
+            },
+            "D7": {
+              "MAE": 7.97,
+              "RMSE": 9.15,
+              "R2": -0.2142
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 11.58,
+              "RMSE": 13.84,
+              "R2": 0.3201
+            },
+            "D2": {
+              "MAE": 12.53,
+              "RMSE": 14.86,
+              "R2": 0.1924
+            },
+            "D3": {
+              "MAE": 11.91,
+              "RMSE": 14.8,
+              "R2": 0.1666
+            },
+            "D4": {
+              "MAE": 13.07,
+              "RMSE": 15.36,
+              "R2": 0.07
+            },
+            "D5": {
+              "MAE": 13.82,
+              "RMSE": 16.12,
+              "R2": -0.0548
+            },
+            "D6": {
+              "MAE": 13.34,
+              "RMSE": 16.2,
+              "R2": -0.0913
+            },
+            "D7": {
+              "MAE": 14.65,
+              "RMSE": 17.14,
+              "R2": -0.2465
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 4.19,
+              "RMSE": 4.77,
+              "R2": -10.4783
+            },
+            "D2": {
+              "MAE": 4.28,
+              "RMSE": 4.91,
+              "R2": -10.5718
+            },
+            "D3": {
+              "MAE": 4.96,
+              "RMSE": 5.39,
+              "R2": -12.7297
+            },
+            "D4": {
+              "MAE": 4.83,
+              "RMSE": 5.27,
+              "R2": -12.0425
+            },
+            "D5": {
+              "MAE": 4.84,
+              "RMSE": 5.21,
+              "R2": -11.5638
+            },
+            "D6": {
+              "MAE": 5.53,
+              "RMSE": 5.91,
+              "R2": -15.2009
+            },
+            "D7": {
+              "MAE": 4.37,
+              "RMSE": 4.75,
+              "R2": -9.4234
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.46,
+              "RMSE": 1.68,
+              "R2": -0.2908
+            },
+            "D2": {
+              "MAE": 1.48,
+              "RMSE": 1.72,
+              "R2": -0.3632
+            },
+            "D3": {
+              "MAE": 1.41,
+              "RMSE": 1.63,
+              "R2": -0.2281
+            },
+            "D4": {
+              "MAE": 1.52,
+              "RMSE": 1.77,
+              "R2": -0.4733
+            },
+            "D5": {
+              "MAE": 1.49,
+              "RMSE": 1.71,
+              "R2": -0.3789
+            },
+            "D6": {
+              "MAE": 1.48,
+              "RMSE": 1.69,
+              "R2": -0.3513
+            },
+            "D7": {
+              "MAE": 1.33,
+              "RMSE": 1.56,
+              "R2": -0.1519
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 1.99,
+              "RMSE": 2.47,
+              "R2": -0.1547
+            },
+            "D2": {
+              "MAE": 2.13,
+              "RMSE": 2.6,
+              "R2": -0.2775
+            },
+            "D3": {
+              "MAE": 2.15,
+              "RMSE": 2.65,
+              "R2": -0.3212
+            },
+            "D4": {
+              "MAE": 2.11,
+              "RMSE": 2.61,
+              "R2": -0.3027
+            },
+            "D5": {
+              "MAE": 2.2,
+              "RMSE": 2.71,
+              "R2": -0.405
+            },
+            "D6": {
+              "MAE": 2.0,
+              "RMSE": 2.5,
+              "R2": -0.2389
+            },
+            "D7": {
+              "MAE": 1.99,
+              "RMSE": 2.51,
+              "R2": -0.2624
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.12,
+              "RMSE": 0.15,
+              "R2": -0.3742
+            },
+            "D2": {
+              "MAE": 0.11,
+              "RMSE": 0.14,
+              "R2": -0.2207
+            },
+            "D3": {
+              "MAE": 0.11,
+              "RMSE": 0.13,
+              "R2": -0.1532
+            },
+            "D4": {
+              "MAE": 0.11,
+              "RMSE": 0.14,
+              "R2": -0.2893
+            },
+            "D5": {
+              "MAE": 0.11,
+              "RMSE": 0.14,
+              "R2": -0.4412
+            },
+            "D6": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.1334
+            },
+            "D7": {
+              "MAE": 0.1,
+              "RMSE": 0.13,
+              "R2": -0.2584
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 12.25,
+          "AQI_RMSE": 14.43,
+          "Category_Accuracy_Pct": 63.95
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 10.81,
+            "AQI_RMSE": 12.76,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 20.0
+          },
+          "D2": {
+            "AQI_MAE": 11.79,
+            "AQI_RMSE": 13.77,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 20.0
+          },
+          "D3": {
+            "AQI_MAE": 11.2,
+            "AQI_RMSE": 13.73,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 27.06
+          },
+          "D4": {
+            "AQI_MAE": 12.34,
+            "AQI_RMSE": 14.31,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 24.71
+          },
+          "D5": {
+            "AQI_MAE": 13.08,
+            "AQI_RMSE": 15.05,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 22.35
+          },
+          "D6": {
+            "AQI_MAE": 12.67,
+            "AQI_RMSE": 15.17,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 31.76
+          },
+          "D7": {
+            "AQI_MAE": 13.83,
+            "AQI_RMSE": 15.97,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 22.35
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              0,
+              217
+            ],
+            [
+              0,
+              385
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 4.8,
+      "overall_pollutant_RMSE": 7.68,
+      "overall_pollutant_R2": 0.9388,
+      "overall_AQI_MAE": 12.25,
+      "overall_Category_Accuracy_Pct": 63.95
+    },
+    "TCN": {
+      "model": "TCN",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 5.21,
+          "RMSE": 8.94,
+          "R2": 0.9171,
+          "sMAPE": 15.64
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 4.94,
+            "RMSE": 8.61,
+            "R2": -0.9564,
+            "sMAPE": 15.19
+          },
+          "D2": {
+            "MAE": 4.85,
+            "RMSE": 8.38,
+            "R2": -0.7152,
+            "sMAPE": 14.99
+          },
+          "D3": {
+            "MAE": 4.99,
+            "RMSE": 8.6,
+            "R2": -0.7198,
+            "sMAPE": 15.14
+          },
+          "D4": {
+            "MAE": 5.43,
+            "RMSE": 9.2,
+            "R2": -1.121,
+            "sMAPE": 16.28
+          },
+          "D5": {
+            "MAE": 5.32,
+            "RMSE": 9.0,
+            "R2": -0.9245,
+            "sMAPE": 15.74
+          },
+          "D6": {
+            "MAE": 5.36,
+            "RMSE": 8.99,
+            "R2": -1.1288,
+            "sMAPE": 16.05
+          },
+          "D7": {
+            "MAE": 5.62,
+            "RMSE": 9.71,
+            "R2": -1.0396,
+            "sMAPE": 16.07
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 8.98,
+            "RMSE": 10.42,
+            "R2": -0.4984,
+            "sMAPE": 23.4,
+            "DirAcc": 49.24
+          },
+          "PM10": {
+            "MAE": 15.85,
+            "RMSE": 18.69,
+            "R2": -0.3751,
+            "sMAPE": 17.93,
+            "DirAcc": 46.39
+          },
+          "NO2": {
+            "MAE": 2.98,
+            "RMSE": 3.46,
+            "R2": -4.6567,
+            "sMAPE": 16.72,
+            "DirAcc": 50.59
+          },
+          "SO2": {
+            "MAE": 1.14,
+            "RMSE": 1.36,
+            "R2": 0.1377,
+            "sMAPE": 11.67,
+            "DirAcc": 49.75
+          },
+          "O3": {
+            "MAE": 2.23,
+            "RMSE": 2.74,
+            "R2": -0.4405,
+            "sMAPE": 8.77,
+            "DirAcc": 49.41
+          },
+          "CO": {
+            "MAE": 0.09,
+            "RMSE": 0.11,
+            "R2": 0.1713,
+            "sMAPE": 15.33,
+            "DirAcc": 51.43
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 8.02,
+              "RMSE": 9.58,
+              "R2": -0.1885
+            },
+            "D2": {
+              "MAE": 8.45,
+              "RMSE": 10.01,
+              "R2": -0.322
+            },
+            "D3": {
+              "MAE": 8.42,
+              "RMSE": 9.97,
+              "R2": -0.3424
+            },
+            "D4": {
+              "MAE": 9.65,
+              "RMSE": 11.17,
+              "R2": -0.722
+            },
+            "D5": {
+              "MAE": 9.12,
+              "RMSE": 10.43,
+              "R2": -0.531
+            },
+            "D6": {
+              "MAE": 9.55,
+              "RMSE": 10.81,
+              "R2": -0.6685
+            },
+            "D7": {
+              "MAE": 9.66,
+              "RMSE": 10.87,
+              "R2": -0.7146
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 15.15,
+              "RMSE": 18.23,
+              "R2": -0.1801
+            },
+            "D2": {
+              "MAE": 14.6,
+              "RMSE": 17.38,
+              "R2": -0.1045
+            },
+            "D3": {
+              "MAE": 15.28,
+              "RMSE": 18.02,
+              "R2": -0.2355
+            },
+            "D4": {
+              "MAE": 16.18,
+              "RMSE": 18.97,
+              "R2": -0.4178
+            },
+            "D5": {
+              "MAE": 16.26,
+              "RMSE": 18.87,
+              "R2": -0.4467
+            },
+            "D6": {
+              "MAE": 15.84,
+              "RMSE": 18.55,
+              "R2": -0.4322
+            },
+            "D7": {
+              "MAE": 17.67,
+              "RMSE": 20.65,
+              "R2": -0.8084
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 3.19,
+              "RMSE": 3.6,
+              "R2": -5.541
+            },
+            "D2": {
+              "MAE": 2.74,
+              "RMSE": 3.18,
+              "R2": -3.8356
+            },
+            "D3": {
+              "MAE": 2.64,
+              "RMSE": 3.1,
+              "R2": -3.5428
+            },
+            "D4": {
+              "MAE": 3.21,
+              "RMSE": 3.69,
+              "R2": -5.3719
+            },
+            "D5": {
+              "MAE": 2.97,
+              "RMSE": 3.41,
+              "R2": -4.3762
+            },
+            "D6": {
+              "MAE": 3.19,
+              "RMSE": 3.72,
+              "R2": -5.4138
+            },
+            "D7": {
+              "MAE": 2.94,
+              "RMSE": 3.46,
+              "R2": -4.5156
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.08,
+              "RMSE": 1.27,
+              "R2": 0.2585
+            },
+            "D2": {
+              "MAE": 1.05,
+              "RMSE": 1.27,
+              "R2": 0.2644
+            },
+            "D3": {
+              "MAE": 1.19,
+              "RMSE": 1.4,
+              "R2": 0.0953
+            },
+            "D4": {
+              "MAE": 1.16,
+              "RMSE": 1.37,
+              "R2": 0.1131
+            },
+            "D5": {
+              "MAE": 1.14,
+              "RMSE": 1.36,
+              "R2": 0.1243
+            },
+            "D6": {
+              "MAE": 1.23,
+              "RMSE": 1.44,
+              "R2": 0.022
+            },
+            "D7": {
+              "MAE": 1.15,
+              "RMSE": 1.39,
+              "R2": 0.0865
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 2.08,
+              "RMSE": 2.56,
+              "R2": -0.2438
+            },
+            "D2": {
+              "MAE": 2.18,
+              "RMSE": 2.68,
+              "R2": -0.3567
+            },
+            "D3": {
+              "MAE": 2.31,
+              "RMSE": 2.8,
+              "R2": -0.4678
+            },
+            "D4": {
+              "MAE": 2.27,
+              "RMSE": 2.79,
+              "R2": -0.4833
+            },
+            "D5": {
+              "MAE": 2.33,
+              "RMSE": 2.83,
+              "R2": -0.5282
+            },
+            "D6": {
+              "MAE": 2.27,
+              "RMSE": 2.75,
+              "R2": -0.508
+            },
+            "D7": {
+              "MAE": 2.21,
+              "RMSE": 2.73,
+              "R2": -0.4959
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.1563
+            },
+            "D2": {
+              "MAE": 0.1,
+              "RMSE": 0.12,
+              "R2": 0.0633
+            },
+            "D3": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.1746
+            },
+            "D4": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.1558
+            },
+            "D5": {
+              "MAE": 0.08,
+              "RMSE": 0.11,
+              "R2": 0.2111
+            },
+            "D6": {
+              "MAE": 0.08,
+              "RMSE": 0.1,
+              "R2": 0.2276
+            },
+            "D7": {
+              "MAE": 0.08,
+              "RMSE": 0.1,
+              "R2": 0.2101
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 15.07,
+          "AQI_RMSE": 17.5,
+          "Category_Accuracy_Pct": 63.95
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 14.33,
+            "AQI_RMSE": 16.96,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 32.94
+          },
+          "D2": {
+            "AQI_MAE": 13.81,
+            "AQI_RMSE": 16.21,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 22.35
+          },
+          "D3": {
+            "AQI_MAE": 14.48,
+            "AQI_RMSE": 16.82,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 24.71
+          },
+          "D4": {
+            "AQI_MAE": 15.43,
+            "AQI_RMSE": 17.81,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 31.76
+          },
+          "D5": {
+            "AQI_MAE": 15.49,
+            "AQI_RMSE": 17.68,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 31.76
+          },
+          "D6": {
+            "AQI_MAE": 15.09,
+            "AQI_RMSE": 17.42,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 30.59
+          },
+          "D7": {
+            "AQI_MAE": 16.87,
+            "AQI_RMSE": 19.45,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 37.65
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              0,
+              217
+            ],
+            [
+              0,
+              385
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 5.21,
+      "overall_pollutant_RMSE": 8.94,
+      "overall_pollutant_R2": 0.9171,
+      "overall_AQI_MAE": 15.07,
+      "overall_Category_Accuracy_Pct": 63.95
+    },
+    "PatchTST": {
+      "model": "PatchTST",
+      "pollutant_metrics": {
+        "overall": {
+          "MAE": 5.45,
+          "RMSE": 9.45,
+          "R2": 0.9074,
+          "sMAPE": 16.33
+        },
+        "by_horizon": {
+          "D1": {
+            "MAE": 5.34,
+            "RMSE": 9.23,
+            "R2": -0.9969,
+            "sMAPE": 16.31
+          },
+          "D2": {
+            "MAE": 5.3,
+            "RMSE": 9.54,
+            "R2": -0.8677,
+            "sMAPE": 15.63
+          },
+          "D3": {
+            "MAE": 5.42,
+            "RMSE": 9.46,
+            "R2": -1.1469,
+            "sMAPE": 16.33
+          },
+          "D4": {
+            "MAE": 5.29,
+            "RMSE": 9.04,
+            "R2": -1.0045,
+            "sMAPE": 16.23
+          },
+          "D5": {
+            "MAE": 5.85,
+            "RMSE": 9.91,
+            "R2": -1.5411,
+            "sMAPE": 17.68
+          },
+          "D6": {
+            "MAE": 5.45,
+            "RMSE": 9.2,
+            "R2": -1.0231,
+            "sMAPE": 16.26
+          },
+          "D7": {
+            "MAE": 5.49,
+            "RMSE": 9.7,
+            "R2": -0.7834,
+            "sMAPE": 15.85
+          }
+        },
+        "by_pollutant": {
+          "PM2.5": {
+            "MAE": 9.67,
+            "RMSE": 11.42,
+            "R2": -0.7989,
+            "sMAPE": 25.62,
+            "DirAcc": 49.58
+          },
+          "PM10": {
+            "MAE": 16.63,
+            "RMSE": 19.56,
+            "R2": -0.4989,
+            "sMAPE": 19.01,
+            "DirAcc": 51.26
+          },
+          "NO2": {
+            "MAE": 2.71,
+            "RMSE": 3.36,
+            "R2": -4.3424,
+            "sMAPE": 15.11,
+            "DirAcc": 48.07
+          },
+          "SO2": {
+            "MAE": 1.28,
+            "RMSE": 1.55,
+            "R2": -0.1234,
+            "sMAPE": 12.97,
+            "DirAcc": 47.9
+          },
+          "O3": {
+            "MAE": 2.31,
+            "RMSE": 2.93,
+            "R2": -0.6488,
+            "sMAPE": 9.07,
+            "DirAcc": 50.59
+          },
+          "CO": {
+            "MAE": 0.09,
+            "RMSE": 0.12,
+            "R2": 0.1008,
+            "sMAPE": 16.19,
+            "DirAcc": 52.44
+          }
+        },
+        "matrix": {
+          "PM2.5": {
+            "D1": {
+              "MAE": 9.01,
+              "RMSE": 10.76,
+              "R2": -0.5008
+            },
+            "D2": {
+              "MAE": 9.49,
+              "RMSE": 11.27,
+              "R2": -0.6774
+            },
+            "D3": {
+              "MAE": 9.45,
+              "RMSE": 11.25,
+              "R2": -0.7111
+            },
+            "D4": {
+              "MAE": 9.89,
+              "RMSE": 11.73,
+              "R2": -0.9006
+            },
+            "D5": {
+              "MAE": 9.85,
+              "RMSE": 11.34,
+              "R2": -0.8078
+            },
+            "D6": {
+              "MAE": 9.93,
+              "RMSE": 11.66,
+              "R2": -0.9433
+            },
+            "D7": {
+              "MAE": 10.04,
+              "RMSE": 11.89,
+              "R2": -1.0513
+            }
+          },
+          "PM10": {
+            "D1": {
+              "MAE": 16.56,
+              "RMSE": 19.29,
+              "R2": -0.3211
+            },
+            "D2": {
+              "MAE": 16.36,
+              "RMSE": 19.96,
+              "R2": -0.4571
+            },
+            "D3": {
+              "MAE": 16.44,
+              "RMSE": 19.65,
+              "R2": -0.4687
+            },
+            "D4": {
+              "MAE": 15.63,
+              "RMSE": 18.2,
+              "R2": -0.3061
+            },
+            "D5": {
+              "MAE": 17.79,
+              "RMSE": 20.79,
+              "R2": -0.7554
+            },
+            "D6": {
+              "MAE": 16.34,
+              "RMSE": 18.74,
+              "R2": -0.4605
+            },
+            "D7": {
+              "MAE": 17.32,
+              "RMSE": 20.16,
+              "R2": -0.7234
+            }
+          },
+          "NO2": {
+            "D1": {
+              "MAE": 2.33,
+              "RMSE": 3.04,
+              "R2": -3.6617
+            },
+            "D2": {
+              "MAE": 2.42,
+              "RMSE": 3.11,
+              "R2": -3.6477
+            },
+            "D3": {
+              "MAE": 2.9,
+              "RMSE": 3.61,
+              "R2": -5.1718
+            },
+            "D4": {
+              "MAE": 2.57,
+              "RMSE": 3.26,
+              "R2": -3.9874
+            },
+            "D5": {
+              "MAE": 3.61,
+              "RMSE": 4.08,
+              "R2": -6.7089
+            },
+            "D6": {
+              "MAE": 2.97,
+              "RMSE": 3.42,
+              "R2": -4.43
+            },
+            "D7": {
+              "MAE": 2.2,
+              "RMSE": 2.86,
+              "R2": -2.7893
+            }
+          },
+          "SO2": {
+            "D1": {
+              "MAE": 1.52,
+              "RMSE": 1.77,
+              "R2": -0.4423
+            },
+            "D2": {
+              "MAE": 1.04,
+              "RMSE": 1.27,
+              "R2": 0.2557
+            },
+            "D3": {
+              "MAE": 1.22,
+              "RMSE": 1.47,
+              "R2": -0.004
+            },
+            "D4": {
+              "MAE": 1.31,
+              "RMSE": 1.59,
+              "R2": -0.186
+            },
+            "D5": {
+              "MAE": 1.35,
+              "RMSE": 1.64,
+              "R2": -0.2597
+            },
+            "D6": {
+              "MAE": 1.18,
+              "RMSE": 1.46,
+              "R2": -0.0101
+            },
+            "D7": {
+              "MAE": 1.34,
+              "RMSE": 1.6,
+              "R2": -0.217
+            }
+          },
+          "O3": {
+            "D1": {
+              "MAE": 2.53,
+              "RMSE": 3.31,
+              "R2": -1.0786
+            },
+            "D2": {
+              "MAE": 2.39,
+              "RMSE": 3.09,
+              "R2": -0.8008
+            },
+            "D3": {
+              "MAE": 2.45,
+              "RMSE": 3.04,
+              "R2": -0.7352
+            },
+            "D4": {
+              "MAE": 2.24,
+              "RMSE": 2.83,
+              "R2": -0.5312
+            },
+            "D5": {
+              "MAE": 2.41,
+              "RMSE": 3.04,
+              "R2": -0.7682
+            },
+            "D6": {
+              "MAE": 2.19,
+              "RMSE": 2.73,
+              "R2": -0.4785
+            },
+            "D7": {
+              "MAE": 1.96,
+              "RMSE": 2.39,
+              "R2": -0.1489
+            }
+          },
+          "CO": {
+            "D1": {
+              "MAE": 0.1,
+              "RMSE": 0.12,
+              "R2": 0.0233
+            },
+            "D2": {
+              "MAE": 0.09,
+              "RMSE": 0.12,
+              "R2": 0.1211
+            },
+            "D3": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.2096
+            },
+            "D4": {
+              "MAE": 0.1,
+              "RMSE": 0.13,
+              "R2": -0.1154
+            },
+            "D5": {
+              "MAE": 0.1,
+              "RMSE": 0.12,
+              "R2": 0.0535
+            },
+            "D6": {
+              "MAE": 0.09,
+              "RMSE": 0.11,
+              "R2": 0.184
+            },
+            "D7": {
+              "MAE": 0.09,
+              "RMSE": 0.1,
+              "R2": 0.2296
+            }
+          }
+        }
+      },
+      "aqi_metrics": {
+        "overall": {
+          "AQI_MAE": 15.81,
+          "AQI_RMSE": 18.36,
+          "Category_Accuracy_Pct": 63.95
+        },
+        "by_horizon": {
+          "D1": {
+            "AQI_MAE": 15.73,
+            "AQI_RMSE": 18.08,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 41.18
+          },
+          "D2": {
+            "AQI_MAE": 15.53,
+            "AQI_RMSE": 18.74,
+            "Category_Accuracy_Pct": 65.12,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D3": {
+            "AQI_MAE": 15.6,
+            "AQI_RMSE": 18.43,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 40.0
+          },
+          "D4": {
+            "AQI_MAE": 14.83,
+            "AQI_RMSE": 17.05,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 49.41
+          },
+          "D5": {
+            "AQI_MAE": 16.95,
+            "AQI_RMSE": 19.56,
+            "Category_Accuracy_Pct": 63.95,
+            "Directional_Accuracy_Pct": 41.18
+          },
+          "D6": {
+            "AQI_MAE": 15.59,
+            "AQI_RMSE": 17.61,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 41.18
+          },
+          "D7": {
+            "AQI_MAE": 16.43,
+            "AQI_RMSE": 18.92,
+            "Category_Accuracy_Pct": 62.79,
+            "Directional_Accuracy_Pct": 50.59
+          }
+        },
+        "confusion_matrix": {
+          "labels": [
+            "Moderate",
+            "Satisfactory"
+          ],
+          "matrix": [
+            [
+              0,
+              217
+            ],
+            [
+              0,
+              385
+            ]
+          ]
+        }
+      },
+      "overall_pollutant_MAE": 5.45,
+      "overall_pollutant_RMSE": 9.45,
+      "overall_pollutant_R2": 0.9074,
+      "overall_AQI_MAE": 15.81,
+      "overall_Category_Accuracy_Pct": 63.95
+    }
+  },
+  "best_model_selection": {
+    "selected_model": "MultiOutput_GRU",
+    "selection_criterion": "Lowest Validation Pollutant MAE & CPCB AQI MAE without test set leakage",
+    "validation_pollutant_MAE": 2.74,
+    "validation_AQI_MAE": 7.17,
+    "validation_category_acc_pct": 100.0
+  },
+  "ganesh_day1_comparison": {
+    "ganesh_baseline": {
+      "model": "Ganesh_BiLSTM_Pretrained",
+      "horizon": "Day 1 (Next-Day)",
+      "evaluated_samples": 86,
+      "AQI_MAE": 6.93,
+      "AQI_RMSE": 8.43,
+      "Category_Accuracy_Pct": 0.0,
+      "Directional_Accuracy_Pct": 42.35,
+      "provenance": "Pretrained on Indian CPCB dataset (Nadkarni et al.)"
+    },
+    "winning_model_day1": {
+      "model": "MultiOutput_GRU",
+      "AQI_MAE": 10.81,
+      "AQI_RMSE": 12.76,
+      "Category_Accuracy_Pct": 65.12
+    }
+  }
+}

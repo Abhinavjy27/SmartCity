@@ -1,0 +1,23 @@
+{
+  "deployed_model": "TemporalGRU_KNNCovariate",
+  "test_window": "2024-01-01 to 2025-12-31",
+  "mae_per_horizon": {
+    "Day 1": 9.48,
+    "Day 2": 10.77,
+    "Day 3": 11.77,
+    "Day 4": 12.42,
+    "Day 5": 12.59,
+    "Day 6": 12.69,
+    "Day 7": 13.42
+  },
+  "directional_accuracy": {
+    "Day 1": 38.8,
+    "Day 2": 38.8,
+    "Day 3": 21.2,
+    "Day 4": 36.5,
+    "Day 5": 37.6,
+    "Day 6": 45.9,
+    "Day 7": 49.4
+  },
+  "source": "backend/agents/pollution_agent/unified_forecast/artifacts/unified_best_model_meta.json"
+}
