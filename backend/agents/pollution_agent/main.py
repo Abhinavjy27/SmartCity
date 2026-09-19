@@ -3,8 +3,15 @@ SUPADSP Specialist Agent — Pollution & Air Quality Intelligence
 Handles TSPCB sensor streams, Gaussian Plume dispersion modeling, and AQI forecasting.
 """
 
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 import datetime
+from backend.agents.pollution_agent.schema import PollutionAnalyzeRequest, PollutionAnalyzeResponse
+from backend.agents.pollution_agent.dataset_loader import PollutionCalculator
+from backend.agents.pollution_agent.optimizer import InterventionOptimizer
+
+calculator = PollutionCalculator()
+optimizer = InterventionOptimizer()
+
 
 app = FastAPI(title="SUPADSP Pollution Agent", version="2.0.0")
 router = APIRouter()
@@ -97,5 +104,24 @@ def get_current_pollution():
             {"name": "Ramachandrapuram", "aqi": 112, "status": "MODERATE_AQI", "pm25": 61.3},
         ]
     }
+
+@router.post("/api/v1/pollution/analyze", response_model=PollutionAnalyzeResponse)
+def analyze_pollution(request: PollutionAnalyzeRequest):
+    sensor_data = calculator.calculate_metrics(request.location)
+    
+    if not sensor_data:
+        raise HTTPException(status_code=404, detail="No pollution data found for this location.")
+    
+    interventions = optimizer.generate_interventions(sensor_data)
+    
+    response_data = {
+        "city_avg_aqi": sensor_data["city_avg_aqi"],
+        "pm25": sensor_data["pm25"],
+        "pm10": sensor_data["pm10"],
+        "stations": sensor_data["stations"],
+        "suggested_interventions": interventions
+    }
+    
+    return PollutionAnalyzeResponse(**response_data)
 
 app.include_router(router)
