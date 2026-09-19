@@ -1,0 +1,10 @@
+Proxy needs:
+- pollutionApi.js, usePollution.js, and Pollution.jsx use the `/api/pollution` prefix.
+- origin's `vite.config.js` already provides a proxy for `/api` -> `http://127.0.0.1:8000`. So no new proxy is needed for pollution files.
+
+Pages reading pollution endpoints:
+- Dashboard.jsx (reads current AQI via `api.js`)
+- Planning.jsx (reads AQI summary via patch)
+
+Shared needs for patch:
+- Dashboard.jsx uses `api.js` which points `getCurrent` to `/api/v1/pollution/current`. This route does not exist in `pollution_agent/main.py` (it's `/api/pollution/current`). We will add a fix for `api.js` to `shared_hooks.patch`.

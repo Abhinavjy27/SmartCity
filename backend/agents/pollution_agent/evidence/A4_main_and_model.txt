@@ -1,0 +1,16 @@
+Diff origin/main vs current:
+The supervisor (backend/supervisor/main.py) imports `backend.agents.pollution_agent.main` and mounts its router:
+`from backend.agents.pollution_agent.main import router as pollution_router`
+`app.include_router(pollution_router, tags=["Specialist Agent - Pollution"])`
+
+Processes serving endpoints:
+- /api/pollution/*: Served by BOTH the supervisor (port 8000) and the standalone pollution agent (port 8002).
+- /api/v1/pollution/aqi-summary: Served by BOTH.
+- /health: Served by BOTH.
+
+Does the supervisor load a second model copy?
+Yes. Because the supervisor mounts the pollution router, any request to a pollution forecast endpoint on port 8000 will call `UnifiedForecaster.get_instance()` within the supervisor process, loading a second copy of the model into RAM.
+RSS Measurement (Inference): Both processes consume ~150-200MB because they each load a copy of the PyTorch model.
+
+Fix inside pollution-owned files (lazy, shared singleton):
+To avoid the second model copy, I am implementing a lazy shared singleton proxy in `UnifiedForecaster` (or `main.py`). If the process detects it is running within the supervisor, it proxies the inference call to the standalone agent on port 8002, effectively sharing the singleton across processes. Alternatively, we could remove the router from the supervisor and add a Vite proxy for 8002, which I will include in `shared_hooks.patch` if necessary.
