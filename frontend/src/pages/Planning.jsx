@@ -1,692 +1,1302 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
-  Brain, Send, Cpu, Database, AlertCircle, CheckCircle2,
-  Play, FileText, BarChart3, ShieldCheck, HelpCircle, ArrowRight, Zap, CheckSquare
+  Brain, Send, Cpu, AlertCircle, CheckCircle2,
+  Play, RefreshCw, BarChart3, Activity, Gauge,
+  Clock, ArrowRight, ShieldCheck, Sparkles, TrendingUp, TrendingDown
 } from 'lucide-react'
 import GlassCard from '../components/GlassCard'
 import StatusBadge from '../components/StatusBadge'
-import AnimatedCounter from '../components/AnimatedCounter'
 import ProblemSolverSection from '../components/ProblemSolverSection'
-import { planningApi, recommendationsApi, verificationApi } from '../services/api'
+import { planningApi } from '../services/api'
+import { usePlanner } from '../context/PlannerContext'
 
-const templates = [
-  {
-    label: "Tarnaka Energy Efficiency",
-    text: "Tell me how to use energy efficiently in Tarnaka."
-  },
-  {
-    label: "Cross-Domain Infrastructure",
-    text: "Identify the best areas for infrastructure investment while considering traffic, pollution, and energy grid load impact."
-  },
-  {
-    label: "Traffic Congestion Corridor",
-    text: "Traffic congestion has increased significantly around the Gachibowli Flyover corridor during evening rush hours. Suggest mitigation."
-  },
-  {
-    label: "Industrial Zone Air Quality",
-    text: "Air quality has deteriorated around the Nacharam Industrial Zone. Identify likely causes and recommend mitigation plans."
-  }
+const samplePrompts = [
+  "What is the traffic situation in Narayanguda?",
+  "Which corridor is the bottleneck?",
+  "Why is it slow?",
+  "How can I improve it?",
+  "Test the proposed intervention.",
+  "Was the intervention effective?"
 ]
 
-function extractLocationFromQuery(text) {
-  if (!text) return 'Hyderabad Central'
-  const lower = text.toLowerCase()
-  const locs = [
-    'tarnaka', 'narayanguda', 'madhapur', 'gachibowli', 'financial district',
-    'kukatpally', 'secunderabad', 'charminar', 'nacharam', 'begumpet',
-    'jubilee hills', 'sanathnagar', 'miyapur', 'lb nagar', 'hitech city',
-    'koti', 'ameerpet', 'banjara hills', 'panjagutta', 'somajiguda', 'uppal'
-  ]
-  for (const loc of locs) {
-    if (lower.includes(loc)) {
-      return loc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ', Hyderabad'
-    }
+function formatInterventionBadgeLabel(item) {
+  const type = String(item?.type || item?.intervention_type || 'Intervention').replace('_', ' ')
+  const target = item?.target || ''
+  const params = item?.parameters || {}
+  const paramParts = []
+  if (params.green_time_adjustment_sec !== undefined) {
+    paramParts.push(`+${params.green_time_adjustment_sec}s`)
+  } else if (params.adjustment_seconds !== undefined) {
+    paramParts.push(`+${params.adjustment_seconds}s`)
   }
-  return 'Hyderabad Central'
+  if (params.diversion_fraction !== undefined) {
+    paramParts.push(`${Math.round(params.diversion_fraction * 100)}%`)
+  }
+  const paramStr = paramParts.length > 0 ? ` ${paramParts.join(', ')}` : ''
+  const typeCapitalized = type.charAt(0).toUpperCase() + type.slice(1)
+  return `${typeCapitalized}${target ? ` — ${target}` : ''}${paramStr}`
 }
 
-function resolveDomainsFromQuery(text) {
-  if (!text) return ['traffic']
-  const lower = text.toLowerCase()
-  const domains = []
-  if (lower.includes('energy') || lower.includes('power') || lower.includes('substation') || lower.includes('grid') || lower.includes('transformer') || lower.includes('solar') || lower.includes('bess') || lower.includes('electricity') || lower.includes('feeder')) {
-    domains.push('energy')
+function resolveRequestedDuration(res, promptText) {
+  const txt = String(promptText || res?.query || res?.objective || '').toLowerCase()
+  if (txt.includes('300') && txt.includes('600')) {
+    return 'BOTH'
   }
-  if (lower.includes('traffic') || lower.includes('congestion') || lower.includes('vehicle') || lower.includes('signal') || lower.includes('corridor') || lower.includes('road') || lower.includes('speed') || lower.includes('flyover')) {
-    domains.push('traffic')
+  if (res?.final_response?.requested_duration) {
+    return Number(res.final_response.requested_duration)
   }
-  if (lower.includes('pollution') || lower.includes('aqi') || lower.includes('air quality') || lower.includes('pm2.5') || lower.includes('emission') || lower.includes('smog')) {
-    domains.push('pollution')
+  if (txt.includes('600s') || txt.includes('600 second') || txt.includes('600-second') || txt.includes('600')) {
+    return 600
   }
-  if (lower.includes('weather') || lower.includes('rain') || lower.includes('flood') || lower.includes('heatwave') || lower.includes('temperature') || lower.includes('stormwater')) {
-    domains.push('weather')
+  if (txt.includes('300s') || txt.includes('300 second') || txt.includes('300-second') || txt.includes('300')) {
+    return 300
   }
-  return domains.length > 0 ? domains : ['traffic']
+  if (txt.includes('120s') || txt.includes('120 second') || txt.includes('120-second') || txt.includes('120')) {
+    return 120
+  }
+  return null
+}
+
+function getScenarioDuration(s) {
+  if (!s) return null
+  const d = s.duration_seconds ?? s.duration ?? s.metadata?.duration_seconds ?? s.comparison?.intervention_duration_seconds ?? s.comparison?.baseline_duration_seconds
+  return d !== null && d !== undefined && !isNaN(Number(d)) ? Number(d) : null
+}
+
+export function getSimulationKey(sim) {
+  if (!sim) return ''
+  const sId = sim.scenario_id || (sim.intervention && (sim.intervention.type || sim.intervention.intervention_type)) || 'sim'
+  const dur = getScenarioDuration(sim) || 'unknown_dur'
+  const scen = sim.scenario || sim.metadata?.demand_profile || sim.comparison?.intervention_scenario || 'unknown_scen'
+  const seed = sim.seed ?? sim.metadata?.random_seed ?? sim.comparison?.intervention_seed ?? 'unknown_seed'
+  return `${sId}::dur_${dur}::scen_${scen}::seed_${seed}`
+}
+
+function parseMultiSimulationComparison(res, promptText) {
+  const finalResp = res?.final_response || {}
+  const rawScenarios = finalResp.tested_scenarios || res?.agent_results?.simulations || res?.collected_results?.simulations || []
+  if (!Array.isArray(rawScenarios) || rawScenarios.length === 0) return null
+
+  const targetDur = resolveRequestedDuration(res, promptText)
+  const isBoth = targetDur === 'BOTH'
+
+  const scenarios = (!isBoth && targetDur)
+    ? rawScenarios.filter(s => getScenarioDuration(s) === targetDur)
+    : rawScenarios
+
+  // Filter out pure baseline entries so table rows only show actual tested candidate interventions
+  const interventionScenarios = scenarios.filter(s => {
+    const intApplied = s.intervention || s.intervention_applied
+    if (!intApplied) return false
+    const sId = String(s.scenario_id || '').toLowerCase()
+    if (sId.startsWith('baseline') && !s.intervention && !s.intervention_applied) return false
+    return true
+  })
+
+  const displayScenarios = interventionScenarios.length >= 2 ? interventionScenarios : scenarios
+  if (displayScenarios.length <= 1) return null
+
+  // Extract canonical baseline reference and metrics shared across this experiment set
+  let canonicalBaseline = null
+  for (const scen of displayScenarios) {
+    const b = scen.baseline_metrics || scen.comparison?.baseline_summary
+    if (b && (b.average_speed_kmh !== undefined || b.average_delay_sec !== undefined)) {
+      canonicalBaseline = b
+      break
+    }
+  }
+  if (!canonicalBaseline) {
+    const trf = res?.agent_results?.traffic || res?.collected_results?.traffic
+    if (trf) {
+      canonicalBaseline = trf.metrics || trf
+    }
+  }
+
+  const items = displayScenarios.map(scen => {
+    const intApplied = scen.intervention || scen.intervention_applied || {}
+    const type = String(intApplied.type || 'intervention').replace('_', ' ')
+    const target = intApplied.target || ''
+    const params = intApplied.parameters || {}
+
+    const paramParts = []
+    if (params.green_time_adjustment_sec !== undefined) {
+      paramParts.push(`+${params.green_time_adjustment_sec}s green`)
+    } else if (params.adjustment_seconds !== undefined) {
+      paramParts.push(`+${params.adjustment_seconds}s green`)
+    }
+    if (params.diversion_fraction !== undefined) {
+      paramParts.push(`${Math.round(params.diversion_fraction * 100)}% diversion`)
+    }
+    const paramStr = paramParts.length > 0 ? ` (${paramParts.join(', ')})` : ''
+    const scenDur = getScenarioDuration(scen)
+    const durTag = isBoth && scenDur ? ` [${scenDur}s]` : ''
+    const label = `${type.charAt(0).toUpperCase() + type.slice(1)}${target ? ` — ${target}` : ''}${paramStr}${durTag}`
+
+    const comp = scen.comparison || {}
+    let tgtSpdDelta = comp.target_corridor_speed_change_pct
+    let tgtSpdVal = null
+    if (comp.corridor_comparisons && Array.isArray(comp.corridor_comparisons)) {
+      const match = comp.corridor_comparisons.find(c => c.name === target || String(c.id || '').toUpperCase().endsWith(String(target).slice(0, 2).toUpperCase()))
+      if (match) {
+        if (tgtSpdDelta === undefined || tgtSpdDelta === null) tgtSpdDelta = match.speed_change_pct
+        tgtSpdVal = match.intervention_speed_kmh
+      }
+    }
+
+    // Use NEW signed *_change_pct fields (negative = improved for delay/waiting/congestion)
+    const netSpdDelta = comp.speed_change_pct
+    const netSpdVal = comp.intervention_summary?.average_speed_kmh ?? scen.metrics?.average_speed_kmh
+    const delayChangePct = comp.delay_change_pct ?? null
+    const delayVal = comp.intervention_summary?.average_delay_sec ?? scen.metrics?.average_delay_sec
+    const waitChangePct = comp.waiting_time_change_pct ?? null
+    const waitVal = comp.intervention_summary?.average_waiting_time_sec ?? scen.metrics?.average_waiting_time_sec
+
+    const tradeOffs = scen.corridor_trade_offs || comp.corridor_trade_offs || []
+    const tradeOffsText = tradeOffs.length > 0 ? tradeOffs.join('; ') : (
+      (delayChangePct !== null && delayChangePct !== undefined && delayChangePct > 1.0)
+        ? `Network delay worsened by ${delayChangePct.toFixed(1)}%`
+        : 'No material trade-offs'
+    )
+    const hasTradeOffs = tradeOffs.length > 0 || (delayChangePct !== null && delayChangePct !== undefined && delayChangePct > 1.0)
+    const fmtSignedPct = (v) => v === null || v === undefined ? '—' : `${v > 0 ? '+' : ''}${v}%`
+
+    return {
+      intervention: label,
+      baselineMetrics: scen.baseline_metrics || comp.baseline_summary || canonicalBaseline,
+      baselineReference: scen.baseline_reference || comp.baseline_reference || null,
+      interventionMetrics: scen.intervention_metrics || comp.intervention_summary || scen.metrics,
+      targetSpeedDelta: tgtSpdDelta,
+      targetSpeedText: tgtSpdVal !== null && tgtSpdVal !== undefined
+        ? `${Number(tgtSpdVal).toFixed(1)} km/h (${(tgtSpdDelta ?? 0) > 0 ? '+' : ''}${tgtSpdDelta ?? 0}%)`
+        : (tgtSpdDelta !== undefined && tgtSpdDelta !== null ? `${tgtSpdDelta > 0 ? '+' : ''}${tgtSpdDelta}%` : '—'),
+      netSpeedDelta: netSpdDelta,
+      netSpeedText: netSpdVal !== null && netSpdVal !== undefined
+        ? `${Number(netSpdVal).toFixed(1)} km/h (${(netSpdDelta ?? 0) > 0 ? '+' : ''}${netSpdDelta ?? 0}%)`
+        : (netSpdDelta !== undefined && netSpdDelta !== null ? `${netSpdDelta > 0 ? '+' : ''}${netSpdDelta}%` : '—'),
+      delayChangePct,
+      delayText: delayVal !== null && delayVal !== undefined
+        ? `${Number(delayVal).toFixed(1)}s (${fmtSignedPct(delayChangePct)})`
+        : fmtSignedPct(delayChangePct),
+      waitingChangePct: waitChangePct,
+      waitingText: waitVal !== null && waitVal !== undefined
+        ? `${Number(waitVal).toFixed(1)}s (${fmtSignedPct(waitChangePct)})`
+        : fmtSignedPct(waitChangePct),
+      tradeOffsText,
+      hasTradeOffs,
+      scenario: comp.baseline_scenario || comp.intervention_scenario || scen.scenario || 'synthetic_peak_westbound',
+      durationSeconds: scenDur,
+      seed: comp.baseline_seed ?? comp.intervention_seed ?? scen.seed ?? scen.metadata?.random_seed ?? null,
+      fairComparison: comp.fair_comparison ?? true,
+    }
+  })
+
+  items.canonicalBaseline = canonicalBaseline
+  const firstComp = displayScenarios[0]?.comparison || {}
+  items.scenario = firstComp.baseline_scenario || firstComp.intervention_scenario || displayScenarios[0]?.scenario || 'synthetic_peak_westbound'
+  items.durationSeconds = isBoth ? '300s & 600s' : (targetDur || getScenarioDuration(displayScenarios[0]))
+  items.seed = firstComp.baseline_seed ?? firstComp.intervention_seed ?? displayScenarios[0]?.seed ?? displayScenarios[0]?.metadata?.random_seed ?? null
+  items.fairComparison = displayScenarios.every(s => s.comparison?.fair_comparison !== false)
+  return items
+}
+
+function parseTrafficEvidence(res) {
+  const trf = res?.agent_results?.traffic || res?.collected_results?.traffic
+  if (!trf) return null
+
+  const metrics = trf.metrics || {}
+  const obs = trf.observations || {}
+  const bottlenecks = trf.bottlenecks || []
+  const primaryBottleneck = bottlenecks[0] || null
+
+  const netSpeed = metrics.average_speed_kmh ?? trf.average_speed_kmh ?? obs.network_average_speed_kmh
+  const lowestCorridor = primaryBottleneck?.corridor || (
+    trf.corridors && trf.corridors.length > 0
+      ? [...trf.corridors].sort((a, b) => (a.avg_speed ?? 999) - (b.avg_speed ?? 999))[0]?.name
+      : null
+  )
+  const lowestSpeed = primaryBottleneck?.evidence?.speed_kmh ?? (
+    trf.corridors && trf.corridors.length > 0
+      ? [...trf.corridors].sort((a, b) => (a.avg_speed ?? 999) - (b.avg_speed ?? 999))[0]?.avg_speed
+      : null
+  )
+
+  const waitingTime = metrics.average_waiting_time_sec ?? trf.average_waiting_time_sec ?? obs.average_waiting_time_sec
+  const delay = metrics.average_delay_sec ?? trf.average_delay_sec ?? obs.average_delay_sec
+  const congestion = metrics.congestion_index ?? trf.congestion_index ?? obs.congestion_index
+  const activeVehicles = metrics.active_vehicles ?? trf.active_vehicles ?? obs.active_vehicles
+  const totalVehicles = metrics.total_vehicles ?? trf.total_vehicles ?? obs.total_vehicles
+  const throughput = metrics.throughput ?? trf.throughput ?? obs.throughput
+
+  return {
+    scenario: trf.metadata?.demand_profile || trf.scenario || 'synthetic_peak_westbound',
+    durationSeconds: getScenarioDuration(trf),
+    seed: trf.metadata?.random_seed ?? trf.seed ?? null,
+    netSpeed: netSpeed !== null && netSpeed !== undefined ? Number(netSpeed).toFixed(1) : null,
+    lowestCorridor,
+    lowestSpeed: lowestSpeed !== null && lowestSpeed !== undefined ? Number(lowestSpeed).toFixed(1) : null,
+    waitingTime: waitingTime !== null && waitingTime !== undefined ? Number(waitingTime).toFixed(1) : null,
+    delay: delay !== null && delay !== undefined ? Number(delay).toFixed(1) : null,
+    congestion: congestion !== null && congestion !== undefined ? `${(congestion * 100).toFixed(1)}%` : null,
+    activeVehicles,
+    totalVehicles,
+    throughput,
+    bottlenecks,
+    candidateInterventions: trf.candidate_interventions || [],
+    corridors: trf.corridors || []
+  }
+}
+
+function parsePollutionEvidence(res) {
+  const pol = res?.agent_results?.pollution || res?.collected_results?.pollution
+  if (!pol) return null
+
+  const aqi = pol.city_avg_aqi ?? pol.aqi ?? null
+  const pm25 = pol.pm25 !== null && pol.pm25 !== undefined ? Number(pol.pm25).toFixed(1) : null
+  const pm10 = pol.pm10 !== null && pol.pm10 !== undefined ? Number(pol.pm10).toFixed(1) : null
+  const stations = Array.isArray(pol.stations) ? pol.stations : []
+  const interventions = Array.isArray(pol.suggested_interventions) ? pol.suggested_interventions : []
+  const category = pol.category || (
+    aqi !== null ? (
+      aqi <= 50 ? 'Good' : (
+        aqi <= 100 ? 'Moderate' : (
+          aqi <= 200 ? 'Unhealthy' : 'Very Unhealthy'
+        )
+      )
+    ) : 'Unknown'
+  )
+
+  const dataMode = pol.data_mode || 'historical'
+  const dataSource = pol.data_source || (dataMode === 'current' ? 'open-meteo-air-quality-current' : 'open-meteo-air-quality-historical')
+  const dataTimestamp = pol.data_timestamp || null
+  const retrievedAt = pol.retrieved_at || null
+  const pollutants = pol.pollutants || null
+  const isModelled = pol.is_modelled !== false
+
+  return {
+    aqi,
+    pm25,
+    pm10,
+    category,
+    primaryPollutant: pol.primary_pollutant || 'PM2.5',
+    stations,
+    suggestedInterventions: interventions,
+    location: pol.location || 'Narayanguda, Hyderabad',
+    dataMode,
+    dataSource,
+    dataTimestamp,
+    retrievedAt,
+    pollutants,
+    isModelled,
+    isCurrent: dataMode === 'current',
+  }
+}
+
+function parseSimulationEvidence(res, promptText) {
+  let allSims = []
+  if (Array.isArray(res?.final_response?.tested_scenarios) && res.final_response.tested_scenarios.length > 0) {
+    allSims = res.final_response.tested_scenarios
+  } else if (Array.isArray(res?.agent_results?.simulations) && res.agent_results.simulations.length > 0) {
+    allSims = res.agent_results.simulations
+  } else if (Array.isArray(res?.agent_results?.simulation)) {
+    allSims = res.agent_results.simulation
+  } else if (res?.agent_results?.simulation && typeof res.agent_results.simulation === 'object') {
+    allSims = [res.agent_results.simulation]
+  }
+
+  if (allSims.length === 0) return null
+
+  const targetDur = resolveRequestedDuration(res, promptText)
+  let sim = null
+  if (targetDur && targetDur !== 'BOTH') {
+    const matching = allSims.filter(s => getScenarioDuration(s) === targetDur)
+    if (matching.length > 0) {
+      sim = matching[matching.length - 1]
+    } else {
+      // Requested specific horizon but no matching experiment exists: do not substitute another horizon!
+      return null
+    }
+  } else {
+    sim = allSims[allSims.length - 1]
+  }
+
+  if (!sim) return null
+
+  const comp = sim.comparison || res?.final_response?.comparison || res?.final_response?.metric_changes || {}
+  const baseSummary = comp.baseline_summary || null
+  const intSummary = comp.intervention_summary || sim.metrics || {}
+  const intervention = sim.intervention_applied || sim.intervention || {}
+
+  const isBaselineMissing = comp.status === 'baseline_missing' || !baseSummary || baseSummary.average_speed_kmh === null || baseSummary.average_speed_kmh === undefined
+  const actualDur = getScenarioDuration(sim) || comp.baseline_duration_seconds || comp.intervention_duration_seconds || null
+
+  return {
+    scenarioId: sim.scenario_id,
+    scenario: sim.scenario || comp.baseline_scenario || comp.intervention_scenario || 'synthetic_peak_westbound',
+    durationSeconds: actualDur,
+    seed: sim.seed ?? sim.metadata?.random_seed ?? comp.baseline_seed ?? comp.intervention_seed ?? null,
+    interventionType: intervention.type || 'Intervention',
+    interventionTarget: intervention.target || 'Corridor',
+    isBaselineMissing,
+    fairComparison: comp.fair_comparison ?? true,
+    status: comp.status || (isBaselineMissing ? 'baseline_missing' : 'SUCCESS'),
+    speedChangePct: comp.speed_change_pct,
+    // NEW signed change fields (negative = improved for delay/waiting/congestion)
+    delayChangePct: comp.delay_change_pct ?? null,
+    waitingTimeChangePct: comp.waiting_time_change_pct ?? null,
+    congestionChangePct: comp.congestion_change_pct ?? null,
+    // Legacy reduction fields kept for backward compat
+    delayReductionPct: comp.delay_reduction_pct,
+    waitingTimeReductionPct: comp.waiting_time_reduction_pct,
+    congestionReductionPct: comp.congestion_reduction_pct,
+    throughputChange: comp.throughput_change,
+    corridorComparisons: comp.corridor_comparisons || [],
+    corridorTradeOffs: sim.corridor_trade_offs || comp.corridor_trade_offs || [],
+    tradeOffSummary: sim.trade_off_summary || comp.trade_off_summary,
+    baseline: baseSummary ? {
+      speed: baseSummary.average_speed_kmh !== undefined && baseSummary.average_speed_kmh !== null ? Number(baseSummary.average_speed_kmh).toFixed(2) : null,
+      delay: baseSummary.average_delay_sec !== undefined && baseSummary.average_delay_sec !== null ? Number(baseSummary.average_delay_sec).toFixed(2) : null,
+      waiting: baseSummary.average_waiting_time_sec !== undefined && baseSummary.average_waiting_time_sec !== null ? Number(baseSummary.average_waiting_time_sec).toFixed(2) : null,
+      congestion: baseSummary.congestion_index !== undefined && baseSummary.congestion_index !== null ? `${(baseSummary.congestion_index * 100).toFixed(1)}%` : null,
+      throughput: baseSummary.throughput ?? null
+    } : null,
+    intervention: {
+      speed: intSummary.average_speed_kmh !== undefined && intSummary.average_speed_kmh !== null ? Number(intSummary.average_speed_kmh).toFixed(2) : null,
+      delay: intSummary.average_delay_sec !== undefined && intSummary.average_delay_sec !== null ? Number(intSummary.average_delay_sec).toFixed(2) : null,
+      waiting: intSummary.average_waiting_time_sec !== undefined && intSummary.average_waiting_time_sec !== null ? Number(intSummary.average_waiting_time_sec).toFixed(2) : null,
+      congestion: intSummary.congestion_index !== undefined && intSummary.congestion_index !== null ? `${(intSummary.congestion_index * 100).toFixed(1)}%` : null,
+      throughput: intSummary.throughput ?? null
+    }
+  }
 }
 
 export default function Planning() {
+  const { session, updateSession, clearSession } = usePlanner()
+  const conversation = session.conversation
   const [query, setQuery] = useState('')
   const [isProcessing, setIsProcessing] = useState(false)
-  const [step, setStep] = useState(0) // 0: Idle, 1: Supervisor Parse, 2: Context Load, 3: Agent Exec, 4: Complete
-  const [approvalStatus, setApprovalStatus] = useState('Generated') // Generated, Under Review, Approved
-  const [activeTaskId, setActiveTaskId] = useState(null)
-  const [activePlanId, setActivePlanId] = useState(null)
-  const [orchestratorResult, setOrchestratorResult] = useState(null)
+  const [errorMessage, setErrorMessage] = useState(null)
+  const messagesEndRef = useRef(null)
 
-  const handleRunAnalysis = async () => {
-    if (!query.trim()) return
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [conversation, isProcessing, errorMessage])
+
+  const handleSendPrompt = async (promptToSend) => {
+    const text = (promptToSend || query).trim()
+    if (!text || isProcessing) return
+
+    setErrorMessage(null)
     setIsProcessing(true)
-    setStep(1)
 
-    const targetLocation = extractLocationFromQuery(query)
-    const targetDomains = resolveDomainsFromQuery(query)
+    // Append user query to UI conversation immediately
+    const userTurn = {
+      role: 'user',
+      content: text,
+      timestamp: new Date().toLocaleTimeString()
+    }
+    const updatedHistory = [...conversation, userTurn]
+    updateSession(prev => ({ ...prev, conversation: updatedHistory }))
+    setQuery('')
 
     try {
-      // Step 1: Submit planning request to contract backend
-      const planRes = await planningApi.createPlanningRequest({
-        objective: query,
-        location: targetLocation,
-        requested_domains: targetDomains
+      // Build structured conversation history format expected by backend
+      const historyForBackend = conversation.map(turn => ({
+        role: turn.role,
+        content: turn.content,
+        simulations: turn.simulations || undefined,
+        tested_scenarios: turn.tested_scenarios || undefined,
+        tested_interventions: turn.testedInterventions || undefined,
+        untested_candidates: turn.untestedCandidates || undefined,
+        traffic_evidence: turn.trafficEvidence || undefined,
+        simulation_evidence: turn.simulationEvidence || undefined,
+        evidence_status: turn.evidenceStatus || undefined
+      }))
+
+      // Frontend -> Planner API (POST /agents/planner/execute)
+      const res = await planningApi.executePlanner({
+        query: text,
+        objective: text,
+        location: 'Narayanguda, Hyderabad',
+        session_id: session.sessionId,
+        conversation_history: historyForBackend,
+        simulation_history: session.simulationHistory?.length > 0 ? session.simulationHistory : undefined,
+        tested_scenarios: session.testedScenarios?.length > 0 ? session.testedScenarios : undefined,
+        max_cycles: 2
       })
-      setActivePlanId(planRes.request_id)
 
-      // Step 2: Context loading & intent resolution
-      setStep(2)
-      await new Promise(r => setTimeout(r, 500))
+      // Extract real LLM reasoning and real evidence
+      const finalResp = res.final_response || {}
+      const feedback = res.planner_feedback || {}
+      const insights = feedback.insights || {}
 
-      // Step 3: Dispatch Supervisor Orchestration
-      setStep(3)
-      const orcRes = await planningApi.executeOrchestrator({
-        request_id: planRes.request_id,
-        objective: query,
-        location: targetLocation,
-        domains: targetDomains,
-        workflow: 'monitor-detect-understand'
+      // Extract raw simulations
+      const newSims = []
+      if (Array.isArray(res.agent_results?.simulations)) {
+        newSims.push(...res.agent_results.simulations)
+      } else if (res.agent_results?.simulation) {
+        if (Array.isArray(res.agent_results.simulation)) {
+          newSims.push(...res.agent_results.simulation)
+        } else if (typeof res.agent_results.simulation === 'object') {
+          newSims.push(res.agent_results.simulation)
+        }
+      }
+      if (Array.isArray(finalResp.tested_scenarios)) {
+        newSims.push(...finalResp.tested_scenarios)
+      }
+
+      // Merge simulations into simulationHistory by duration-aware composite identity
+      const mergedSims = [...(session.simulationHistory || [])]
+      for (const sim of newSims) {
+        const key = getSimulationKey(sim)
+        if (key) {
+          const idx = mergedSims.findIndex(existing => getSimulationKey(existing) === key)
+          if (idx >= 0) {
+            mergedSims[idx] = sim
+          } else {
+            mergedSims.push(sim)
+          }
+        } else {
+          mergedSims.push(sim)
+        }
+      }
+
+      const testedScenarios = Array.isArray(finalResp.tested_scenarios) && finalResp.tested_scenarios.length > 0
+        ? finalResp.tested_scenarios
+        : (session.testedScenarios || [])
+
+      // Persistent TESTED interventions never regress
+      const newTested = finalResp.tested_interventions || []
+      const mergedTested = Array.from(new Set([...(session.testedInterventions || []), ...newTested]))
+      const newUntested = (finalResp.untested_candidates || []).filter(c => !mergedTested.includes(c))
+
+      // Deterministic evidence status based on historical completed simulations
+      const evidenceStatus = mergedSims.length >= 2
+        ? 'EVIDENCE: MULTI-SIMULATION EVALUATION'
+        : (mergedSims.length === 1
+          ? 'EVIDENCE: SINGLE SIMULATION RUN'
+          : (finalResp.evidence_status || res.evidence_status || session.evidenceStatus || 'EVIDENCE: OBSERVATIONAL'))
+
+      const summary = finalResp.summary || insights.analysis || 'Analysis completed.'
+      const recommendation = finalResp.recommendation || insights.recommendation || ''
+      const decision = finalResp.decision || feedback.decision || res.status || 'COMPLETED'
+
+      const trafficEv = parseTrafficEvidence(res)
+      const pollutionEv = parsePollutionEvidence(res)
+      const simEv = parseSimulationEvidence(res, text)
+      const multiComp = parseMultiSimulationComparison(res, text)
+      const runtimeInfo = res.runtime || null
+
+      const assistantTurn = {
+        role: 'assistant',
+        content: summary,
+        recommendation,
+        decision,
+        evidenceStatus,
+        testedInterventions: mergedTested,
+        untestedCandidates: newUntested,
+        trafficEvidence: trafficEv,
+        pollutionEvidence: pollutionEv,
+        simulationEvidence: simEv,
+        multiInterventionComparison: multiComp,
+        runtime: runtimeInfo,
+        dispatchedAgents: res.dispatched_agents || [],
+        simulations: mergedSims,
+        tested_scenarios: testedScenarios,
+        timestamp: new Date().toLocaleTimeString()
+      }
+
+      const nextConversation = [...updatedHistory, assistantTurn]
+      updateSession({
+        sessionId: session.sessionId,
+        conversation: nextConversation,
+        simulationHistory: mergedSims,
+        testedScenarios,
+        testedInterventions: mergedTested,
+        untestedCandidates: newUntested,
+        evidenceStatus,
+        baselineMetadata: res.agent_results?.traffic?.metrics || session.baselineMetadata
       })
-      setActiveTaskId(orcRes.task_id)
-      setOrchestratorResult(orcRes)
-
-      // Brief delay for smooth visual transition
-      await new Promise(r => setTimeout(r, 500))
-
-      // Step 4: Completed decision artifact
-      setStep(4)
     } catch (err) {
-      console.error('Orchestration failed:', err)
-      setOrchestratorResult({
-        status: 'FAILED',
-        error_message: err.message || 'Orchestration execution encountered an unexpected error.'
-      })
-      setStep(4)
+      console.error('Planner call failed:', err)
+      setErrorMessage(err.message || 'Unable to retrieve traffic evidence.')
     } finally {
       setIsProcessing(false)
     }
   }
 
-  const handleApprove = async () => {
-    try {
-      if (activePlanId) {
-        await recommendationsApi.approve(activePlanId, 'SENIOR_PLANNER_01', 'Approved from UI')
-        await verificationApi.verify(activePlanId)
-      }
-    } catch (e) {
-      console.warn('Backend approval sync warning:', e)
-    }
-    setApprovalStatus('Approved')
+  const handleClear = () => {
+    clearSession()
+    setErrorMessage(null)
+    setQuery('')
   }
-
-  const handleApplyTemplate = (txt) => {
-    setQuery(txt)
-  }
-
-  const feedback = orchestratorResult?.planner_feedback
-  const confidenceScore = feedback?.confidence ? `${Math.round(feedback.confidence * 1000) / 10}%` : '94.2%'
-  
-  const collectedResults = orchestratorResult?.collected_results || {}
-  const hasEnergy = Boolean(collectedResults.energy)
-  const hasTraffic = Boolean(collectedResults.traffic)
-  const hasPollution = Boolean(collectedResults.pollution)
-
-  // Parse raw recommendations into an array of distinct items
-  const rawRecText = feedback?.insights?.recommendation || feedback?.final_recommendation || feedback?.insights?.final_recommendation || ''
-  
-  let parsedRecs = []
-  if (rawRecText) {
-    if (rawRecText.includes('\n\n')) {
-      parsedRecs = rawRecText.split('\n\n').map(s => s.trim()).filter(Boolean)
-    } else if (rawRecText.includes('\n')) {
-      parsedRecs = rawRecText.split('\n').map(s => s.trim()).filter(Boolean)
-    } else if (/\d+\.\s+/.test(rawRecText)) {
-      parsedRecs = rawRecText.split(/(?=\d+\.\s+)/).map(s => s.trim()).filter(Boolean)
-    } else {
-      parsedRecs = [rawRecText]
-    }
-  }
-
-  if (parsedRecs.length === 0) {
-    if (hasEnergy) {
-      const loc = collectedResults.energy.location || 'Local Grid'
-      parsedRecs = [
-        `1. Demand Response & Peak Shaving: Shift non-critical industrial & commercial HVAC loads away from the evening peak window (18:00–21:30) across ${loc} (Est. 12–18% load reduction).`,
-        `2. Rooftop Solar & Microgrid Offsets: Integrate solar-assisted microgrid power on institutional and government buildings across ${loc} to buffer midday transformer draw (Est. 15–20% peak offset).`,
-        `3. Dynamic Street-Lighting Dimming: Implement automated LED dimming schedules calibrated with traffic flow volume after 22:00 (Est. 10–15% municipal energy savings).`,
-        `4. Battery Energy Storage (BESS) Dispatch: Discharge localized 20–40 MWh BESS battery packs during peak transformer load hours to avoid feeder line tripping.`
-      ]
-    } else {
-      parsedRecs = [
-        '1. Adaptive Signal Timing: Deploy AI-actuated traffic signal cycle extensions at primary intersection bottlenecks.',
-        '2. Dynamic Route Divergence: Advise vehicle re-routing toward Outer Ring Road (ORR) during congestion spikes.',
-        '3. Coordinated Municipal Offsets: Synchronize street-lighting dimming schedules to balance feeder loads.'
-      ]
-    }
-  }
-
-  const locationDisplay = extractLocationFromQuery(query)
-  const locationShort = locationDisplay.replace(', Hyderabad', '')
 
   return (
-    <div className="stagger-children">
-      <div className="page-header">
-        <h1><Brain size={28} /> Planning Assistant</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <StatusBadge status="AI" />
-          <span className="badge badge-info">Supervisor AI Platform</span>
+    <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      {/* Page Header */}
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <Brain size={28} color="var(--accent-traffic)" />
+            Smart City Planner
+          </h1>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+            Central LLM Decision Authority connected to real SUMO Traffic Agent telemetry & simulation
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          <span className="badge badge-ai" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+            Sole Decision Authority
+          </span>
+          <span className="badge badge-info" style={{ fontSize: '0.75rem', padding: '4px 10px' }}>
+            Narayanguda Network
+          </span>
         </div>
       </div>
 
-      <div className="grid-dashboard" style={{ gridTemplateColumns: '1fr 1fr' }}>
-
-        {/* Left Column: Planning Request Input Workspace */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <GlassCard>
-            <div className="section-title">Planner Input Workspace</div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-              Submit natural-language observations, infrastructure suggestions, or operational issues to the Supervisor AI.
-            </p>
-
-            <textarea
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Enter planning request or analysis parameters here (e.g. 'tell me how to use energy efficiently in tarnaka')..."
+      {/* Main Interactive Planner Section */}
+      <GlassCard glow="cyan">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+          <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+            <Sparkles size={18} color="var(--accent-traffic)" />
+            Ask the Smart City Planner...
+          </div>
+          {conversation.length > 0 && (
+            <button
+              onClick={handleClear}
+              disabled={isProcessing}
               style={{
-                width: '100%', minHeight: '140px', padding: '12px',
-                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-                fontFamily: 'var(--font-body)', fontSize: '0.875rem', resize: 'vertical',
-                outline: 'none', transition: 'border-color var(--transition-fast)'
+                display: 'flex', alignItems: 'center', gap: '6px',
+                padding: '4px 10px', background: 'transparent',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer'
               }}
-              onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-cyan)'}
-              onBlur={e => e.currentTarget.style.borderColor = 'var(--border-default)'}
-            />
-
-            {/* Template Buttons */}
-            <div style={{ marginTop: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px', fontFamily: 'var(--font-mono)' }}>
-                PLANNING INQUIRY TEMPLATES
-              </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {templates.map((t, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleApplyTemplate(t.text)}
-                    style={{
-                      padding: '6px 12px', background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer',
-                      transition: 'all var(--transition-fast)'
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-cyan)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Submit Button */}
-            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
-              <button
-                onClick={handleRunAnalysis}
-                disabled={isProcessing || !query.trim()}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '10px 20px', background: isProcessing || !query.trim() ? 'var(--bg-tertiary)' : 'var(--accent-blue)',
-                  color: isProcessing || !query.trim() ? 'var(--text-muted)' : '#fff',
-                  border: 'none', borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem', fontWeight: 600, cursor: isProcessing || !query.trim() ? 'not-allowed' : 'pointer',
-                  transition: 'background var(--transition-fast)'
-                }}
-              >
-                <Cpu size={16} />
-                <span>{isProcessing ? 'Orchestrating Agents...' : 'Dispatch Request'}</span>
-              </button>
-            </div>
-          </GlassCard>
-
-          {/* Supervisor AI Orchestration Workflow Visualizer */}
-          {(isProcessing || step > 0) && (
-            <GlassCard>
-              <div className="section-title">Supervisor AI Agent Orchestration Flow</div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Visualization of structural routing flow within the SUPADSP Agent Architecture.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative' }}>
-                {/* Intent Understanding */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 1 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 1 ? 'var(--accent-cyan-dim)' : (step > 1 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 1 ? 'var(--accent-cyan)' : (step > 1 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 1 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Cpu size={14} color={step === 1 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Intent Parsing & Capability Resolution</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Targeting: {locationDisplay}</div>
-                  </div>
-                </div>
-
-                {/* Context Manager */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 2 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 2 ? 'var(--accent-cyan-dim)' : (step > 2 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 2 ? 'var(--accent-cyan)' : (step > 2 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 2 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Database size={14} color={step === 2 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Spatial & Historical Context Loading</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Fetching substation maps, weather coefficients, and 3-year baseline telemetry</div>
-                  </div>
-                </div>
-
-                {/* Specialist Agent Resolution */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 3 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 3 ? 'var(--accent-cyan-dim)' : (step > 3 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 3 ? 'var(--accent-cyan)' : (step > 3 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 3 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Play size={14} color={step === 3 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Domain Specialist Executions</div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                      {hasEnergy && <span className="badge badge-smooth" style={{ fontSize: '0.6rem' }}>Energy Agent</span>}
-                      {hasTraffic && <span className="badge badge-info" style={{ fontSize: '0.6rem' }}>Traffic Agent</span>}
-                      {hasPollution && <span className="badge badge-ai" style={{ fontSize: '0.6rem' }}>Pollution Agent</span>}
-                      {!hasEnergy && !hasTraffic && !hasPollution && (
-                        <span className="badge badge-smooth" style={{ fontSize: '0.6rem' }}>Specialist Dispatched</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
+            >
+              <RefreshCw size={12} /> Clear Conversation
+            </button>
           )}
         </div>
 
-        {/* Right Column: Structured Decision Artifact Output */}
-        <div>
-          {step === 4 && (orchestratorResult?.is_out_of_scope || orchestratorResult?.status === 'REJECTED') ? (
-            <GlassCard glow="rose">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertCircle size={22} color="var(--accent-rose)" />
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                      GATEKEEPER VALIDATION ALERT
-                    </span>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px', color: 'var(--text-primary)' }}>
-                      Query Outside Smart City Scope
-                    </h3>
+        {/* Natural Language Prompt Input */}
+        <div style={{ position: 'relative', marginBottom: '14px' }}>
+          <textarea
+            value={query}
+            onChange={e => setQuery(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                handleSendPrompt()
+              }
+            }}
+            placeholder="Ask anything about Narayanguda traffic (e.g., 'What is the traffic situation in Narayanguda?' or 'Which corridor is the bottleneck?')..."
+            style={{
+              width: '100%', minHeight: '90px', padding: '14px',
+              background: 'var(--bg-input)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
+              fontFamily: 'var(--font-body)', fontSize: '0.9rem', resize: 'vertical',
+              outline: 'none', transition: 'border-color var(--transition-fast)'
+            }}
+            onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-traffic)'}
+            onBlur={e => e.currentTarget.style.borderColor = 'var(--border-default)'}
+          />
+        </div>
+
+        {/* Quick Sample Prompts */}
+        <div style={{ marginBottom: '16px' }}>
+          <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px', fontFamily: 'var(--font-mono)', textTransform: 'uppercase' }}>
+            Interactive Prompts
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+            {samplePrompts.map((promptText, idx) => (
+              <button
+                key={idx}
+                onClick={() => {
+                  setQuery(promptText)
+                }}
+                disabled={isProcessing}
+                style={{
+                  padding: '6px 12px', background: 'var(--bg-card)',
+                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                  color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer',
+                  transition: 'all var(--transition-fast)'
+                }}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-traffic)'; e.currentTarget.style.color = 'var(--text-primary)' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
+              >
+                {promptText}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '12px' }}>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+            Press Enter or click Send
+          </span>
+          <button
+            onClick={() => handleSendPrompt()}
+            disabled={isProcessing || !query.trim()}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              padding: '10px 24px',
+              background: isProcessing || !query.trim() ? 'var(--bg-tertiary)' : 'var(--accent-traffic)',
+              color: '#fff', border: 'none', borderRadius: 'var(--radius-sm)',
+              fontSize: '0.85rem', fontWeight: 600,
+              cursor: isProcessing || !query.trim() ? 'not-allowed' : 'pointer',
+              transition: 'background var(--transition-fast)'
+            }}
+          >
+            {isProcessing ? (
+              <>
+                <RefreshCw size={16} className="spin" style={{ animation: 'spin 1s linear infinite' }} />
+                <span>Planner is analyzing traffic conditions...</span>
+              </>
+            ) : (
+              <>
+                <Send size={16} />
+                <span>Send</span>
+              </>
+            )}
+          </button>
+        </div>
+      </GlassCard>
+
+      {/* Honest Error State */}
+      {errorMessage && (
+        <GlassCard style={{ borderColor: 'var(--accent-warning)', background: 'var(--accent-warning-dim)' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+            <AlertCircle size={22} color="var(--accent-warning)" style={{ flexShrink: 0, marginTop: '2px' }} />
+            <div>
+              <div style={{ fontWeight: 600, color: 'var(--accent-warning)', fontSize: '0.9rem' }}>
+                Unable to retrieve traffic evidence.
+              </div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                {errorMessage}
+              </div>
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Processing Indicator */}
+      {isProcessing && (
+        <GlassCard style={{ display: 'flex', alignItems: 'center', gap: '14px', borderStyle: 'dashed' }}>
+          <div style={{
+            width: 32, height: 32, borderRadius: '50%',
+            border: '3px solid var(--accent-traffic-dim)', borderTopColor: 'var(--accent-traffic)',
+            animation: 'spin 1s linear infinite'
+          }} />
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--text-primary)' }}>
+              Planner is analyzing traffic conditions...
+            </div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              Dispatching real Traffic Agent, evaluating TraCI telemetry, and synthesizing LLM reasoning.
+            </div>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Conversation Stream */}
+      {conversation.length > 0 ? (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-md)' }}>
+          {conversation.map((turn, index) => (
+            <div key={index}>
+              {turn.role === 'user' ? (
+                /* User Prompt Bubble */
+                <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+                  <div style={{
+                    maxWidth: '80%', padding: '12px 18px',
+                    background: 'var(--bg-card)', border: '1px solid var(--border-default)',
+                    borderRadius: 'var(--radius-md) var(--radius-md) 0 var(--radius-md)',
+                    boxShadow: '0 2px 6px rgba(0,0,0,0.03)'
+                  }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '4px', fontFamily: 'var(--font-mono)' }}>
+                      YOU • {turn.timestamp}
+                    </div>
+                    <div style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 500 }}>
+                      {turn.content}
+                    </div>
                   </div>
                 </div>
-                <StatusBadge status="WARNING" />
-              </div>
-
-              <div style={{
-                padding: '16px',
-                background: 'rgba(244, 63, 94, 0.08)',
-                border: '1px solid rgba(244, 63, 94, 0.25)',
-                borderRadius: 'var(--radius-md)',
-                marginBottom: '20px'
-              }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: '8px' }}>
-                  {orchestratorResult?.out_of_scope_message || orchestratorResult?.planner_feedback?.insights?.analysis || 'This query does not match any urban planning domain in the SUPADSP system.'}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  The SUPADSP decision support engine specifically optimizes municipal urban infrastructure and does not process general programming, trivia, or non-urban queries.
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, marginBottom: '10px' }}>
-                  SUPPORTED SMART CITY DOMAINS
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '2px' }}>🚦 Traffic & Mobility</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Congestion, signal cycles, corridor speeds</div>
+              ) : (
+                /* Planner Response Card */
+                <GlassCard glow="cyan" style={{ marginBottom: '8px' }}>
+                  {/* Card Header */}
+                  <div style={{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                    borderBottom: '1px solid var(--border-default)', paddingBottom: '10px', marginBottom: '14px'
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <Brain size={18} color="var(--accent-traffic)" />
+                      <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                        Smart City Planner Response
+                      </span>
+                      <span className="badge badge-smooth" style={{ fontSize: '0.65rem' }}>
+                        {turn.decision || 'COMPLETED'}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      <span className="badge badge-smooth" style={{
+                        fontSize: '0.68rem',
+                        fontWeight: 700,
+                        fontFamily: 'var(--font-mono)',
+                        padding: '3px 8px',
+                        borderRadius: '4px',
+                        background: turn.evidenceStatus?.includes('MULTI') ? 'rgba(16, 185, 129, 0.15)' : (
+                          turn.evidenceStatus?.includes('SINGLE') ? 'rgba(59, 130, 246, 0.15)' : 'rgba(245, 158, 11, 0.15)'
+                        ),
+                        color: turn.evidenceStatus?.includes('MULTI') ? '#10b981' : (
+                          turn.evidenceStatus?.includes('SINGLE') ? '#60a5fa' : '#f59e0b'
+                        ),
+                        border: `1px solid ${turn.evidenceStatus?.includes('MULTI') ? 'rgba(16, 185, 129, 0.3)' : (
+                          turn.evidenceStatus?.includes('SINGLE') ? 'rgba(59, 130, 246, 0.3)' : 'rgba(245, 158, 11, 0.3)'
+                        )}`
+                      }}>
+                        {turn.evidenceStatus || 'EVIDENCE: OBSERVATIONAL'}
+                      </span>
+                      <span style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                        {turn.timestamp}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-emerald)', marginBottom: '2px' }}>⚡ Smart Energy Grid</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Substations, peak load, solar, BESS storage</div>
-                  </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-amber)', marginBottom: '2px' }}>🌫️ Air Quality & Pollution</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>AQI, PM2.5, industrial emissions, mist cannons</div>
-                  </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: '2px' }}>🌧️ Weather & Stormwater</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Rainfall, underpass flooding, heatwave alerts</div>
-                  </div>
-                </div>
-              </div>
 
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-default)', paddingTop: '16px' }}>
-                <button
-                  onClick={() => { setQuery('Tell me how to use energy efficiently in Tarnaka.'); setStep(0); }}
-                  style={{
-                    padding: '8px 14px', background: 'var(--accent-blue)', color: '#fff',
-                    border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                  }}
-                >
-                  Load Sample Energy Query
-                </button>
-                <button
-                  onClick={() => { setStep(0); setQuery(''); setOrchestratorResult(null); }}
-                  style={{
-                    padding: '8px 14px', background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', cursor: 'pointer'
-                  }}
-                >
-                  Clear Workspace
-                </button>
-              </div>
-            </GlassCard>
-          ) : step === 4 && (orchestratorResult?.status === 'FAILED' || (orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && Object.keys(collectedResults).length === 0)) ? (
-            <GlassCard glow="rose">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 600, letterSpacing: '0.05em' }}>
-                    ORCHESTRATION FAILED
-                  </span>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px', color: 'var(--accent-rose)' }}>Specialist Agent Dispatch Failed</h3>
-                </div>
-              </div>
-              <div style={{ padding: '16px', background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                  {orchestratorResult?.error_message || orchestratorResult?.planner_feedback?.analysis || 'The planner was unable to collect telemetry from the required specialist agents.'}
-                </div>
-                {orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    Failed agents: {Object.keys(orchestratorResult.failures).join(', ')}
+                  {/* Runtime Provenance Bar (Honest Metadata) */}
+                  {turn.runtime && (
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
+                      padding: '6px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
+                      marginBottom: '12px', border: '1px solid var(--border-default)'
+                    }}>
+                      <span><strong>LLM:</strong> {turn.runtime.llm_provider || 'Groq'}</span>
+                      <span>•</span>
+                      <span><strong>Planner Calls:</strong> {turn.runtime.llm_calls || 1}</span>
+                      <span>•</span>
+                      <span><strong>Specialist:</strong> {turn.dispatchedAgents?.length > 0 ? turn.dispatchedAgents.map(a => a.replace('_agent', '').toUpperCase()).join(', ') : 'None'}</span>
+                      <span>•</span>
+                      <span><strong>Simulation:</strong> {turn.runtime.simulation_runs?.length > 0 ? `${turn.runtime.simulation_runs.length} Runs` : 'Not Required'}</span>
+                      <span>•</span>
+                      <span><strong>Cache:</strong> {turn.runtime.cache_used ? 'YES' : 'NO'}</span>
+                      <span>•</span>
+                      <span><strong>Latency:</strong> {turn.runtime.total_latency_ms ? `${turn.runtime.total_latency_ms}ms` : '—'}</span>
+                    </div>
+                  )}
+
+                  {/* Natural-Language Analysis */}
+                  <div style={{ marginBottom: '14px' }}>
+                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, fontFamily: 'var(--font-mono)', marginBottom: '4px', textTransform: 'uppercase' }}>
+                      Reasoning & Analysis
+                    </div>
+                    <p style={{ fontSize: '0.875rem', color: 'var(--text-primary)', lineHeight: 1.5, margin: 0 }}>
+                      {turn.content}
+                    </p>
                   </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  onClick={handleRunAnalysis}
-                  style={{
-                    padding: '8px 16px', background: 'var(--accent-cyan)', color: 'var(--bg-primary)',
-                    border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer'
-                  }}
-                >
-                  Retry Analysis
-                </button>
-              </div>
-            </GlassCard>
-          ) : step === 4 ? (
-            <GlassCard glow="violet">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-violet)', fontFamily: 'var(--font-mono)', fontWeight: 600, letterSpacing: '0.05em' }}>
-                    DECISION SUPPORT ARTIFACT
-                  </span>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px' }}>AI Planning Multi-Recommendations</h3>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-emerald)', fontFamily: 'var(--font-mono)' }}>{confidenceScore}</div>
-                  <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>CONFIDENCE SCORE</div>
-                </div>
-              </div>
 
-              {/* Multi-Recommendation Cards */}
-              <div style={{ marginBottom: '18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    RECOMMENDED ACTIONS ({parsedRecs.length})
-                  </span>
-                  <span className="badge badge-ai" style={{ fontSize: '0.6rem' }}>Multi-Strategy</span>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {parsedRecs.map((recText, idx) => {
-                    let cleanText = recText.replace(/^\d+\.\s*/, '')
-                    
-                    // Extract priority tag if present like [HIGH], [CRITICAL], [MEDIUM]
-                    let priority = null
-                    const prioMatch = cleanText.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i)
-                    if (prioMatch) {
-                      priority = prioMatch[1].toUpperCase()
-                      cleanText = cleanText.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i, '')
-                    }
-
-                    const [titlePart, ...descParts] = cleanText.includes(':') ? cleanText.split(':') : [cleanText, '']
-                    const descPart = descParts.join(':').trim()
-
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: '12px 14px',
-                          background: 'var(--bg-primary)',
-                          border: '1px solid var(--border-default)',
-                          borderRadius: 'var(--radius-sm)',
-                          display: 'flex',
-                          gap: '12px',
-                          alignItems: 'flex-start',
-                          transition: 'border-color var(--transition-fast)'
-                        }}
-                      >
-                        <div style={{
-                          width: '24px', height: '24px', borderRadius: '50%',
-                          background: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, marginTop: '2px',
-                          border: '1px solid rgba(0,240,255,0.25)'
+                  {/* Tested vs Untested Interventions Badges */}
+                  {((turn.testedInterventions && turn.testedInterventions.length > 0) || (turn.untestedCandidates && turn.untestedCandidates.length > 0)) && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '14px' }}>
+                      {turn.testedInterventions?.map((t, idx) => (
+                        <div key={`tested-${idx}`} style={{
+                          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem',
+                          padding: '3px 8px', background: 'rgba(16, 185, 129, 0.1)',
+                          border: '1px solid rgba(16, 185, 129, 0.25)', borderRadius: '4px', color: '#10b981'
                         }}>
-                          {idx + 1}
+                          <span style={{ fontWeight: 800, fontSize: '0.62rem', background: '#10b981', color: '#000', padding: '1px 4px', borderRadius: '3px' }}>
+                            TESTED
+                          </span>
+                          <span style={{ fontWeight: 500 }}>
+                            {formatInterventionBadgeLabel(t)}
+                          </span>
                         </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {titlePart.trim()}
+                      ))}
+                      {turn.untestedCandidates?.map((u, idx) => (
+                        <div key={`untested-${idx}`} style={{
+                          display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem',
+                          padding: '3px 8px', background: 'rgba(100, 116, 139, 0.1)',
+                          border: '1px solid rgba(100, 116, 139, 0.25)', borderRadius: '4px', color: '#94a3b8'
+                        }}>
+                          <span style={{ fontWeight: 800, fontSize: '0.62rem', background: '#64748b', color: '#fff', padding: '1px 4px', borderRadius: '3px' }}>
+                            UNTESTED
+                          </span>
+                          <span style={{ fontWeight: 500 }}>
+                            {formatInterventionBadgeLabel(u)}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Natural-Language Recommendation */}
+                  {turn.recommendation && (
+                    <div style={{
+                      padding: '12px 14px', background: 'var(--accent-traffic-dim)',
+                      borderRadius: 'var(--radius-sm)', border: '1px solid rgba(47,143,114,0.2)',
+                      marginBottom: '16px'
+                    }}>
+                      <div style={{ fontSize: '0.7rem', color: 'var(--accent-traffic)', fontWeight: 700, fontFamily: 'var(--font-mono)', marginBottom: '4px', textTransform: 'uppercase' }}>
+                        Proposed Recommendation
+                      </div>
+                      <p style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.4, margin: 0, fontWeight: 500 }}>
+                        {turn.recommendation}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Multi-Intervention Empirical Comparison Table */}
+                  {turn.multiInterventionComparison && turn.multiInterventionComparison.length > 1 && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-default)', paddingTop: '14px', marginBottom: '16px' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                        <div style={{
+                          fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)',
+                          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <BarChart3 size={14} color="var(--accent-traffic)" />
+                          Multi-Intervention Empirical Comparison (Real SUMO)
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)' }}>
+                            {turn.multiInterventionComparison.scenario || 'synthetic_peak_westbound'} / {turn.multiInterventionComparison.durationSeconds ? (typeof turn.multiInterventionComparison.durationSeconds === 'number' ? `${turn.multiInterventionComparison.durationSeconds}s` : turn.multiInterventionComparison.durationSeconds) : 'Unknown duration'}
+                            {turn.multiInterventionComparison.seed !== undefined && turn.multiInterventionComparison.seed !== null ? ` (Seed ${turn.multiInterventionComparison.seed})` : ''}
+                          </span>
+                          {turn.multiInterventionComparison.canonicalBaseline && (
+                            <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)', background: 'var(--bg-card)' }}>
+                              Baseline: {Number(turn.multiInterventionComparison.canonicalBaseline.average_speed_kmh ?? 0).toFixed(1)} km/h | {Number(turn.multiInterventionComparison.canonicalBaseline.average_delay_sec ?? 0).toFixed(1)}s delay
                             </span>
-                            {priority && (
-                              <span className={`badge ${priority === 'CRITICAL' ? 'badge-heavy' : priority === 'HIGH' ? 'badge-moderate' : 'badge-smooth'}`} style={{ fontSize: '0.6rem', padding: '1px 6px' }}>
-                                {priority}
-                              </span>
-                            )}
+                          )}
+                          <span style={{ fontSize: '0.65rem', color: turn.multiInterventionComparison.fairComparison === false ? 'var(--accent-warning)' : 'var(--text-muted)' }}>
+                            {turn.multiInterventionComparison.fairComparison === false ? 'NOT FAIR PAIRED' : 'Fair Paired Comparison'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div style={{ overflowX: 'auto', marginBottom: '8px' }}>
+                        <table style={{
+                          width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem',
+                          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)'
+                        }}>
+                          <thead>
+                            <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                              <th style={{ padding: '8px 10px' }}>Tested Intervention</th>
+                              <th style={{ padding: '8px 10px' }}>Target Corridor Speed</th>
+                              <th style={{ padding: '8px 10px' }}>Network Speed</th>
+                              <th style={{ padding: '8px 10px' }}>Network Delay</th>
+                              <th style={{ padding: '8px 10px' }}>Waiting Time</th>
+                              <th style={{ padding: '8px 10px' }}>Observed Trade-offs</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {turn.multiInterventionComparison.map((row, idx) => (
+                              <tr key={idx} style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                <td style={{ padding: '8px 10px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  {row.intervention}
+                                </td>
+                                <td style={{
+                                  padding: '8px 10px', fontWeight: 600,
+                                  color: (row.targetSpeedDelta ?? 0) > 0 ? 'var(--accent-emerald)' : ((row.targetSpeedDelta ?? 0) < 0 ? 'var(--accent-warning)' : 'var(--text-secondary)')
+                                }}>
+                                  {row.targetSpeedText}
+                                </td>
+                                <td style={{
+                                  padding: '8px 10px',
+                                  color: (row.netSpeedDelta ?? 0) >= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)'
+                                }}>
+                                  {row.netSpeedText}
+                                </td>
+                                <td style={{
+                                  padding: '8px 10px',
+                                  color: (row.delayChangePct ?? 0) <= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)'
+                                }}>
+                                  {row.delayText}
+                                </td>
+                                <td style={{
+                                  padding: '8px 10px',
+                                  color: (row.waitingChangePct ?? 0) <= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)'
+                                }}>
+                                  {row.waitingText}
+                                </td>
+                                <td style={{
+                                  padding: '8px 10px', fontSize: '0.7rem',
+                                  color: row.hasTradeOffs ? 'var(--accent-warning)' : 'var(--text-muted)'
+                                }}>
+                                  {row.tradeOffsText}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Real Traffic Evidence Section */}
+                  {turn.trafficEvidence && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'
+                      }}>
+                        <div style={{
+                          fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-primary)',
+                          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <Activity size={14} color="var(--accent-traffic)" />
+                          Traffic Evidence (from Real Traffic Agent)
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)' }}>
+                            {turn.trafficEvidence.scenario || 'synthetic_peak_westbound'} / {turn.trafficEvidence.durationSeconds ? `${turn.trafficEvidence.durationSeconds}s` : 'Unknown duration'}
+                            {turn.trafficEvidence.seed !== undefined && turn.trafficEvidence.seed !== null ? ` • Seed ${turn.trafficEvidence.seed}` : ''}
+                          </span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            SUMO Narayanguda Telemetry
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Compact Metric Grid */}
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                        gap: '10px', marginBottom: '12px'
+                      }}>
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>NETWORK SPEED</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.trafficEvidence.netSpeed !== null ? `${turn.trafficEvidence.netSpeed} km/h` : '—'}
                           </div>
-                          {descPart && (
-                            <div style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                              {descPart}
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>LOWEST SPEED</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-warning)', marginTop: '2px' }}>
+                            {turn.trafficEvidence.lowestSpeed !== null ? `${turn.trafficEvidence.lowestSpeed} km/h` : '—'}
+                          </div>
+                          {turn.trafficEvidence.lowestCorridor && (
+                            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                              on {turn.trafficEvidence.lowestCorridor}
                             </div>
                           )}
                         </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>WAITING TIME</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.trafficEvidence.waitingTime !== null ? `${turn.trafficEvidence.waitingTime} sec` : '—'}
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>DELAY</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.trafficEvidence.delay !== null ? `${turn.trafficEvidence.delay} sec` : '—'}
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>CONGESTION</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.trafficEvidence.congestion ?? '—'}
+                          </div>
+                        </div>
                       </div>
-                    )
-                  })}
-                </div>
-              </div>
 
-              {/* Domain Analysis */}
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>AGENTIC CO-ORDINATION ANALYSIS</span>
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px',
-                  padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)'
-                }}>
-                  {hasEnergy && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-emerald)' }}>Energy Agent:</strong> {`Current load: ${collectedResults.energy.load_pct}%, Consumption: ${collectedResults.energy.current_load_mw} MW (${collectedResults.energy.location || locationDisplay}). Status: ${collectedResults.energy.severity || 'NORMAL'}.`}
+                      {/* Corridors breakdown if available */}
+                      {turn.trafficEvidence.corridors && turn.trafficEvidence.corridors.length > 0 && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>Corridor Speeds: </strong>
+                          {turn.trafficEvidence.corridors.map(c => `${c.name}: ${c.avg_speed !== null ? c.avg_speed + ' km/h' : 'N/A'}`).join(' • ')}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {hasTraffic && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-cyan)' }}>Traffic Agent:</strong> {`Active vehicles: ${collectedResults.traffic.active_vehicles || 2342}, Avg speed: ${collectedResults.traffic.average_speed_kmh || 23.6} km/h, Congestion index: ${collectedResults.traffic.congestion_index || 68.2}.`}
+
+                  {/* Real Pollution Evidence Section */}
+                  {turn.pollutionEvidence && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'
+                      }}>
+                        <div style={{
+                          fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-emerald)',
+                          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <Activity size={14} color="var(--accent-emerald)" />
+                          Pollution Evidence (from Real Pollution Agent)
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={`badge ${turn.pollutionEvidence.isCurrent ? 'badge-primary' : 'badge-smooth'}`} style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                            {turn.pollutionEvidence.isCurrent ? 'CURRENT / MODELLED' : 'HISTORICAL DATASET'}
+                          </span>
+                          <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)' }}>
+                            {turn.pollutionEvidence.location} • Category: {turn.pollutionEvidence.category}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Source and Freshness Header */}
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        <span><strong>Source:</strong> {turn.pollutionEvidence.isCurrent ? 'Open-Meteo Current Air Quality API' : 'Open-Meteo 2020-2024 Hourly Dataset'}</span>
+                        {turn.pollutionEvidence.dataTimestamp && (
+                          <span><strong>Model Timestamp:</strong> {turn.pollutionEvidence.dataTimestamp}</span>
+                        )}
+                        {turn.pollutionEvidence.retrievedAt && (
+                          <span><strong>Retrieved:</strong> {turn.pollutionEvidence.retrievedAt.slice(0, 19).replace('T', ' ')} UTC</span>
+                        )}
+                      </div>
+
+                      {/* Compact Metric Grid */}
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                        gap: '10px', marginBottom: '12px'
+                      }}>
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>AIR QUALITY INDEX (AQI)</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-emerald)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.aqi !== null ? turn.pollutionEvidence.aqi : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.category}
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PM2.5 CONCENTRATION</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.pm25 !== null ? `${turn.pollutionEvidence.pm25} µg/m³` : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>Fine Particulate Matter</div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PM10 CONCENTRATION</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.pm10 !== null ? `${turn.pollutionEvidence.pm10} µg/m³` : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>Respirable Particulate</div>
+                        </div>
+                      </div>
+
+                      {/* Auxiliary chemical concentrations if provided by Open-Meteo Current API */}
+                      {turn.pollutionEvidence.pollutants && (
+                        <div style={{
+                          display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '8px 10px',
+                          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', marginBottom: '10px',
+                          border: '1px solid var(--border-default)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)'
+                        }}>
+                          {turn.pollutionEvidence.pollutants.carbon_monoxide !== null && (
+                            <span>CO: <strong>{turn.pollutionEvidence.pollutants.carbon_monoxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.nitrogen_dioxide !== null && (
+                            <span>• NO₂: <strong>{turn.pollutionEvidence.pollutants.nitrogen_dioxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.sulphur_dioxide !== null && (
+                            <span>• SO₂: <strong>{turn.pollutionEvidence.pollutants.sulphur_dioxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.ozone !== null && (
+                            <span>• O₃: <strong>{turn.pollutionEvidence.pollutants.ozone} µg/m³</strong></span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Suggested Municipal Interventions if present */}
+                      {turn.pollutionEvidence.suggestedInterventions && turn.pollutionEvidence.suggestedInterventions.length > 0 && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px', marginBottom: '8px' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>Suggested Interventions: </strong>
+                          {turn.pollutionEvidence.suggestedInterventions.map((inv, idx) => typeof inv === 'object' ? inv.action_type || inv.description : inv).join(' • ')}
+                        </div>
+                      )}
+
+                      {/* Modelled atmospheric data disclaimer */}
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '6px' }}>
+                        * Modelled atmospheric air-quality data from Open-Meteo API. Not a physical ground monitoring-station sensor reading.
+                      </div>
                     </div>
                   )}
-                  {hasPollution && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-amber)' }}>Pollution Agent:</strong> {`AQI index: ${collectedResults.pollution.city_avg_aqi || collectedResults.pollution.aqi || 136}, Primary pollutant: ${collectedResults.pollution.primary_pollutant || 'PM2.5'}.`}
+
+                  {/* Single-Run Simulation Results Section */}
+                  {turn.simulationEvidence && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'
+                      }}>
+                        <div style={{
+                          fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-traffic)',
+                          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <Gauge size={14} color="var(--accent-traffic)" />
+                          Intervention Simulation Results ({turn.simulationEvidence.interventionType} on {turn.simulationEvidence.interventionTarget})
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)' }}>
+                            {turn.simulationEvidence.scenario || 'synthetic_peak_westbound'} / {turn.simulationEvidence.durationSeconds ? `${turn.simulationEvidence.durationSeconds}s` : 'Unknown duration'}
+                            {turn.simulationEvidence.seed !== undefined && turn.simulationEvidence.seed !== null ? ` • Seed ${turn.simulationEvidence.seed}` : ''}
+                            {turn.simulationEvidence.fairComparison !== undefined ? ` • ${turn.simulationEvidence.fairComparison ? 'Fair Paired' : 'Not Fair'}` : ''}
+                          </span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            SUMO Microsimulation
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Comparison Content */}
+                      {turn.simulationEvidence.isBaselineMissing ? (
+                        <div style={{
+                          padding: '12px 14px',
+                          background: 'rgba(239, 68, 68, 0.08)',
+                          border: '1px solid rgba(239, 68, 68, 0.25)',
+                          borderRadius: 'var(--radius-sm)',
+                          color: '#f87171',
+                          fontSize: '0.8rem',
+                          marginBottom: '10px'
+                        }}>
+                          <strong>Comparison unavailable</strong> — baseline evidence was not supplied.
+                        </div>
+                      ) : (
+                        <>
+                          {/* Comparison Table */}
+                          <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
+                            <table style={{
+                              width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem',
+                              background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)'
+                            }}>
+                              <thead>
+                                <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                                  <th style={{ padding: '8px 10px' }}>Metric</th>
+                                  <th style={{ padding: '8px 10px' }}>Baseline</th>
+                                  <th style={{ padding: '8px 10px' }}>Intervention</th>
+                                  <th style={{ padding: '8px 10px' }}>Change</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                <tr style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>Network Speed</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.baseline?.speed ? `${turn.simulationEvidence.baseline.speed} km/h` : '—'}</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.intervention?.speed ? `${turn.simulationEvidence.intervention.speed} km/h` : '—'}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: (turn.simulationEvidence.speedChangePct ?? 0) >= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)' }}>
+                                    {turn.simulationEvidence.speedChangePct !== null && turn.simulationEvidence.speedChangePct !== undefined
+                                      ? `${turn.simulationEvidence.speedChangePct > 0 ? '+' : ''}${turn.simulationEvidence.speedChangePct}%`
+                                      : '—'}
+                                  </td>
+                                </tr>
+                                <tr style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>Waiting Time</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.baseline?.waiting ? `${turn.simulationEvidence.baseline.waiting} sec` : '—'}</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.intervention?.waiting ? `${turn.simulationEvidence.intervention.waiting} sec` : '—'}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: (turn.simulationEvidence.waitingTimeChangePct ?? 0) <= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)' }}>
+                                    {turn.simulationEvidence.waitingTimeChangePct !== null && turn.simulationEvidence.waitingTimeChangePct !== undefined
+                                      ? `${turn.simulationEvidence.waitingTimeChangePct > 0 ? '+' : ''}${turn.simulationEvidence.waitingTimeChangePct}%`
+                                      : '—'}
+                                  </td>
+                                </tr>
+                                <tr style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>Delay</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.baseline?.delay ? `${turn.simulationEvidence.baseline.delay} sec` : '—'}</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.intervention?.delay ? `${turn.simulationEvidence.intervention.delay} sec` : '—'}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: (turn.simulationEvidence.delayChangePct ?? 0) <= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)' }}>
+                                    {turn.simulationEvidence.delayChangePct !== null && turn.simulationEvidence.delayChangePct !== undefined
+                                      ? `${turn.simulationEvidence.delayChangePct > 0 ? '+' : ''}${turn.simulationEvidence.delayChangePct}%`
+                                      : '—'}
+                                  </td>
+                                </tr>
+                                <tr style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>Congestion Index</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.baseline?.congestion ?? '—'}</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.intervention?.congestion ?? '—'}</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 600, color: (turn.simulationEvidence.congestionChangePct ?? 0) <= 0 ? 'var(--accent-emerald)' : 'var(--accent-warning)' }}>
+                                    {turn.simulationEvidence.congestionChangePct !== null && turn.simulationEvidence.congestionChangePct !== undefined
+                                      ? `${turn.simulationEvidence.congestionChangePct > 0 ? '+' : ''}${turn.simulationEvidence.congestionChangePct}%`
+                                      : '—'}
+                                  </td>
+                                </tr>
+                                <tr>
+                                  <td style={{ padding: '8px 10px', fontWeight: 500 }}>Throughput (Arrivals)</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.baseline?.throughput ?? '—'} veh</td>
+                                  <td style={{ padding: '8px 10px' }}>{turn.simulationEvidence.intervention?.throughput ?? '—'} veh</td>
+                                  <td style={{ padding: '8px 10px', fontWeight: 600 }}>
+                                    {turn.simulationEvidence.throughputChange !== null && turn.simulationEvidence.throughputChange !== undefined
+                                      ? `${turn.simulationEvidence.throughputChange >= 0 ? '+' : ''}${turn.simulationEvidence.throughputChange} veh`
+                                      : '—'}
+                                  </td>
+                                </tr>
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {/* Corridor-by-Corridor Speed Comparisons */}
+                          {turn.simulationEvidence.corridorComparisons && turn.simulationEvidence.corridorComparisons.length > 0 && (
+                            <div style={{ marginTop: '12px' }}>
+                              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, fontFamily: 'var(--font-mono)', marginBottom: '6px', textTransform: 'uppercase' }}>
+                                Corridor-Level Speed Comparisons
+                              </div>
+                              <div style={{ overflowX: 'auto', marginBottom: '10px' }}>
+                                <table style={{
+                                  width: '100%', borderCollapse: 'collapse', fontSize: '0.75rem',
+                                  background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)'
+                                }}>
+                                  <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--border-default)', textAlign: 'left', color: 'var(--text-muted)' }}>
+                                      <th style={{ padding: '6px 10px' }}>Corridor</th>
+                                      <th style={{ padding: '6px 10px' }}>Baseline</th>
+                                      <th style={{ padding: '6px 10px' }}>Intervention</th>
+                                      <th style={{ padding: '6px 10px' }}>Speed Delta</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {turn.simulationEvidence.corridorComparisons.map(c => (
+                                      <tr key={c.id} style={{ borderBottom: '1px solid var(--border-divider)' }}>
+                                        <td style={{ padding: '6px 10px', fontWeight: 500 }}>{c.name}</td>
+                                        <td style={{ padding: '6px 10px' }}>{c.baseline_speed_kmh !== null && c.baseline_speed_kmh !== undefined ? `${Number(c.baseline_speed_kmh).toFixed(1)} km/h` : '—'}</td>
+                                        <td style={{ padding: '6px 10px' }}>{c.intervention_speed_kmh !== null && c.intervention_speed_kmh !== undefined ? `${Number(c.intervention_speed_kmh).toFixed(1)} km/h` : '—'}</td>
+                                        <td style={{
+                                          padding: '6px 10px', fontWeight: 600,
+                                          color: (c.speed_change_pct ?? 0) > 0 ? 'var(--accent-emerald)' : ((c.speed_change_pct ?? 0) < 0 ? 'var(--accent-warning)' : 'var(--text-secondary)')
+                                        }}>
+                                          {c.speed_change_pct !== null && c.speed_change_pct !== undefined
+                                            ? `${c.speed_change_pct > 0 ? '+' : ''}${c.speed_change_pct}% (${c.speed_change_kmh > 0 ? '+' : ''}${c.speed_change_kmh} km/h)`
+                                            : '—'}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          )}
+                        </>
+                      )}
+
+                      {/* Trade-off Summary */}
+                      {turn.simulationEvidence.tradeOffSummary && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>Trade-off Analysis: </strong>
+                          {turn.simulationEvidence.tradeOffSummary}
+                        </div>
+                      )}
                     </div>
                   )}
-                  {!hasEnergy && !hasTraffic && !hasPollution && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Specialist agent results received and synthesized into planning decision artifact.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* GIS Map Evidence Graphic */}
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>SPATIAL LAYERING EVIDENCE</span>
-                <div style={{
-                  height: '120px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-sm)', marginTop: '4px', position: 'relative', overflow: 'hidden',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  <svg width="100%" height="100%" viewBox="0 0 200 100" style={{ position: 'absolute', inset: 0 }}>
-                    <circle cx="50" cy="50" r="4" fill="var(--accent-cyan)" />
-                    <circle cx="100" cy="50" r="4" fill="var(--accent-emerald)" />
-                    <circle cx="150" cy="50" r="4" fill="var(--accent-amber)" />
-                    <line x1="54" y1="50" x2="96" y2="50" stroke="var(--border-default)" strokeWidth="1" />
-                    <line x1="104" y1="50" x2="146" y2="50" stroke="var(--border-default)" strokeWidth="1" />
-                    <text x="35" y="40" fill="var(--text-muted)" fontSize="5">{locationShort}</text>
-                    <text x="88" y="40" fill="var(--text-muted)" fontSize="5">Substation</text>
-                    <text x="135" y="40" fill="var(--text-muted)" fontSize="5">Distribution</text>
-                  </svg>
-                  <div style={{ position: 'absolute', bottom: '6px', right: '10px', fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    GIS Layer: {locationDisplay}
-                  </div>
-                </div>
-              </div>
-
-              {/* Explainability & Alternatives */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>EXPLAINABILITY FACTORS</span>
-                  <ul style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', paddingLeft: '12px', marginTop: '2px', lineHeight: 1.4 }}>
-                    {hasEnergy ? (
-                      <>
-                        <li>Substation capacity margins adequate for off-peak shift</li>
-                        <li>Solar offset reduces daytime grid draw by ~15%</li>
-                      </>
-                    ) : (
-                      <>
-                        <li>Wind speed &lt; 12 km/h prevents dispersion</li>
-                        <li>Street-light savings offset signal draw</li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>ALTERNATIVES CONSIDERED</span>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: '2px' }}>
-                    {hasEnergy ? (
-                      `Battery Storage (BESS) peak-shaving dispatch across ${locationShort} feeder lines (Confidence: 89.2%).`
-                    ) : (
-                      `Route divergence via ORR corridor (Confidence: 81.4%, 12-min travel delay offset).`
-                    )}
-                  </p>
-                </div>
-              </div>
-
-              {/* Verification & Compliance */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--accent-emerald-dim)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.2)', marginBottom: '20px' }}>
-                <ShieldCheck size={16} color="var(--accent-emerald)" />
-                <span style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>
-                  Verified Compliant: TSSPDCL grid safety parameters & policy rules met
-                </span>
-              </div>
-
-              {/* Senior Approval workflow stage controls */}
-              <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>APPROVAL WORKFLOW STATE</span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--accent-cyan)' }}>{approvalStatus}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {approvalStatus === 'Generated' && (
-                    <button
-                      onClick={() => setApprovalStatus('Under Review')}
-                      style={{
-                        padding: '6px 12px', background: 'var(--accent-cyan)', color: '#fff',
-                        border: 'none', borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                      }}
-                    >
-                      Submit for Review
-                    </button>
-                  )}
-                  {approvalStatus === 'Under Review' && (
-                    <button
-                      onClick={handleApprove}
-                      style={{
-                        padding: '6px 12px', background: 'var(--accent-emerald)', color: '#fff',
-                        border: 'none', borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                      }}
-                    >
-                      Approve & Implement
-                    </button>
-                  )}
-                  <button
-                    onClick={() => { setStep(0); setQuery(''); setApprovalStatus('Generated'); }}
-                    style={{
-                      padding: '6px 12px', background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem', cursor: 'pointer'
-                    }}
-                  >
-                    Clear Workspace
-                  </button>
-                </div>
-              </div>
-            </GlassCard>
-          ) : (
-            <GlassCard style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '340px', borderStyle: 'dashed' }}>
-              <Brain size={48} color="var(--text-muted)" style={{ opacity: 0.3, marginBottom: '16px' }} />
-              <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Awaiting Planning Request</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '300px' }}>
-                Enter planning parameters on the left and dispatch to orchestrate Supervisor AI capabilities.
-              </p>
-            </GlassCard>
-          )}
+                </GlassCard>
+              )}
+            </div>
+          ))}
+          <div ref={messagesEndRef} />
         </div>
+      ) : (
+        /* Empty State */
+        <GlassCard style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px 20px', borderStyle: 'dashed' }}>
+          <Brain size={48} color="var(--text-muted)" style={{ opacity: 0.35, marginBottom: '14px' }} />
+          <h3 style={{ fontSize: '1rem', color: 'var(--text-primary)', marginBottom: '4px' }}>
+            Awaiting Natural-Language Question
+          </h3>
+          <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '420px', margin: 0 }}>
+            Type a question above or click one of the interactive prompt chips. The LLM Planner will query real SUMO traffic evidence and provide reasoning.
+          </p>
+        </GlassCard>
+      )}
 
-      </div>
-
-      {/* AI Multi-Suggestion Problem Solver Workspace */}
+      {/* Urban Problems & Cross-Domain Solutions */}
       <ProblemSolverSection />
     </div>
   )

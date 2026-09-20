@@ -97,8 +97,8 @@ export const systemApi = {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 2. Planning & Orchestrator APIs
+/// ---------------------------------------------------------------------------
+// 2. Planning & Specialist Coordination APIs
 // ---------------------------------------------------------------------------
 export const planningApi = {
   async createPlanningRequest(payload = {}) {
@@ -119,14 +119,13 @@ export const planningApi = {
     try {
       return await request('/planning/requests', {
         method: 'POST',
-        body: JSON.stringify(defaultPayload)
+        body: JSON.stringify({ ...defaultPayload, ...payload })
       })
     } catch {
       return {
-        request_id: `planreq_${Math.random().toString(16).substring(2, 10)}`,
+        request_id: payload.request_id || `req_${Date.now()}`,
         status: 'RECEIVED',
-        created_at: new Date().toISOString(),
-        correlation_id: `corr_${Math.random().toString(16).substring(2, 10)}`
+        created_at: new Date().toISOString()
       }
     }
   },
@@ -137,7 +136,7 @@ export const planningApi = {
     } catch {
       return {
         request_id: requestId,
-        status: 'ORCHESTRATING',
+        status: 'PLANNING',
         objective: 'Optimization request',
         location: 'Hyderabad Metro Region',
         requested_domains: ['traffic', 'weather', 'energy'],
@@ -147,23 +146,61 @@ export const planningApi = {
     }
   },
 
-  async executeOrchestrator(payload = {}) {
+  async executePlanner(payload = {}) {
     const defaultPayload = {
       request_id: payload.request_id || `req_${Date.now()}`,
-      workflow: payload.workflow || 'monitor-detect-understand',
-      steps: payload.steps || ['intent_parsing', 'context_loading', 'specialist_dispatch', 'recommendation_synthesis'],
-      priority: payload.priority || 3,
-      objective: payload.objective || 'Resolve congestion & environmental impact',
-      location: payload.location || 'Gachibowli Corridor',
-      domains: payload.domains || ['traffic', 'weather', 'energy'],
-      constraints: payload.constraints || []
+      session_id: payload.session_id || undefined,
+      objective: payload.objective || payload.query || 'What is the traffic situation in Narayanguda?',
+      query: payload.query || payload.objective || 'What is the traffic situation in Narayanguda?',
+      location: payload.location || 'Narayanguda, Hyderabad',
+      constraints: payload.constraints || [],
+      domains: payload.domains || undefined,
+      max_cycles: payload.max_cycles || 2,
+      conversation_history: payload.conversation_history || [],
+      simulation_history: payload.simulation_history || undefined,
+      tested_scenarios: payload.tested_scenarios || undefined
     }
 
+    // Safe request logging (no secrets)
+    console.log(
+      `[API Execute Planner] REQUEST_ID=${defaultPayload.request_id} | ` +
+      `SESSION_ID=${defaultPayload.session_id || 'none'} | ` +
+      `QUERY='${defaultPayload.query}' | OBJECTIVE='${defaultPayload.objective}' | ` +
+      `LOCATION='${defaultPayload.location}' | ` +
+      `CONV_LEN=${(defaultPayload.conversation_history || []).length} | ` +
+      `SIM_LEN=${(defaultPayload.simulation_history || []).length} | ` +
+      `SCEN_LEN=${(defaultPayload.tested_scenarios || []).length}`
+    )
+
     try {
-      return await request('/agents/orchestrator/execute', {
+      const res = await request('/agents/planner/execute', {
         method: 'POST',
-        body: JSON.stringify(defaultPayload)
+        body: JSON.stringify(defaultPayload),
+        timeout: 120000
       })
+
+
+      // Normalize fields so existing UI components remain functional
+      const lastCycle = res.cycles && res.cycles.length > 0 ? res.cycles[res.cycles.length - 1] : null
+      const feedbackInsights = lastCycle ? lastCycle.insights : {}
+      const recommendationText = res.final_response?.recommendation || feedbackInsights.recommendation || ''
+      const analysisText = res.final_response?.summary || feedbackInsights.analysis || ''
+
+      return {
+        ...res,
+        task_id: res.request_id,
+        runtime: res.runtime || null,
+        collected_results: res.agent_results || {},
+        planner_feedback: {
+          decision: res.final_response?.decision || feedbackInsights.decision || 'PROCEED_TO_EVALUATION',
+          confidence: res.confidence,
+          evidence_status: res.evidence_status || res.final_response?.evidence_status || 'EVIDENCE: OBSERVATIONAL',
+          insights: {
+            recommendation: recommendationText,
+            analysis: analysisText
+          }
+        }
+      }
     } catch (err) {
       console.warn('[API] Orchestrator error or rejection:', err.message)
 
@@ -214,7 +251,7 @@ export const planningApi = {
         collected_results = {
           energy: { load_pct: 74.2, current_load_mw: 148.0, location: defaultPayload.location || 'Tarnaka, Hyderabad', severity: 'MODERATE' }
         }
-        finalRec = `For ${defaultPayload.location || 'Tarnaka, Hyderabad'}: Implement local demand response load shifting during peak hours (18:00–21:30), deploy rooftop solar-assisted power offsets on institutional buildings, and configure dynamic street-lighting dimming after 22:00.`
+        finalRec = `For ${defaultPayload.location || 'Tarnaka, Hyderabad'}: Implement local demand response load shifting during peak hours (18:00-21:30), deploy rooftop solar-assisted power offsets on institutional buildings, and configure dynamic street-lighting dimming after 22:00.`
       } else if (isPollution) {
         assigned_capabilities = ['pollution']
         dispatched_agents = ['pollution_agent']
@@ -241,83 +278,6 @@ export const planningApi = {
       }
     }
   },
-
-  async getOrchestratorTask(taskId) {
-    try {
-      return await request(`/agents/orchestrator/tasks/${taskId}`)
-    } catch {
-      return {
-        task_id: taskId,
-        request_id: 'req_default',
-        status: 'COMPLETED',
-        current_step: 'complete',
-        completed_steps: ['planner', 'context_loading', 'agent_dispatch', 'verification'],
-        pending_steps: [],
-        assigned_capabilities: ['traffic', 'weather', 'energy'],
-        dispatched_agents: ['TrafficAgent', 'PollutionAgent', 'EnergyAgent'],
-        collected_results: {
-          traffic: { congestion_reduction: '18%', phase_offset_seconds: 25 },
-          pollution: { pm25_reduction_ugm3: 22 },
-          energy: { load_margin_saved_pct: 15 }
-        },
-        failures: {},
-        started_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      }
-    }
-  },
-
-  async generatePlan(payload = {}) {
-    try {
-      return await request('/agents/planner/plan', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      })
-    } catch {
-      return {
-        request_id: payload.request_id || 'req_plan',
-        objective: payload.objective,
-        likely_causes: ['Peak commute density', 'Inhibited wind dispersion', 'Transformer peak draw'],
-        interventions: ['Adaptive signal timing', 'Industrial emission buffer', 'Grid dimming offsets'],
-        required_data: ['traffic_sensors', 'weather_telemetry', 'substation_loads'],
-        scenarios: [
-          { scenario_id: 'scen_01', label: 'Adaptive Signal Priority', assumptions: ['Phase extended +25s'] }
-        ],
-        planner_confidence: 0.942,
-        required_capabilities: ['traffic', 'weather', 'energy']
-      }
-    }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// 3. Domain Model Evaluation APIs
-// ---------------------------------------------------------------------------
-export const modelsApi = {
-  async analyzeTraffic(params = {}) {
-    const payload = {
-      request_id: params.request_id || `req_trf_${Date.now()}`,
-      location: params.location || 'Gachibowli Flyover',
-      scenario: params.scenario || 'peak_rush_hour',
-      inputs: params.inputs || { current_speed: 18.5, volume: 3420, occupancy: 87.2 }
-    }
-    try {
-      return await request('/models/traffic/analyze', {
-        method: 'POST',
-        body: JSON.stringify(payload)
-      })
-    } catch {
-      return {
-        request_id: payload.request_id,
-        domain: 'traffic',
-        model_id: 'gnn_traffic_v1',
-        model_version: '1.0.0-contract',
-        status: 'COMPLETED',
-        outputs: {
-          predicted_speed_kmh: 31.0,
-          congestion_level: 'MODERATE',
-          delay_reduction_sec: 45
-        },
         confidence: 0.92
       }
     }

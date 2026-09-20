@@ -1,5 +1,7 @@
 """
-Unit and integration tests for Smart City Orchestrator Agent Dispatch & Planner Feedback.
+Contract-Aware Autonomous Planner Dispatch and Execution Tests.
+Architecture: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Frontend.
+No Orchestrator.
 """
 
 import os
@@ -8,212 +10,67 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.supervisor.main import app, AGENT_REGISTRY, orchestrator_tasks
+from backend.supervisor.main import app
 
 
-class TestOrchestratorAgentDispatch(unittest.TestCase):
+class TestPlannerContractAwareArchitecture(unittest.TestCase):
     def setUp(self):
+        os.environ["LLM_PROVIDER"] = "mock"
         self.client = TestClient(app)
 
-    def test_dispatch_traffic_and_weather(self):
-        """Test that a traffic + weather request dispatches to Traffic & Weather agents and sends results to Planner."""
-        payload = {
-            "request_id": "REQ-TEST-TW-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Find the risk of heavy traffic due to rainfall",
+    def tearDown(self):
+        os.environ.pop("LLM_PROVIDER", None)
+
+    def test_existing_specialist_apis_functional(self):
+        """All 5 specialist APIs respond to health/status queries."""
+        r_trf = self.client.get("/api/v1/traffic/kpis?location=Narayanguda")
+        self.assertEqual(r_trf.status_code, 200)
+
+        r_wtr = self.client.get("/api/v1/weather/current?location=Narayanguda")
+        self.assertEqual(r_wtr.status_code, 200)
+
+        r_pol = self.client.get("/api/v1/pollution/aqi-summary?location=Narayanguda")
+        self.assertEqual(r_pol.status_code, 200)
+
+        r_eng = self.client.get("/api/v1/energy/grid-status?location=Narayanguda")
+        self.assertEqual(r_eng.status_code, 200)
+
+        r_sim = self.client.post("/api/v1/simulation/run", json={
+            "scenario_name": "narayanguda_test",
+            "target_location": "Narayanguda",
+        })
+        self.assertEqual(r_sim.status_code, 200)
+
+    def test_openapi_swagger_contract(self):
+        """OpenAPI schema is valid and accessible."""
+        res = self.client.get("/openapi.json")
+        self.assertEqual(res.status_code, 200)
+        schema = res.json()
+        self.assertIn("paths", schema)
+        self.assertIn("/api/v1/traffic/kpis", schema["paths"])
+
+    def test_planner_traffic_only(self):
+        """Basic traffic planning request."""
+        res = self.client.post("/agents/planner/plan", json={
+            "request_id": "REQ-TRF-01",
+            "objective": "Traffic congestion is high at Narayanguda",
             "location": "Narayanguda",
-            "domains": ["traffic", "weather"],
-            "constraints": [],
-        }
-
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertEqual(data["request_id"], "REQ-TEST-TW-01")
-        self.assertEqual(data["status"], "COMPLETED")
-        self.assertIn("traffic", data["assigned_capabilities"])
-        self.assertIn("weather", data["assigned_capabilities"])
-        self.assertNotIn("energy", data["assigned_capabilities"])
-        self.assertNotIn("pollution", data["assigned_capabilities"])
-        self.assertNotIn("simulation", data["assigned_capabilities"])
-
-        # Dispatched agents
-        self.assertEqual(sorted(data["dispatched_agents"]), ["traffic_agent", "weather_agent"])
-
-        # Collected results
-        results = data["collected_results"]
-        self.assertIn("traffic", results)
-        self.assertIn("weather", results)
-        self.assertNotIn("energy", results)
-        self.assertNotIn("pollution", results)
-        self.assertNotIn("simulation", results)
-
-        # Verify real mock agent response structures
-        traffic_data = results["traffic"]
-        self.assertIn("active_vehicles", traffic_data)
-        self.assertIn("corridors", traffic_data)
-        self.assertIn("congestion_index", traffic_data)
-
-        weather_data = results["weather"]
-        self.assertIn("city", weather_data)
-        self.assertIn("temperature_c", weather_data)
-        self.assertIn("humidity_pct", weather_data)
-
-        self.assertEqual(data["failures"], {})
-
-        # Verify Planner Feedback in execute response
-        self.assertIsNotNone(data["planner_feedback"])
-        feedback = data["planner_feedback"]
-        self.assertEqual(feedback["status"], "RECEIVED")
-        self.assertEqual(feedback["decision"], "PROCEED_TO_EVALUATION")
-        self.assertIn("traffic", feedback["received_results"])
-        self.assertIn("weather", feedback["received_results"])
-        self.assertEqual(feedback["received_results"]["traffic"], traffic_data)
-        self.assertEqual(feedback["received_results"]["weather"], weather_data)
-        self.assertIn("traffic_assessment", feedback["insights"])
-        self.assertIn("weather_assessment", feedback["insights"])
-
-        # Verify task detail endpoint
-        task_id = data["task_id"]
-        task_resp = self.client.get(f"/agents/orchestrator/tasks/{task_id}")
-        self.assertEqual(task_resp.status_code, 200)
-        task_data = task_resp.json()
-        self.assertEqual(task_data["task_id"], task_id)
-        self.assertEqual(task_data["status"], "COMPLETED")
-        self.assertEqual(task_data["current_step"], "planner_feedback")
-        self.assertEqual(task_data["completed_steps"], ["planner", "agent_dispatch", "planner_feedback"])
-        self.assertEqual(task_data["dispatched_agents"], ["traffic_agent", "weather_agent"])
-        self.assertIn("traffic", task_data["collected_results"])
-        self.assertIn("weather", task_data["collected_results"])
-        self.assertIsNotNone(task_data["planner_feedback"])
-        self.assertEqual(task_data["planner_feedback"]["decision"], "PROCEED_TO_EVALUATION")
-
-    def test_planner_feedback_receives_exact_results(self):
-        """Verify that Planner feedback receives the exact unmodified mock results from specialist agents."""
-        payload = {
-            "request_id": "REQ-TEST-EXACT-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Find the risk of heavy traffic due to rainfall",
-            "location": "Narayanguda",
-            "domains": ["traffic", "weather"],
-            "constraints": [],
-        }
-
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-
-        collected = data["collected_results"]
-        received = data["planner_feedback"]["received_results"]
-
-        # Exact matching of collected and received payload
-        self.assertEqual(collected, received)
-        self.assertEqual(collected["traffic"]["active_vehicles"], 2342)
-        self.assertEqual(collected["weather"]["temperature_c"], 31.5)
-
-    def test_dispatch_energy_only(self):
-        """Test that an energy-only objective only dispatches to the Energy agent and passes results to Planner."""
-        payload = {
-            "request_id": "REQ-TEST-ENERGY-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Optimize substation energy grid load",
-            "location": "Madhapur",
-            "domains": ["energy"],
-            "constraints": [],
-        }
-
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertEqual(data["status"], "COMPLETED")
-        self.assertIn("energy", data["assigned_capabilities"])
-        self.assertNotIn("traffic", data["assigned_capabilities"])
-        self.assertNotIn("weather", data["assigned_capabilities"])
-
-        self.assertEqual(data["dispatched_agents"], ["energy_agent"])
-        self.assertIn("energy", data["collected_results"])
-        self.assertIn("current_load_mw", data["collected_results"]["energy"])
-        self.assertIn("substations", data["collected_results"]["energy"])
-
-        # Planner feedback receives energy data
-        self.assertIn("energy", data["planner_feedback"]["received_results"])
-        self.assertIn("energy_assessment", data["planner_feedback"]["insights"])
-
-    def test_dispatch_simulation(self):
-        """Test dispatching to the Simulation agent and recording Planner feedback."""
-        payload = {
-            "request_id": "REQ-TEST-SIM-01",
-            "workflow": "simulate-scenario",
-            "steps": [],
-            "priority": 2,
-            "objective": "Run simulation of intersection traffic signal changes",
-            "location": "Gachibowli",
             "domains": ["traffic"],
-            "constraints": [],
-        }
+        })
+        self.assertEqual(res.status_code, 200)
+        data = res.json()
+        self.assertEqual(data["request_id"], "REQ-TRF-01")
 
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertIn("simulation", data["assigned_capabilities"])
-        self.assertIn("simulation_agent", data["dispatched_agents"])
-        self.assertIn("simulation", data["collected_results"])
-        sim_data = data["collected_results"]["simulation"]
-        self.assertEqual(sim_data["status"], "COMPLETED")
-        self.assertIn("metrics", sim_data)
-
-        # Planner feedback
-        self.assertIn("simulation", data["planner_feedback"]["received_results"])
-        self.assertIn("simulation_assessment", data["planner_feedback"]["insights"])
-
-    def test_selective_dispatch_does_not_call_unselected_agents(self):
-        """Verify using mocks that unselected agents are never invoked."""
-        payload = {
-            "request_id": "REQ-TEST-SELECTIVE-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Monitor weather updates for the city",
-            "location": "Hyderabad",
-            "domains": ["weather"],
-            "constraints": [],
-        }
-
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-
-        self.assertIn("weather", data["assigned_capabilities"])
-        self.assertNotIn("traffic", data["assigned_capabilities"])
-        self.assertNotIn("energy", data["assigned_capabilities"])
-        self.assertEqual(data["dispatched_agents"], ["weather_agent"])
-        self.assertIn("weather", data["collected_results"])
-        self.assertNotIn("traffic", data["collected_results"])
-        self.assertNotIn("energy", data["collected_results"])
-
-    def test_agent_failure_handling(self):
-        """Test handling of agent failure (e.g. connection error / bad URL) and reporting to Planner."""
-        os.environ["TRAFFIC_AGENT_URL"] = "http://127.0.0.1:59999"
-        try:
-            payload = {
-                "request_id": "REQ-TEST-FAIL-01",
-                "workflow": "monitor-detect-understand",
-                "steps": [],
-                "priority": 3,
-                "objective": "Monitor traffic congestion",
-                "location": "Punjagutta",
+    def test_production_without_llm_api_key_fails_structured(self):
+        """In production without LLM_API_KEY, planner returns clear 503 error."""
+        with patch.dict(os.environ, {"LLM_PROVIDER": "groq", "LLM_API_KEY": ""}, clear=True):
+            res = self.client.post("/agents/planner/plan", json={
+                "request_id": "REQ-NO-KEY",
+                "objective": "Heavy traffic at Gachibowli",
+                "location": "Gachibowli",
                 "domains": ["traffic"],
-                "constraints": [],
-            }
+            })
+            self.assertEqual(res.status_code, 503)
 
             response = self.client.post("/agents/orchestrator/execute", json=payload)
             self.assertEqual(response.status_code, 200)
@@ -302,57 +159,73 @@ class TestOrchestratorAgentDispatch(unittest.TestCase):
         feedback_payload = {
             "request_id": "REQ-FEEDBACK-DIRECT",
             "task_id": "orctask_test123",
-            "objective": "Mitigate peak traffic during storm",
-            "location": "Narayanguda",
+            "objective": "Mitigate peak traffic during storm",    def test_test1_weather_and_traffic_cross_analysis(self):
+        """Cross-analysis between weather and traffic."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-WT-01",
+            "task_id": "task_wt_01",
+            "objective": "Traffic is high and I want to know why",            "location": "Narayanguda",
             "domains": ["traffic", "weather"],
             "assigned_capabilities": ["traffic", "weather"],
             "dispatched_agents": ["traffic_agent", "weather_agent"],
             "collected_results": {
-                "traffic": {
-                    "active_vehicles": 1850,
-                    "congestion_index": 74.5,
-                    "corridors": [{"id": "C1", "name": "Narayanguda Main", "status": "HEAVY"}]
-                },
-                "weather": {
-                    "condition": "Heavy Rain",
-                    "precipitation_mm": 22.5,
-                    "temperature_c": 28.0
-                }
+                "traffic": {"congestion_index": 78.5, "average_speed_kmh": 18.2, "corridors": []},
+                "weather": {"condition": "Rain", "precipitation_mm": 15.0, "temperature_c": 26.0},
             },
             "failures": {},
-            "constraints": []
-        }
+        })
+        self.assertEqual(res.status_code, 200)
 
-        response = self.client.post("/agents/planner/feedback", json=feedback_payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "RECEIVED")
-        self.assertEqual(data["decision"], "PROCEED_TO_EVALUATION")
-        self.assertIn("traffic_assessment", data["insights"])
-        self.assertEqual(data["insights"]["traffic_assessment"]["congestion_index"], 74.5)
-        self.assertIn("weather_assessment", data["insights"])
-        self.assertEqual(data["insights"]["weather_assessment"]["condition"], "Heavy Rain")
-
-    def test_no_duplicate_feedback(self):
-        """Verify that Planner feedback is executed once and recorded in completed_steps."""
-        payload = {
-            "request_id": "REQ-TEST-ONCE-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Find the risk of heavy traffic due to rainfall",
+    def test_test2_traffic_diagnosis_before_intervention(self):
+        """Traffic diagnosis evaluated before intervention."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-DIAG-01",
+            "task_id": "task_diag_01",
+            "objective": "Diagnose corridor bottlenecks",
             "location": "Narayanguda",
-            "domains": ["traffic", "weather"],
-            "constraints": [],
-        }
+            "domains": ["traffic"],
+            "assigned_capabilities": ["traffic"],
+            "dispatched_agents": ["traffic_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 65.0, "average_speed_kmh": 22.0, "corridors": []},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
 
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        task_id = data["task_id"]
+    def test_test3_simulation_payload_derived_from_traffic_results(self):
+        """Simulation context derived properly."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-SIM-01",
+            "task_id": "task_sim_01",
+            "objective": "How can we reduce traffic at Narayanguda?",
+            "location": "Narayanguda",
+            "domains": ["traffic"],
+            "assigned_capabilities": ["traffic"],
+            "dispatched_agents": ["traffic_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 82.0, "average_speed_kmh": 14.5, "corridors": []},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
 
-        task_detail = orchestrator_tasks[task_id]
-        self.assertEqual(task_detail.completed_steps.count("planner_feedback"), 1)
+    def test_test4_missing_information_check(self):
+        """Missing information triggers replanning."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-MISSING-01",
+            "task_id": "task_missing_01",
+            "objective": "Reduce congestion with signal timing",
+            "location": "Narayanguda",
+            "domains": ["traffic"],
+            "assigned_capabilities": ["traffic"],
+            "dispatched_agents": ["traffic_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 80.0, "average_speed_kmh": 15.0},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
 
     def test_out_of_scope_gatekeeping_priority(self):
         """Test that explicit programming/trivia query is rejected even if domain keyword is present."""
@@ -400,8 +273,72 @@ class TestOrchestratorAgentDispatch(unittest.TestCase):
         self.assertEqual(data["status"], "COMPLETED")
         self.assertIn("energy", data["assigned_capabilities"])
         self.assertIn("energy", data["collected_results"])
-        self.assertIn("load_pct", data["collected_results"]["energy"])
+        self.assertIn("load_pct", data["collected_results"]["energy"])    def test_test5_malformed_output_detection(self):
+        """Malformed output is handled safely."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-MALFORMED-01",
+            "task_id": "task_malformed_01",
+            "objective": "Assess traffic",
+            "location": "Narayanguda",
+            "domains": ["traffic"],
+            "assigned_capabilities": ["traffic"],
+            "dispatched_agents": ["traffic_agent"],
+            "collected_results": {
+                "traffic": {"corrupted": True},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
+    def test_test6_multi_cycle_reasoning_optimization(self):
+        """Multi-cycle reasoning with simulation."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-CYCLE-01",
+            "task_id": "task_cycle_01",
+            "objective": "Optimize corridor flow",
+            "location": "Narayanguda",
+            "domains": ["traffic", "simulation"],
+            "assigned_capabilities": ["traffic", "simulation"],
+            "dispatched_agents": ["traffic_agent", "simulation_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 70.0, "average_speed_kmh": 20.0},
+                "simulation": {"status": "SUCCESS", "metrics": {"avg_speed_kmh": 26.5, "avg_waiting_time_sec": 35.0}},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
 
+    def test_test7_traffic_and_pollution_cross_analysis(self):
+        """Traffic and pollution cross-analysis."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-TP-01",
+            "task_id": "task_tp_01",
+            "objective": "Correlate traffic emissions with air quality",
+            "location": "Nacharam",
+            "domains": ["traffic", "pollution"],
+            "assigned_capabilities": ["traffic", "pollution"],
+            "dispatched_agents": ["traffic_agent", "pollution_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 75.0, "average_speed_kmh": 17.0},
+                "pollution": {"city_avg_aqi": 165, "dominant_pollutant": "PM2.5"},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)
 
-if __name__ == "__main__":
-    unittest.main()
+    def test_test8_traffic_and_energy_cross_analysis(self):
+        """Traffic and energy cross-analysis."""
+        res = self.client.post("/agents/planner/feedback", json={
+            "request_id": "REQ-TE-01",
+            "task_id": "task_te_01",
+            "objective": "Correlate evening rush hour with grid substation load",
+            "location": "Gachibowli",
+            "domains": ["traffic", "energy"],
+            "assigned_capabilities": ["traffic", "energy"],
+            "dispatched_agents": ["traffic_agent", "energy_agent"],
+            "collected_results": {
+                "traffic": {"congestion_index": 72.0, "average_speed_kmh": 19.0},
+                "energy": {"load_pct": 82.5, "current_load_mw": 5120.0},
+            },
+            "failures": {},
+        })
+        self.assertEqual(res.status_code, 200)

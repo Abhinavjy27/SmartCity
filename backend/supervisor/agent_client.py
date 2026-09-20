@@ -38,8 +38,12 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
     "pollution": {
         "agent_name": "pollution_agent",
         "env_url_key": "POLLUTION_AGENT_URL",
-        "endpoint": "/api/v1/pollution/aqi-summary",
-        "method": "GET",
+        "endpoint": "/api/v1/pollution/analyze",
+        "method": "POST",
+        "default_payload": {
+            "objective": "Analyze air quality and pollution levels",
+            "location": "Narayanguda, Hyderabad",
+        },
         "module_path": "backend.agents.pollution_agent.main",
     },
     "simulation": {
@@ -48,9 +52,10 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "endpoint": "/api/v1/simulation/run",
         "method": "POST",
         "default_payload": {
-            "scenario_name": "hyderabad_central",
-            "duration_steps": 1000,
-            "signal_optimization": True,
+            "scenario_name": "synthetic_normal",
+            "location": "Narayanguda, Hyderabad",
+            "duration_seconds": 120,
+            "seed": 42,
         },
         "module_path": "backend.agents.simulation_agent.main",
     },
@@ -66,9 +71,23 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
     agent_url = os.getenv(config["env_url_key"])
     method = config.get("method", "GET")
     endpoint = config.get("endpoint", "/")
-    payload = config.get("default_payload")
-    if context and isinstance(context, dict) and capability in context:
-        payload = context[capability]
+    payload = dict(config.get("default_payload") or {})
+    if context and isinstance(context, dict):
+        if capability in context and isinstance(context[capability], dict):
+            payload.update(context[capability])
+        else:
+            payload.update(context)
+
+    # Allow endpoint override from context if provided
+    if isinstance(payload, dict) and "_endpoint" in payload:
+        endpoint = payload.pop("_endpoint")
+    if isinstance(payload, dict) and "_method" in payload:
+        method = payload.pop("_method")
+
+    # Prepare parameters for GET vs JSON body for POST
+    get_params = None
+    if method == "GET" and isinstance(payload, dict):
+        get_params = {k: v for k, v in payload.items() if isinstance(v, (str, int, float, bool))}
 
     # Extract optional location or query params from context
     params: Dict[str, Any] = {}
