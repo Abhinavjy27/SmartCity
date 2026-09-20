@@ -96,8 +96,8 @@ export const systemApi = {
   }
 }
 
-// ---------------------------------------------------------------------------
-// 2. Planning & Orchestrator APIs
+/// ---------------------------------------------------------------------------
+// 2. Planning & Specialist Coordination APIs
 // ---------------------------------------------------------------------------
 export const planningApi = {
   async createPlanningRequest(payload = {}) {
@@ -118,14 +118,13 @@ export const planningApi = {
     try {
       return await request('/planning/requests', {
         method: 'POST',
-        body: JSON.stringify(defaultPayload)
+        body: JSON.stringify({ ...defaultPayload, ...payload })
       })
     } catch {
       return {
-        request_id: `planreq_${Math.random().toString(16).substring(2, 10)}`,
+        request_id: payload.request_id || `req_${Date.now()}`,
         status: 'RECEIVED',
-        created_at: new Date().toISOString(),
-        correlation_id: `corr_${Math.random().toString(16).substring(2, 10)}`
+        created_at: new Date().toISOString()
       }
     }
   },
@@ -136,7 +135,7 @@ export const planningApi = {
     } catch {
       return {
         request_id: requestId,
-        status: 'ORCHESTRATING',
+        status: 'PLANNING',
         objective: 'Optimization request',
         location: 'Hyderabad Metro Region',
         requested_domains: ['traffic', 'weather', 'energy'],
@@ -146,67 +145,51 @@ export const planningApi = {
     }
   },
 
-  async executeOrchestrator(payload = {}) {
+  async executePlanner(payload = {}) {
     const defaultPayload = {
       request_id: payload.request_id || `req_${Date.now()}`,
-      workflow: payload.workflow || 'monitor-detect-understand',
-      steps: payload.steps || ['intent_parsing', 'context_loading', 'specialist_dispatch', 'recommendation_synthesis'],
-      priority: payload.priority || 3,
-      objective: payload.objective || 'Resolve congestion & environmental impact',
-      location: payload.location || 'Gachibowli Corridor',
-      domains: payload.domains || ['traffic', 'weather', 'energy'],
-      constraints: payload.constraints || []
+      session_id: payload.session_id || undefined,
+      objective: payload.objective || payload.query || 'What is the traffic situation in Narayanguda?',
+      query: payload.query || payload.objective || 'What is the traffic situation in Narayanguda?',
+      location: payload.location || 'Narayanguda, Hyderabad',
+      constraints: payload.constraints || [],
+      domains: payload.domains || undefined,
+      max_cycles: payload.max_cycles || 2,
+      conversation_history: payload.conversation_history || [],
+      simulation_history: payload.simulation_history || undefined,
+      tested_scenarios: payload.tested_scenarios || undefined
     }
 
     try {
-      return await request('/agents/orchestrator/execute', {
+      const res = await request('/agents/planner/execute', {
         method: 'POST',
-        body: JSON.stringify(defaultPayload)
+        body: JSON.stringify(defaultPayload),
+        timeout: 120000
       })
-    } catch {
-      return {
-        task_id: `orctask_${Math.random().toString(16).substring(2, 10)}`,
-        request_id: defaultPayload.request_id,
-        status: 'COMPLETED',
-        assigned_capabilities: ['traffic', 'weather', 'energy'],
-        dispatched_agents: ['TrafficAgent', 'PollutionAgent', 'EnergyAgent'],
-        collected_results: {
-          traffic: { congestion_reduction: '18%', phase_offset_seconds: 25 },
-          pollution: { pm25_reduction_ugm3: 22 },
-          energy: { load_margin_saved_pct: 15 }
-        },
-        failures: {},
-        planner_feedback: {
-          decision: 'PROCEED_TO_EVALUATION',
-          confidence: 0.94
-        },
-        created_at: new Date().toISOString()
-      }
-    }
-  },
 
-  async getOrchestratorTask(taskId) {
-    try {
-      return await request(`/agents/orchestrator/tasks/${taskId}`)
-    } catch {
+      // Normalize fields so existing UI components remain functional
+      const lastCycle = res.cycles && res.cycles.length > 0 ? res.cycles[res.cycles.length - 1] : null
+      const feedbackInsights = lastCycle ? lastCycle.insights : {}
+      const recommendationText = res.final_response?.recommendation || feedbackInsights.recommendation || ''
+      const analysisText = res.final_response?.summary || feedbackInsights.analysis || ''
+
       return {
-        task_id: taskId,
-        request_id: 'req_default',
-        status: 'COMPLETED',
-        current_step: 'complete',
-        completed_steps: ['planner', 'context_loading', 'agent_dispatch', 'verification'],
-        pending_steps: [],
-        assigned_capabilities: ['traffic', 'weather', 'energy'],
-        dispatched_agents: ['TrafficAgent', 'PollutionAgent', 'EnergyAgent'],
-        collected_results: {
-          traffic: { congestion_reduction: '18%', phase_offset_seconds: 25 },
-          pollution: { pm25_reduction_ugm3: 22 },
-          energy: { load_margin_saved_pct: 15 }
-        },
-        failures: {},
-        started_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        ...res,
+        task_id: res.request_id,
+        collected_results: res.agent_results || {},
+        planner_feedback: {
+          decision: res.final_response?.decision || feedbackInsights.decision || 'PROCEED_TO_EVALUATION',
+          confidence: res.confidence,
+          evidence_status: res.evidence_status || res.final_response?.evidence_status || 'EVIDENCE: OBSERVATIONAL',
+          insights: {
+            recommendation: recommendationText,
+            analysis: analysisText
+          }
+        }
       }
+    } catch (err) {
+      console.error('[API] executePlanner failed:', err)
+      throw new Error(err?.details?.error?.message || err?.message || 'Unable to retrieve traffic evidence.')
     }
   },
 

@@ -91,6 +91,7 @@ minio-data/
 simulations/outputs/
 *.xml
 !simulations/configs/*.xml
+!simulations/networks/*.net.xml
 
 # ---- Misc ----
 tmp/

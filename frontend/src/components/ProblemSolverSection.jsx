@@ -244,17 +244,16 @@ export default function ProblemSolverSection() {
     const sugg = currentProblem.suggestions?.find(s => s.id === suggId)
 
     try {
-      // Dispatch Supervisor Orchestrator with suggestion objective
-      await planningApi.executeOrchestrator({
+      // Dispatch Planner Central Coordinator with suggestion objective
+      await planningApi.executePlanner({
         objective: sugg ? `${sugg.title} for ${currentProblem.title}` : 'Execute AI Suggestion',
-        location: currentProblem.location,
-        workflow: 'problem-mitigation-dispatch'
+        location: currentProblem.location
       })
 
       // Acknowledge corresponding system alert if exists
       await alertsApi.acknowledgeAlert(currentProblem.id, 'URBAN_PLANNER_01', `Executed: ${sugg?.title || suggId}`)
     } catch (err) {
-      console.warn('Orchestrator suggestion dispatch warning:', err)
+      console.warn('Planner suggestion dispatch warning:', err)
     } finally {
       setIsExecuting(false)
       setAppliedSuggestions(prev => ({
