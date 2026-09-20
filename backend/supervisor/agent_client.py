@@ -112,7 +112,8 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
             if method == "POST":
                 resp = requests.post(full_url, json=payload or {}, timeout=5.0)
             else:
-                resp = requests.get(full_url, params=params or None, timeout=5.0)
+                merged_get_params = {**(get_params or {}), **params}
+                resp = requests.get(full_url, params=merged_get_params or None, timeout=5.0)
             resp.raise_for_status()
             return resp.json()
         except requests.exceptions.Timeout as exc:
@@ -135,7 +136,8 @@ def _dispatch_agent(capability: str, context: Optional[Dict[str, Any]] = None) -
         if method == "POST":
             resp = client.post(endpoint, json=payload or {})
         else:
-            resp = client.get(endpoint, params=params or None)
+            merged_get_params = {**(get_params or {}), **params}
+            resp = client.get(endpoint, params=merged_get_params or None)
 
         if resp.status_code >= 400:
             raise RuntimeError(f"Agent '{config['agent_name']}' returned HTTP {resp.status_code}: {resp.text}")

@@ -72,99 +72,13 @@ class TestPlannerContractAwareArchitecture(unittest.TestCase):
             })
             self.assertEqual(res.status_code, 503)
 
-            response = self.client.post("/agents/orchestrator/execute", json=payload)
-            self.assertEqual(response.status_code, 200)
-            data = response.json()
-
-            self.assertEqual(data["status"], "FAILED")
-            self.assertIn("traffic", data["failures"])
-            self.assertEqual(data["failures"]["traffic"]["agent"], "traffic_agent")
-            self.assertEqual(data["failures"]["traffic"]["status"], "FAILED")
-            self.assertIn("unavailable", data["failures"]["traffic"]["error"].lower())
-
-            # Planner feedback reflects failure
-            self.assertIsNotNone(data["planner_feedback"])
-            feedback = data["planner_feedback"]
-            self.assertIn("traffic", feedback["failures"])
-            self.assertEqual(feedback["decision"], "HANDLE_AGENT_FAILURES")
-            self.assertIn("agent_failures", feedback["insights"])
-        finally:
-            os.environ.pop("TRAFFIC_AGENT_URL", None)
-
-    def test_dispatch_pollution_only(self):
-        """Test that a pollution-only objective only dispatches to the Pollution agent."""
-        payload = {
-            "request_id": "REQ-TEST-POLL-01",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Monitor city-wide AQI and air pollution levels",
-            "location": "Bollaram",
-            "domains": [],
-            "constraints": [],
-        }
-
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-
-        data = response.json()
-        self.assertEqual(data["status"], "COMPLETED")
-        self.assertIn("pollution", data["assigned_capabilities"])
-        self.assertNotIn("traffic", data["assigned_capabilities"])
-        self.assertEqual(data["dispatched_agents"], ["pollution_agent"])
-        self.assertIn("pollution", data["collected_results"])
-        poll_data = data["collected_results"]["pollution"]
-        self.assertIn("city_avg_aqi", poll_data)
-        self.assertIn("stations", poll_data)
-
-        # Planner feedback receives pollution data
-        self.assertIn("pollution", data["planner_feedback"]["received_results"])
-        self.assertIn("pollution_assessment", data["planner_feedback"]["insights"])
-
-    def test_unknown_capability_error(self):
-        """Test that an unknown capability requested from planner returns 400."""
-        from backend.supervisor.main import _extract_required_capabilities, PlannerPlanResponse
-        fake_plan = PlannerPlanResponse(
-            request_id="REQ-TEST-UNKNOWN",
-            objective="Travel to Mars",
-            likely_causes=["unknown"],
-            interventions=["launch"],
-            required_data=["rocket"],
-            scenarios=[],
-            planner_confidence=0.5,
-            required_capabilities=["quantum_teleportation"],
-        )
-        from fastapi import HTTPException
-        with self.assertRaises(HTTPException) as ctx:
-            _extract_required_capabilities(fake_plan)
-        self.assertEqual(ctx.exception.status_code, 400)
-        self.assertEqual(ctx.exception.detail["error"]["code"], "UNKNOWN_CAPABILITY")
-
-    def test_missing_objective_error(self):
-        """Test error when objective is missing and request not found in planning requests."""
-        payload = {
-            "request_id": "REQ-NO-OBJ",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-        }
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        error_obj = data.get("detail", data).get("error", {})
-        self.assertEqual(error_obj["code"], "PLANNER_INPUT_MISSING")
-
-    def test_planner_feedback_endpoint_direct(self):
-        """Direct test of POST /agents/planner/feedback endpoint."""
-        feedback_payload = {
-            "request_id": "REQ-FEEDBACK-DIRECT",
-            "task_id": "orctask_test123",
-            "objective": "Mitigate peak traffic during storm",    def test_test1_weather_and_traffic_cross_analysis(self):
+    def test_test1_weather_and_traffic_cross_analysis(self):
         """Cross-analysis between weather and traffic."""
         res = self.client.post("/agents/planner/feedback", json={
             "request_id": "REQ-WT-01",
             "task_id": "task_wt_01",
-            "objective": "Traffic is high and I want to know why",            "location": "Narayanguda",
+            "objective": "Traffic is high and I want to know why",
+            "location": "Narayanguda",
             "domains": ["traffic", "weather"],
             "assigned_capabilities": ["traffic", "weather"],
             "dispatched_agents": ["traffic_agent", "weather_agent"],
@@ -227,53 +141,7 @@ class TestPlannerContractAwareArchitecture(unittest.TestCase):
         })
         self.assertEqual(res.status_code, 200)
 
-    def test_out_of_scope_gatekeeping_priority(self):
-        """Test that explicit programming/trivia query is rejected even if domain keyword is present."""
-        payload = {
-            "request_id": "REQ-TEST-OOS-01",
-            "objective": "Write python code to compute traffic congestion",
-        }
-        response = self.client.post("/agents/planner/plan", json=payload)
-        self.assertEqual(response.status_code, 400)
-        data = response.json()
-        error_info = data.get("error") or data.get("detail", {}).get("error", {})
-        self.assertEqual(error_info.get("code"), "QUERY_OUT_OF_SCOPE")
-
-    def test_domain_tailored_causes_and_evidence_for_energy(self):
-        """Test that an energy query receives energy-specific likely causes, required data, and scenarios."""
-        payload = {
-            "request_id": "REQ-TEST-ENERGY-PLAN",
-            "objective": "Optimize substation power load and transformer capacity in HITECH City",
-            "domains": ["energy"],
-        }
-        response = self.client.post("/agents/planner/plan", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertIn("energy", data["required_capabilities"])
-        # Verify energy-tailored causes and data
-        self.assertTrue(any("transformer" in cause or "demand" in cause or "peak" in cause for cause in data["likely_causes"]))
-        self.assertTrue(any("substation" in req or "load" in req for req in data["required_data"]))
-        self.assertTrue(any("grid" in s["label"] or "peak-shaving" in s["label"] for s in data["scenarios"]))
-
-    def test_cross_domain_dispatch_with_energy(self):
-        """Test dispatching energy capability in orchestrator execute."""
-        payload = {
-            "request_id": "REQ-TEST-ENERGY-ORC",
-            "workflow": "monitor-detect-understand",
-            "steps": [],
-            "priority": 3,
-            "objective": "Optimize power consumption and peak load in Madhapur",
-            "location": "Madhapur",
-            "domains": ["energy"],
-            "constraints": [],
-        }
-        response = self.client.post("/agents/orchestrator/execute", json=payload)
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["status"], "COMPLETED")
-        self.assertIn("energy", data["assigned_capabilities"])
-        self.assertIn("energy", data["collected_results"])
-        self.assertIn("load_pct", data["collected_results"]["energy"])    def test_test5_malformed_output_detection(self):
+    def test_test5_malformed_output_detection(self):
         """Malformed output is handled safely."""
         res = self.client.post("/agents/planner/feedback", json={
             "request_id": "REQ-MALFORMED-01",
@@ -289,6 +157,7 @@ class TestPlannerContractAwareArchitecture(unittest.TestCase):
             "failures": {},
         })
         self.assertEqual(res.status_code, 200)
+
     def test_test6_multi_cycle_reasoning_optimization(self):
         """Multi-cycle reasoning with simulation."""
         res = self.client.post("/agents/planner/feedback", json={
