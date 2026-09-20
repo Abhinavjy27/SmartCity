@@ -26,9 +26,15 @@ import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 import requests
-from dotenv import find_dotenv, load_dotenv
+from dotenv import load_dotenv
+import pathlib
 
-load_dotenv(find_dotenv(), override=True)
+# Load .env from the SmartCity project root (two levels up from this file:
+# backend/agents/planner_agent/llm_client.py → SmartCity/.env)
+# This prevents python-dotenv from traversing to a parent directory's .env.
+_PROJECT_ROOT = pathlib.Path(__file__).resolve().parents[3]
+load_dotenv(_PROJECT_ROOT / ".env", override=True)
+
 
 logger = logging.getLogger("planner_llm")
 
