@@ -308,6 +308,8 @@ class PlannerAgent:
 
         decision.agent_requests = validated_calls
         decision.required_capabilities = [c.agent for c in validated_calls]
+        if decision.relevant and not validated_calls and decision.next_action == "collect_evidence":
+            decision.next_action = "finalize"
         if not decision.objective:
             decision.objective = decision.objective_understanding or objective
         return decision

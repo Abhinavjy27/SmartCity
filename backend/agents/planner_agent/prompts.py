@@ -36,13 +36,17 @@ Workflow: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Fronten
 - simulation: Eclipse SUMO micro-simulations under synthetic demand.
 
 ### GATEKEEPING:
-If outside Smart City scope, return: {{"relevant": false, "response": "This question is outside the scope of the Smart City system."}}
+If outside Smart City scope, return: {{"relevant": false, "objective": "...", "required_capabilities": [], "agent_requests": [], "next_action": "finalize", "response": "This question is outside the scope of the Smart City system."}}
 
 ### INITIAL RULES:
 1. Understand objective, location, constraints.
 2. Select ONLY necessary specialist agents.
 3. For traffic/intervention queries, select "traffic" first to collect baseline evidence.
-4. Set "next_action": "collect_evidence".
+4. Set "next_action" to ALWAYS be a non-null string:
+   - "collect_evidence" when specialist agents are selected.
+   - "run_simulation" when simulation agent is requested.
+   - "finalize" when out-of-scope (relevant: false), answered immediately, or no agents needed.
+   NEVER return null.
 
 ### OUTPUT JSON SCHEMA:
 Return ONLY valid JSON matching:
@@ -100,6 +104,9 @@ Workflow: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Fronten
 
 ### RULES:
 1. Gatekeep out-of-scope queries (`relevant: false`).
+   If the query is outside the scope of the Smart City system (e.g. general knowledge, greetings, chat, non-urban domains):
+   Set `relevant: false`, `required_capabilities: []`, `agent_requests: []`, `next_action: "finalize"`, and provide a polite rejection in `response`.
+   NEVER return null for `next_action`.
 2. Identify core objective, location, constraints.
 3. QUERY INTENT CLASSIFICATION:
    - A. New observation request (e.g. "Which corridor is currently the bottleneck?", "What are current traffic conditions?"):
@@ -112,9 +119,16 @@ Workflow: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Fronten
      Set `next_action: "finalize"`.
    - D. Follow-up explicitly requesting NEW simulation testing (e.g. "Now test a different signal timing", "Simulate rerouting with 20% diversion"):
      Select `simulation` agent with requested parameters (`required_capabilities: ["simulation"]`, `next_action: "run_simulation"`).
+   - E. Immediate-answer or clarifying requests where no specialist agent is needed (`agent_requests: []`):
+     Set `next_action: "finalize"`.
 4. For multi-domain investigations, select `weather`, `pollution`, or `energy` only when relevant to the prompt.
    - For `pollution`: specify `data_mode: "current"` when real-time or current AQI/pollution is requested. Specify `data_mode: "historical"` for historical trend or multi-year analysis.
-5. Set `next_action`: `"collect_evidence"` for new data collection, `"run_simulation"` for explicit new simulation, or `"finalize"` for follow-up analysis on existing history.
+5. MANDATORY next_action CONTRACT:
+   `next_action` MUST ALWAYS be a non-null string from the allowed action vocabulary:
+   - "collect_evidence": when one or more specialist agents (`traffic`, `weather`, `pollution`, `energy`) must be dispatched.
+   - "run_simulation": when `simulation` agent is requested for intervention experiments.
+   - "finalize": when the request is answered immediately, out-of-scope (`relevant: false`), or no specialist dispatches are needed (`agent_requests: []`).
+   NEVER return null, None, or empty string for `next_action`.
 
 ### OUTPUT JSON SCHEMA:
 Return ONLY valid JSON:
@@ -131,6 +145,7 @@ Return ONLY valid JSON:
   "confidence": null,
   "response": null
 }}
+// REQUIRED: "next_action" MUST ALWAYS be a non-null string ("collect_evidence" | "run_simulation" | "finalize"). NEVER return null.
 """
 
 STAGE_2_EVALUATION_SYSTEM_PROMPT = f"""[STAGE 2: EVIDENCE EVALUATION & REPLANNING]
@@ -545,7 +560,7 @@ def build_stage_1_prompt(
     return f"""Objective: \"\"\"{objective}\"\"\"
 Location: {location or 'Not specified'}
 Constraints: {json.dumps(constraints or [], separators=(',', ':'), default=str)}{sim_hint}
-Determine relevance, select agents, and generate contract-compliant requests."""
+Determine relevance, select agents, and generate contract-compliant requests. next_action must ALWAYS be a non-null string ("collect_evidence", "run_simulation", or "finalize")."""
 
 
 def build_stage_2_prompt(

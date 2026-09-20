@@ -65,7 +65,7 @@ class LLMProviderError(LLMError):
 LLMExecutionError = LLMProviderError
 
 
-class LLMJsonParsingError(LLMError):
+class LLMJsonParsingError(LLMProviderError):
     """Raised when LLM output cannot be parsed as valid JSON adhering to the required schema."""
     pass
 

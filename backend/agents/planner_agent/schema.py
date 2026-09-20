@@ -121,7 +121,7 @@ class LLMPlanDecision(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
-    def sync_agents(cls, data: Any) -> Any:
+    def sync_agents_and_normalize(cls, data: Any) -> Any:
         if isinstance(data, dict):
             if "selected_agents" in data and "agent_requests" not in data:
                 data["agent_requests"] = data["selected_agents"]
@@ -137,6 +137,52 @@ class LLMPlanDecision(BaseModel):
                 data["required_capabilities"] = caps
             if not data.get("objective") and data.get("objective_understanding"):
                 data["objective"] = data["objective_understanding"]
+
+            # Defensive next_action normalization and state-aware fallback
+            raw_action = data.get("next_action")
+            action_str = str(raw_action).strip().lower() if raw_action is not None else ""
+
+            # Check relevance
+            is_relevant = data.get("relevant", True)
+            if isinstance(is_relevant, str):
+                is_relevant = is_relevant.lower() not in ("false", "0", "no")
+
+            # Extract requested capability names
+            req_caps = [str(c).lower().strip() for c in (data.get("required_capabilities") or [])]
+            agent_reqs = data.get("agent_requests") or []
+            agent_names = []
+            for ar in agent_reqs:
+                if isinstance(ar, dict) and "agent" in ar:
+                    agent_names.append(str(ar["agent"]).lower().strip())
+                elif hasattr(ar, "agent"):
+                    agent_names.append(str(ar.agent).lower().strip())
+            all_requested = req_caps + agent_names
+
+            has_simulation = "simulation" in all_requested
+            has_specialist = any(c in ("traffic", "weather", "pollution", "energy") for c in all_requested)
+
+            # Map recognized aliases
+            if action_str in ("collect_evidence", "collect", "gather_evidence", "collect-evidence"):
+                data["next_action"] = "collect_evidence"
+            elif action_str in ("run_simulation", "simulate", "simulation", "run-simulation"):
+                data["next_action"] = "run_simulation"
+            elif action_str in ("finalize", "complete", "done", "finish", "proceed_to_recommendation", "answer_immediately"):
+                data["next_action"] = "finalize"
+            elif action_str in ("abort", "error", "fail", "cancel"):
+                data["next_action"] = "abort"
+            elif action_str in ("request_more_evidence", "need_more_evidence"):
+                data["next_action"] = "request_more_evidence"
+            else:
+                # Semantic state-aware fallback when next_action is null, empty string, or unrecognized:
+                if not is_relevant:
+                    data["next_action"] = "finalize"
+                elif has_simulation:
+                    data["next_action"] = "run_simulation"
+                elif has_specialist:
+                    data["next_action"] = "collect_evidence"
+                else:
+                    # No specialist agents requested (immediate answer, clarifying prompt, or out-of-scope)
+                    data["next_action"] = "finalize"
         return data
 
     @property
@@ -174,20 +220,32 @@ class LLMEvaluationDecision(BaseModel):
             elif "agent_requests" in data and "next_agents" not in data:
                 data["next_agents"] = data["agent_requests"]
 
-            dec = str(data.get("decision", "")).strip()
-            # Normalize decision and next_action
-            if dec in ("PROCEED_TO_RECOMMENDATION", "ENOUGH_EVIDENCE", "finalize"):
+            dec = str(data.get("decision", "")).strip().lower()
+            # Normalize decision
+            if dec in ("proceed_to_recommendation", "enough_evidence", "finalize"):
                 data["decision"] = "finalize"
-                data.setdefault("next_action", "finalize")
-            elif dec in ("REQUEST_ADDITIONAL_AGENT", "NEED_MORE_EVIDENCE", "request_more_evidence"):
+            elif dec in ("request_additional_agent", "need_more_evidence", "request_more_evidence"):
                 data["decision"] = "request_more_evidence"
-                data.setdefault("next_action", "request_more_evidence")
-            elif dec in ("RUN_SIMULATION", "run_simulation"):
+            elif dec in ("run_simulation", "simulate", "simulation"):
                 data["decision"] = "run_simulation"
-                data.setdefault("next_action", "run_simulation")
-            elif dec in ("ABORT", "abort"):
+            elif dec in ("abort", "cancel", "error", "fail"):
                 data["decision"] = "abort"
-                data.setdefault("next_action", "abort")
+            elif not dec:
+                data["decision"] = "finalize"
+
+            # Normalize next_action (handle null, empty, or aliased)
+            raw_action = data.get("next_action")
+            action_str = str(raw_action).strip().lower() if raw_action is not None else ""
+            if action_str in ("finalize", "proceed_to_recommendation", "done"):
+                data["next_action"] = "finalize"
+            elif action_str in ("request_more_evidence", "need_more_evidence"):
+                data["next_action"] = "request_more_evidence"
+            elif action_str in ("run_simulation", "simulate"):
+                data["next_action"] = "run_simulation"
+            elif action_str in ("abort", "fail", "cancel"):
+                data["next_action"] = "abort"
+            else:
+                data["next_action"] = data["decision"]
 
             if not data.get("required_capabilities") and data.get("agent_requests"):
                 caps = []
@@ -277,6 +335,17 @@ class LLMFinalReasoning(BaseModel):
         default=None,
         description="Deterministic ID of preferred or recommended scenario based on balanced evaluation."
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_final_reasoning(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            raw_action = data.get("next_action")
+            if not raw_action or str(raw_action).strip().lower() in ("null", "none"):
+                data["next_action"] = "operational_implementation"
+            else:
+                data["next_action"] = str(raw_action).strip()
+        return data
 
     @property
     def requested_scope(self) -> List[str]:
