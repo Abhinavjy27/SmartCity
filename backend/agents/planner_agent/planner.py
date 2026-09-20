@@ -64,6 +64,13 @@ from backend.agents.planner_agent.schema import (
     SelectedAgentCall,
     SeverityLevel,
 )
+from backend.agents.planner_agent.scope import (
+    apply_response_scope,
+    classify_response_scope,
+    determine_response_scope,
+    extract_specialist_traffic_metrics,
+    validate_and_enforce_response_scope,
+)
 
 logger = logging.getLogger("planner_agent")
 
@@ -289,6 +296,12 @@ class PlannerAgent:
                         call.request["scenario"] = eff_scenario
                     if eff_seed is not None and "seed" not in call.request:
                         call.request["seed"] = eff_seed
+                elif agent_name == "pollution":
+                    call.request = dict(call.request or {})
+                    if not call.request.get("objective"):
+                        call.request["objective"] = obj_clean
+                    if not call.request.get("location"):
+                        call.request["location"] = location or "Narayanguda, Hyderabad"
                 validated_calls.append(call)
             else:
                 logger.warning(f"Safeguard rejected unallowed agent requested by LLM: {call.agent}")
@@ -367,7 +380,18 @@ class PlannerAgent:
         # Resolve location context: prioritize explicit location or payload location
         resolved_loc = (location or payload.get("location") or payload.get("city") or "").strip()
 
-        if cap in ["traffic", "pollution", "energy"]:
+        if cap == "pollution":
+            if not payload.get("objective") and objective:
+                payload["objective"] = objective
+            elif not payload.get("objective"):
+                payload["objective"] = f"Analyze air pollution at {resolved_loc or 'designated location'}"
+            if not payload.get("location"):
+                if resolved_loc:
+                    payload["location"] = resolved_loc
+                else:
+                    missing_fields.append("location")
+
+        elif cap in ["traffic", "energy"]:
             if not payload.get("location"):
                 if resolved_loc:
                     payload["location"] = resolved_loc
@@ -458,9 +482,23 @@ class PlannerAgent:
                 raise ValueError("Specialist agent 'weather' returned malformed payload missing key meteorological metrics")
 
         elif cap == "pollution":
-            has_metric = any(k in raw_output for k in ["city_avg_aqi", "aqi", "pollutants", "stations"])
-            if not has_metric:
-                raise ValueError("Specialist agent 'pollution' returned malformed payload missing AQI metrics")
+            if isinstance(raw_output, dict) and (
+                raw_output.get("status") in ("unavailable", "failed", "error")
+                or "error" in raw_output
+            ):
+                return raw_output
+            required_numeric = ["city_avg_aqi", "pm25", "pm10"]
+            missing_fields = [f for f in required_numeric if f not in raw_output or raw_output[f] is None]
+            if missing_fields:
+                raise ValueError(
+                    f"Specialist agent 'pollution' returned malformed payload missing required numeric fields: {missing_fields}"
+                )
+            for num_field in required_numeric:
+                val = raw_output[num_field]
+                if isinstance(val, bool) or not isinstance(val, (int, float)):
+                    raise ValueError(
+                        f"Specialist agent 'pollution' field '{num_field}' must be numeric, got {type(val).__name__}"
+                    )
 
         elif cap == "energy":
             has_metric = any(k in raw_output for k in ["load_pct", "current_load_mw", "substations"])
@@ -653,33 +691,100 @@ class PlannerAgent:
                 ))
 
         elif capability == "pollution":
-            aqi_val = data.get("city_avg_aqi") or data.get("aqi")
+            aqi_val = data.get("city_avg_aqi") if "city_avg_aqi" in data else data.get("aqi")
             if aqi_val is not None:
-                val = int(aqi_val)
-                sev = SeverityLevel.CRITICAL if val >= 200 else (SeverityLevel.HIGH if val >= 150 else SeverityLevel.MODERATE)
-                evidence.append(EvidenceItem(
-                    source="pollution",
-                    metric="aqi",
-                    value=val,
-                    unit="AQI",
-                    location=loc,
-                    severity=sev,
-                    timestamp=now_ts,
-                    details={"category": data.get("category"), "primary_pollutant": data.get("primary_pollutant")},
-                ))
-            for st in data.get("stations", []):
-                st_aqi = st.get("aqi", 0)
-                if st_aqi >= 150:
+                try:
+                    val = float(aqi_val)
+                    sev = SeverityLevel.CRITICAL if val >= 200 else (SeverityLevel.HIGH if val >= 150 else (SeverityLevel.MODERATE if val >= 100 else SeverityLevel.LOW))
                     evidence.append(EvidenceItem(
                         source="pollution",
-                        metric="station_hotspot",
-                        value=st_aqi,
+                        metric="city_avg_aqi",
+                        value=val,
                         unit="AQI",
-                        location=st.get("name", loc),
-                        severity=SeverityLevel.HIGH,
+                        location=loc,
+                        severity=sev,
                         timestamp=now_ts,
-                        details=st,
+                        details={"city_avg_aqi": val, "category": data.get("category"), "primary_pollutant": data.get("primary_pollutant")},
                     ))
+                except (ValueError, TypeError):
+                    pass
+
+            pm25_val = data.get("pm25")
+            if pm25_val is not None:
+                try:
+                    val = float(pm25_val)
+                    sev = SeverityLevel.CRITICAL if val >= 90 else (SeverityLevel.HIGH if val >= 60 else (SeverityLevel.MODERATE if val >= 30 else SeverityLevel.LOW))
+                    evidence.append(EvidenceItem(
+                        source="pollution",
+                        metric="pm25",
+                        value=val,
+                        unit="ug/m3",
+                        location=loc,
+                        severity=sev,
+                        timestamp=now_ts,
+                        details={"pm25": val},
+                    ))
+                except (ValueError, TypeError):
+                    pass
+
+            pm10_val = data.get("pm10")
+            if pm10_val is not None:
+                try:
+                    val = float(pm10_val)
+                    sev = SeverityLevel.CRITICAL if val >= 150 else (SeverityLevel.HIGH if val >= 100 else (SeverityLevel.MODERATE if val >= 50 else SeverityLevel.LOW))
+                    evidence.append(EvidenceItem(
+                        source="pollution",
+                        metric="pm10",
+                        value=val,
+                        unit="ug/m3",
+                        location=loc,
+                        severity=sev,
+                        timestamp=now_ts,
+                        details={"pm10": val},
+                    ))
+                except (ValueError, TypeError):
+                    pass
+
+            for st in data.get("stations", []):
+                if isinstance(st, dict):
+                    st_aqi = st.get("aqi", 0)
+                    if st_aqi >= 150:
+                        evidence.append(EvidenceItem(
+                            source="pollution",
+                            metric="station_hotspot",
+                            value=float(st_aqi),
+                            unit="AQI",
+                            location=st.get("name", loc),
+                            severity=SeverityLevel.HIGH,
+                            timestamp=now_ts,
+                            details=st,
+                        ))
+                elif isinstance(st, str):
+                    evidence.append(EvidenceItem(
+                        source="pollution",
+                        metric="station",
+                        value=1.0,
+                        unit="station",
+                        location=st,
+                        severity=SeverityLevel.LOW,
+                        timestamp=now_ts,
+                        details={"name": st},
+                    ))
+
+            for inv in data.get("suggested_interventions", []):
+                inv_dict = inv if isinstance(inv, dict) else (inv.model_dump() if hasattr(inv, "model_dump") else {})
+                act = inv_dict.get("action_type") or str(inv)
+                imp = inv_dict.get("expected_impact_pct", 0.0)
+                evidence.append(EvidenceItem(
+                    source="pollution",
+                    metric="suggested_intervention",
+                    value=float(imp or 0.0),
+                    unit="percent_impact",
+                    location=act,
+                    severity=SeverityLevel.LOW,
+                    timestamp=now_ts,
+                    details=inv_dict,
+                ))
 
         elif capability == "energy":
             load_pct = data.get("load_pct")
@@ -789,9 +894,13 @@ class PlannerAgent:
         for cap, data in collected_results.items():
             try:
                 valid_data = self.validate_agent_output(cap, data)
+                if isinstance(valid_data, dict) and (valid_data.get("status") in ("unavailable", "failed", "error") or "error" in valid_data):
+                    failures[cap] = valid_data.get("error") or valid_data.get("detail") or f"Specialist agent '{cap}' unavailable"
+                    continue
                 all_evidence.extend(self.extract_evidence(cap, valid_data, location))
             except Exception as exc:
                 logger.warning(f"Failed to validate/extract evidence for {cap}: {exc}")
+                failures[cap] = str(exc)
 
         # 2. Call Autonomous LLM Evaluation Engine
         history = [
@@ -806,10 +915,10 @@ class PlannerAgent:
         )
 
         # 3. Derive Cross-Domain Analysis from returned evidence
-        has_traffic = "traffic" in collected_results
-        has_weather = "weather" in collected_results
-        has_pollution = "pollution" in collected_results
-        has_energy = "energy" in collected_results
+        has_traffic = "traffic" in collected_results and "traffic" not in failures
+        has_weather = "weather" in collected_results and "weather" not in failures
+        has_pollution = "pollution" in collected_results and "pollution" not in failures
+        has_energy = "energy" in collected_results and "energy" not in failures
         sim_raw = (
             collected_results.get("simulations")
             or collected_results.get("simulation")
@@ -900,11 +1009,27 @@ class PlannerAgent:
 
         if has_pollution:
             pol = collected_results["pollution"]
-            aqi = pol.get("city_avg_aqi") or pol.get("aqi") or 0
+            aqi = pol.get("city_avg_aqi") if "city_avg_aqi" in pol else (pol.get("aqi") or 0)
+            pm25 = pol.get("pm25")
+            pm10 = pol.get("pm10")
+            pol_desc = f"Air quality index: {aqi} AQI"
+            if pm25 is not None and pm10 is not None:
+                pol_desc += f" (PM2.5: {pm25} µg/m³, PM10: {pm10} µg/m³)"
             if has_traffic:
-                key_findings.append(f"Air quality index ({aqi} AQI) correlated with roadway corridor emissions.")
+                key_findings.append(f"{pol_desc} correlated with roadway corridor emissions.")
             else:
-                key_findings.append(f"Air quality index: {aqi} AQI.")
+                key_findings.append(f"{pol_desc}.")
+
+            interventions = pol.get("suggested_interventions", [])
+            if interventions and isinstance(interventions, list):
+                interv_names = []
+                for inv in interventions:
+                    if isinstance(inv, dict):
+                        interv_names.append(inv.get("action_type", "intervention"))
+                    elif hasattr(inv, "action_type"):
+                        interv_names.append(getattr(inv, "action_type"))
+                if interv_names:
+                    key_findings.append(f"Pollution Agent suggested municipal interventions: {', '.join(interv_names)}.")
 
         if has_energy:
             eng = collected_results["energy"]
@@ -1027,10 +1152,18 @@ class PlannerAgent:
                 "requested_duration": target_dur,
             }
 
+        corr_label = "Domain Assessment"
+        if has_weather and has_traffic:
+            corr_label = "Weather → Traffic Friction & Flow Delay"
+        elif has_traffic and has_pollution:
+            corr_label = "Traffic Congestion & Emissions → Air Pollution Exposure"
+        elif has_pollution:
+            corr_label = "Environmental Air Quality Analysis"
+
         cross_analysis = CrossDomainAnalysis(
-            primary_correlation="Weather → Traffic Friction & Flow Delay" if (has_weather and has_traffic) else "Domain Assessment",
-            risk_level=SeverityLevel.HIGH if (has_weather and has_traffic) else SeverityLevel.MODERATE,
-            causation_likelihood="STRONG" if (has_weather and has_traffic) else "PLAUSIBLE",
+            primary_correlation=corr_label,
+            risk_level=SeverityLevel.HIGH if (has_weather and has_traffic) or (has_traffic and has_pollution) else SeverityLevel.MODERATE,
+            causation_likelihood="STRONG" if (has_weather and has_traffic) or (has_traffic and has_pollution) else "PLAUSIBLE",
             key_findings=key_findings,
             diagnosed_bottlenecks=diagnosed_bottlenecks[:4],
             candidate_interventions=candidate_interventions[:3],
@@ -1355,10 +1488,24 @@ class PlannerAgent:
                         evidence_status=det_evidence_status,
                         objective=objective,
                     )
+
+                    # Validate and enforce structured response scope: answer only what was asked
+                    validate_and_enforce_response_scope(
+                        final_reasoning=final_reasoning,
+                        objective=objective,
+                        collected_results=collected_results,
+                        cross_analysis=cross_analysis,
+                    )
                 final_rec = final_reasoning.recommendation if final_reasoning else None
             except Exception as exc:
                 logger.warning(f"Final reasoning generation note: {exc}")
                 final_rec = llm_eval.analysis
+
+        resp_scope = (
+            getattr(final_reasoning, "response_scope", None)
+            if final_reasoning
+            else determine_response_scope(objective)
+        )
 
         return PlannerEvaluationResponse(
             goal_achieved=is_sufficient,
@@ -1376,6 +1523,7 @@ class PlannerAgent:
             next_cycle_calls=validated_next_calls,
             simulation_context=llm_eval.simulation_context,
             scenarios=llm_eval.scenarios,
+            response_scope=resp_scope,
         )
 
     # ---------------------------------------------------------------------------

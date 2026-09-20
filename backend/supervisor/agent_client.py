@@ -38,8 +38,12 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
     "pollution": {
         "agent_name": "pollution_agent",
         "env_url_key": "POLLUTION_AGENT_URL",
-        "endpoint": "/api/v1/pollution/aqi-summary",
-        "method": "GET",
+        "endpoint": "/api/v1/pollution/analyze",
+        "method": "POST",
+        "default_payload": {
+            "objective": "Analyze air quality and pollution levels",
+            "location": "Narayanguda, Hyderabad",
+        },
         "module_path": "backend.agents.pollution_agent.main",
     },
     "simulation": {

@@ -160,6 +160,17 @@ export const planningApi = {
       tested_scenarios: payload.tested_scenarios || undefined
     }
 
+    // Safe request logging (no secrets)
+    console.log(
+      `[API Execute Planner] REQUEST_ID=${defaultPayload.request_id} | ` +
+      `SESSION_ID=${defaultPayload.session_id || 'none'} | ` +
+      `QUERY='${defaultPayload.query}' | OBJECTIVE='${defaultPayload.objective}' | ` +
+      `LOCATION='${defaultPayload.location}' | ` +
+      `CONV_LEN=${(defaultPayload.conversation_history || []).length} | ` +
+      `SIM_LEN=${(defaultPayload.simulation_history || []).length} | ` +
+      `SCEN_LEN=${(defaultPayload.tested_scenarios || []).length}`
+    )
+
     try {
       const res = await request('/agents/planner/execute', {
         method: 'POST',
@@ -176,6 +187,7 @@ export const planningApi = {
       return {
         ...res,
         task_id: res.request_id,
+        runtime: res.runtime || null,
         collected_results: res.agent_results || {},
         planner_feedback: {
           decision: res.final_response?.decision || feedbackInsights.decision || 'PROCEED_TO_EVALUATION',

@@ -246,6 +246,51 @@ function parseTrafficEvidence(res) {
   }
 }
 
+function parsePollutionEvidence(res) {
+  const pol = res?.agent_results?.pollution || res?.collected_results?.pollution
+  if (!pol) return null
+
+  const aqi = pol.city_avg_aqi ?? pol.aqi ?? null
+  const pm25 = pol.pm25 !== null && pol.pm25 !== undefined ? Number(pol.pm25).toFixed(1) : null
+  const pm10 = pol.pm10 !== null && pol.pm10 !== undefined ? Number(pol.pm10).toFixed(1) : null
+  const stations = Array.isArray(pol.stations) ? pol.stations : []
+  const interventions = Array.isArray(pol.suggested_interventions) ? pol.suggested_interventions : []
+  const category = pol.category || (
+    aqi !== null ? (
+      aqi <= 50 ? 'Good' : (
+        aqi <= 100 ? 'Moderate' : (
+          aqi <= 200 ? 'Unhealthy' : 'Very Unhealthy'
+        )
+      )
+    ) : 'Unknown'
+  )
+
+  const dataMode = pol.data_mode || 'historical'
+  const dataSource = pol.data_source || (dataMode === 'current' ? 'open-meteo-air-quality-current' : 'open-meteo-air-quality-historical')
+  const dataTimestamp = pol.data_timestamp || null
+  const retrievedAt = pol.retrieved_at || null
+  const pollutants = pol.pollutants || null
+  const isModelled = pol.is_modelled !== false
+
+  return {
+    aqi,
+    pm25,
+    pm10,
+    category,
+    primaryPollutant: pol.primary_pollutant || 'PM2.5',
+    stations,
+    suggestedInterventions: interventions,
+    location: pol.location || 'Narayanguda, Hyderabad',
+    dataMode,
+    dataSource,
+    dataTimestamp,
+    retrievedAt,
+    pollutants,
+    isModelled,
+    isCurrent: dataMode === 'current',
+  }
+}
+
 function parseSimulationEvidence(res, promptText) {
   let allSims = []
   if (Array.isArray(res?.final_response?.tested_scenarios) && res.final_response.tested_scenarios.length > 0) {
@@ -440,8 +485,10 @@ export default function Planning() {
       const decision = finalResp.decision || feedback.decision || res.status || 'COMPLETED'
 
       const trafficEv = parseTrafficEvidence(res)
+      const pollutionEv = parsePollutionEvidence(res)
       const simEv = parseSimulationEvidence(res, text)
       const multiComp = parseMultiSimulationComparison(res, text)
+      const runtimeInfo = res.runtime || null
 
       const assistantTurn = {
         role: 'assistant',
@@ -452,8 +499,10 @@ export default function Planning() {
         testedInterventions: mergedTested,
         untestedCandidates: newUntested,
         trafficEvidence: trafficEv,
+        pollutionEvidence: pollutionEv,
         simulationEvidence: simEv,
         multiInterventionComparison: multiComp,
+        runtime: runtimeInfo,
         dispatchedAgents: res.dispatched_agents || [],
         simulations: mergedSims,
         tested_scenarios: testedScenarios,
@@ -716,6 +765,28 @@ export default function Planning() {
                     </div>
                   </div>
 
+                  {/* Runtime Provenance Bar (Honest Metadata) */}
+                  {turn.runtime && (
+                    <div style={{
+                      display: 'flex', flexWrap: 'wrap', gap: '8px', alignItems: 'center',
+                      padding: '6px 10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
+                      fontSize: '0.7rem', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)',
+                      marginBottom: '12px', border: '1px solid var(--border-default)'
+                    }}>
+                      <span><strong>LLM:</strong> {turn.runtime.llm_provider || 'Groq'}</span>
+                      <span>•</span>
+                      <span><strong>Planner Calls:</strong> {turn.runtime.llm_calls || 1}</span>
+                      <span>•</span>
+                      <span><strong>Specialist:</strong> {turn.dispatchedAgents?.length > 0 ? turn.dispatchedAgents.map(a => a.replace('_agent', '').toUpperCase()).join(', ') : 'None'}</span>
+                      <span>•</span>
+                      <span><strong>Simulation:</strong> {turn.runtime.simulation_runs?.length > 0 ? `${turn.runtime.simulation_runs.length} Runs` : 'Not Required'}</span>
+                      <span>•</span>
+                      <span><strong>Cache:</strong> {turn.runtime.cache_used ? 'YES' : 'NO'}</span>
+                      <span>•</span>
+                      <span><strong>Latency:</strong> {turn.runtime.total_latency_ms ? `${turn.runtime.total_latency_ms}ms` : '—'}</span>
+                    </div>
+                  )}
+
                   {/* Natural-Language Analysis */}
                   <div style={{ marginBottom: '14px' }}>
                     <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontWeight: 600, fontFamily: 'var(--font-mono)', marginBottom: '4px', textTransform: 'uppercase' }}>
@@ -939,6 +1010,109 @@ export default function Planning() {
                           {turn.trafficEvidence.corridors.map(c => `${c.name}: ${c.avg_speed !== null ? c.avg_speed + ' km/h' : 'N/A'}`).join(' • ')}
                         </div>
                       )}
+                    </div>
+                  )}
+
+                  {/* Real Pollution Evidence Section */}
+                  {turn.pollutionEvidence && (
+                    <div style={{ marginTop: '16px', borderTop: '1px solid var(--border-default)', paddingTop: '14px' }}>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px'
+                      }}>
+                        <div style={{
+                          fontSize: '0.75rem', fontWeight: 700, color: 'var(--accent-emerald)',
+                          fontFamily: 'var(--font-mono)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: '6px'
+                        }}>
+                          <Activity size={14} color="var(--accent-emerald)" />
+                          Pollution Evidence (from Real Pollution Agent)
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                          <span className={`badge ${turn.pollutionEvidence.isCurrent ? 'badge-primary' : 'badge-smooth'}`} style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
+                            {turn.pollutionEvidence.isCurrent ? 'CURRENT / MODELLED' : 'HISTORICAL DATASET'}
+                          </span>
+                          <span className="badge badge-smooth" style={{ fontSize: '0.65rem', padding: '2px 6px', fontFamily: 'var(--font-mono)' }}>
+                            {turn.pollutionEvidence.location} • Category: {turn.pollutionEvidence.category}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Source and Freshness Header */}
+                      <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '10px', display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        <span><strong>Source:</strong> {turn.pollutionEvidence.isCurrent ? 'Open-Meteo Current Air Quality API' : 'Open-Meteo 2020-2024 Hourly Dataset'}</span>
+                        {turn.pollutionEvidence.dataTimestamp && (
+                          <span><strong>Model Timestamp:</strong> {turn.pollutionEvidence.dataTimestamp}</span>
+                        )}
+                        {turn.pollutionEvidence.retrievedAt && (
+                          <span><strong>Retrieved:</strong> {turn.pollutionEvidence.retrievedAt.slice(0, 19).replace('T', ' ')} UTC</span>
+                        )}
+                      </div>
+
+                      {/* Compact Metric Grid */}
+                      <div style={{
+                        display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))',
+                        gap: '10px', marginBottom: '12px'
+                      }}>
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>AIR QUALITY INDEX (AQI)</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--accent-emerald)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.aqi !== null ? turn.pollutionEvidence.aqi : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.category}
+                          </div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PM2.5 CONCENTRATION</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.pm25 !== null ? `${turn.pollutionEvidence.pm25} µg/m³` : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>Fine Particulate Matter</div>
+                        </div>
+
+                        <div style={{ padding: '10px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)' }}>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>PM10 CONCENTRATION</div>
+                          <div style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)', marginTop: '2px' }}>
+                            {turn.pollutionEvidence.pm10 !== null ? `${turn.pollutionEvidence.pm10} µg/m³` : '—'}
+                          </div>
+                          <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: '2px' }}>Respirable Particulate</div>
+                        </div>
+                      </div>
+
+                      {/* Auxiliary chemical concentrations if provided by Open-Meteo Current API */}
+                      {turn.pollutionEvidence.pollutants && (
+                        <div style={{
+                          display: 'flex', flexWrap: 'wrap', gap: '8px', padding: '8px 10px',
+                          background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)', marginBottom: '10px',
+                          border: '1px solid var(--border-default)', fontSize: '0.68rem', fontFamily: 'var(--font-mono)'
+                        }}>
+                          {turn.pollutionEvidence.pollutants.carbon_monoxide !== null && (
+                            <span>CO: <strong>{turn.pollutionEvidence.pollutants.carbon_monoxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.nitrogen_dioxide !== null && (
+                            <span>• NO₂: <strong>{turn.pollutionEvidence.pollutants.nitrogen_dioxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.sulphur_dioxide !== null && (
+                            <span>• SO₂: <strong>{turn.pollutionEvidence.pollutants.sulphur_dioxide} µg/m³</strong></span>
+                          )}
+                          {turn.pollutionEvidence.pollutants.ozone !== null && (
+                            <span>• O₃: <strong>{turn.pollutionEvidence.pollutants.ozone} µg/m³</strong></span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Suggested Municipal Interventions if present */}
+                      {turn.pollutionEvidence.suggestedInterventions && turn.pollutionEvidence.suggestedInterventions.length > 0 && (
+                        <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '6px', marginBottom: '8px' }}>
+                          <strong style={{ color: 'var(--text-primary)' }}>Suggested Interventions: </strong>
+                          {turn.pollutionEvidence.suggestedInterventions.map((inv, idx) => typeof inv === 'object' ? inv.action_type || inv.description : inv).join(' • ')}
+                        </div>
+                      )}
+
+                      {/* Modelled atmospheric data disclaimer */}
+                      <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '6px' }}>
+                        * Modelled atmospheric air-quality data from Open-Meteo API. Not a physical ground monitoring-station sensor reading.
+                      </div>
                     </div>
                   )}
 

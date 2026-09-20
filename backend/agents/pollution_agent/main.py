@@ -3,8 +3,15 @@ SUPADSP Specialist Agent — Pollution & Air Quality Intelligence
 Handles TSPCB sensor streams, Gaussian Plume dispersion modeling, and AQI forecasting.
 """
 
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI, APIRouter, HTTPException
 import datetime
+from backend.agents.pollution_agent.schema import PollutionAnalyzeRequest, PollutionAnalyzeResponse
+from backend.agents.pollution_agent.dataset_loader import PollutionCalculator
+from backend.agents.pollution_agent.optimizer import InterventionOptimizer
+
+calculator = PollutionCalculator()
+optimizer = InterventionOptimizer()
+
 
 app = FastAPI(title="SUPADSP Pollution Agent", version="2.0.0")
 router = APIRouter()
@@ -97,5 +104,77 @@ def get_current_pollution():
             {"name": "Ramachandrapuram", "aqi": 112, "status": "MODERATE_AQI", "pm25": 61.3},
         ]
     }
+
+from backend.agents.pollution_agent.current_client import (
+    OpenMeteoCurrentClient,
+    PollutionCurrentAPIError,
+    PollutionLocationNotSupportedError,
+)
+
+current_client = OpenMeteoCurrentClient()
+
+
+@router.post("/api/v1/pollution/analyze", response_model=PollutionAnalyzeResponse)
+def analyze_pollution(request: PollutionAnalyzeRequest):
+    # Mode 1: Current live atmospheric air quality from Open-Meteo API
+    if request.data_mode == "current":
+        try:
+            sensor_data = current_client.fetch_current_pollution(request.location)
+        except PollutionLocationNotSupportedError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except PollutionCurrentAPIError as exc:
+            raise HTTPException(status_code=503, detail=str(exc))
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"Current air-quality data is temporarily unavailable: {str(exc)}"
+            )
+
+        interventions = optimizer.generate_interventions(sensor_data)
+
+        response_data = {
+            "city_avg_aqi": sensor_data["city_avg_aqi"],
+            "pm25": sensor_data["pm25"],
+            "pm10": sensor_data["pm10"],
+            "stations": sensor_data.get("stations", []),
+            "suggested_interventions": interventions,
+            "data_mode": "current",
+            "data_source": "open-meteo-air-quality-current",
+            "data_timestamp": sensor_data.get("data_timestamp"),
+            "retrieved_at": sensor_data.get("retrieved_at"),
+            "category": sensor_data.get("category"),
+            "is_modelled": True,
+            "pollutants": sensor_data.get("pollutants"),
+            "latitude": sensor_data.get("latitude"),
+            "longitude": sensor_data.get("longitude"),
+            "location": sensor_data.get("location") or request.location,
+        }
+        return PollutionAnalyzeResponse(**response_data)
+
+    # Mode 2: Historical air quality analysis from Open-Meteo CSV dataset
+    sensor_data = calculator.calculate_metrics(request.location)
+    if not sensor_data:
+        raise HTTPException(status_code=404, detail="No pollution data found for this location.")
+
+    interventions = optimizer.generate_interventions(sensor_data)
+    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    aqi_val = sensor_data["city_avg_aqi"]
+    category_val = "Good" if aqi_val <= 50 else ("Moderate" if aqi_val <= 100 else "Unhealthy")
+
+    response_data = {
+        "city_avg_aqi": aqi_val,
+        "pm25": sensor_data["pm25"],
+        "pm10": sensor_data["pm10"],
+        "stations": sensor_data.get("stations", []),
+        "suggested_interventions": interventions,
+        "data_mode": "historical",
+        "data_source": "open-meteo-air-quality-historical",
+        "data_timestamp": "2020-2024 Hourly Dataset",
+        "retrieved_at": now_utc,
+        "category": category_val,
+        "is_modelled": True,
+        "location": request.location,
+    }
+    return PollutionAnalyzeResponse(**response_data)
 
 app.include_router(router)

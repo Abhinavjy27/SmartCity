@@ -204,6 +204,21 @@ class LLMEvaluationDecision(BaseModel):
         return self.agent_requests
 
 
+class ResponseScope(BaseModel):
+    """
+    Structured response scope determining requested fields and detail level.
+    Determined from the user's natural language request by the LLM Planner.
+    """
+    fields: List[str] = Field(
+        default_factory=list,
+        description="Fields or topics explicitly requested by the user, e.g. ['bottleneck_corridor'], ['average_speed'], ['causes'], ['recommendations']."
+    )
+    detail_level: Literal["minimal", "summary", "analysis", "full"] = Field(
+        default="minimal",
+        description="Level of detail requested: 'minimal' for direct answers to narrow queries, 'summary' for brief overviews, 'analysis' for in-depth evaluations."
+    )
+
+
 class LLMFinalReasoning(BaseModel):
     """
     Structured output schema for the LLM Planner's final cross-agent synthesis.
@@ -222,7 +237,9 @@ class LLMFinalReasoning(BaseModel):
         description="Notice regarding the synthetic nature of SUMO simulation results."
     )
     uncertainty_and_limitations: str = Field(..., description="Noted limitations, data gaps, or sensor assumptions.")
-    recommendation: str = Field(..., description="Actionable municipal policy, routing, or signal recommendation.")
+    recommendation: str = Field(default="", description="Actionable municipal policy, routing, or signal recommendation.")
+    response_scope: Optional[ResponseScope] = Field(default=None, description="Structured scope determined from user request specifying requested fields and detail level.")
+    requested_scope: Optional[List[str]] = Field(default=None, description="List of requested field names for backward compatibility.")
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0, description="Optional confidence score; must not be fabricated.")
     next_action: str = Field(default="operational_implementation", description="Immediate operational next step for municipal operations.")
     evidence_status: str = Field(
@@ -260,6 +277,13 @@ class LLMFinalReasoning(BaseModel):
         default=None,
         description="Deterministic ID of preferred or recommended scenario based on balanced evaluation."
     )
+
+    @property
+    def requested_scope(self) -> List[str]:
+        if self.response_scope and self.response_scope.fields:
+            return self.response_scope.fields
+        return []
+
 
 
 
@@ -323,6 +347,19 @@ class PlannerEvaluationResponse(BaseModel):
     next_cycle_calls: List[AgentRequest] = Field(default_factory=list, description="Detailed agent calls for next cycle.")
     simulation_context: Optional[Dict[str, Any]] = Field(default=None, description="Derived scenario parameters for simulation.")
     scenarios: Optional[List[Dict[str, Any]]] = Field(default=None, description="Experimental scenarios if simulation is needed.")
+    response_scope: Optional[ResponseScope] = Field(default=None, description="Structured response scope specifying requested fields and detail level.")
+    requested_scope: Optional[List[str]] = Field(default=None, description="List of requested field names for backward compatibility.")
+
+    @model_validator(mode="after")
+    def sync_requested_scope(self) -> PlannerEvaluationResponse:
+        if self.requested_scope is None:
+            if self.response_scope and self.response_scope.fields:
+                self.requested_scope = self.response_scope.fields
+            elif self.final_reasoning and self.final_reasoning.response_scope:
+                self.requested_scope = self.final_reasoning.response_scope.fields
+            else:
+                self.requested_scope = []
+        return self
 
     @property
     def tested_interventions(self) -> List[Dict[str, Any]]:

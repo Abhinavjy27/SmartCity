@@ -111,10 +111,7 @@ class GroqLLMProvider(BaseLLMProvider):
     def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         resolved_key = api_key or os.getenv("LLM_API_KEY")
         self.api_key = _validate_api_key(resolved_key, "groq")
-        raw_model = model or os.getenv("LLM_MODEL", DEFAULT_PROVIDER_MODELS["groq"])
-        if "qwen" in raw_model or "gpt-oss" in raw_model or "/" in raw_model:
-            raw_model = DEFAULT_PROVIDER_MODELS["groq"]
-        self.model = raw_model
+        self.model = model or os.getenv("LLM_MODEL", DEFAULT_PROVIDER_MODELS["groq"])
         self._client = None
         super().__init__(api_key=self.api_key, model=self.model)
 
@@ -476,7 +473,7 @@ class MockLLMProvider(BaseLLMProvider):
         return self._mock_final_reasoning(user_prompt)
 
     def _mock_initial_planning(self, user_prompt: str) -> Dict[str, Any]:
-        obj_match = re.search(r'User Natural-Language Objective:\s*"""(.*?)"""', user_prompt, re.DOTALL)
+        obj_match = re.search(r'(?:User Natural-Language Objective|Objective):\s*"""(.*?)"""', user_prompt, re.DOTALL | re.IGNORECASE)
         clean_obj = obj_match.group(1).strip().lower() if obj_match else user_prompt.lower()
 
         out_of_scope = ["who won", "fifa", "world cup", "capital of", "tell me a joke", "meaning of life", "java program", "reverse a linked list"]
@@ -541,7 +538,7 @@ class MockLLMProvider(BaseLLMProvider):
 
         is_traffic = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["traffic", "congestion", "cars", "stuck", "delay", "queue", "flyover", "bottleneck", "reduce", "speed", "flow"])
         is_weather = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["weather", "rain", "raining", "rainfall", "monsoon", "thunderstorm", "humidity", "storm"])
-        is_pollution = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["pollution", "aqi", "emission", "air quality", "pm2.5", "smog"])
+        is_pollution = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["pollution", "aqi", "emission", "emissions", "air quality", "pm2.5", "pm25", "pm10", "smog"]) or "currect pollution" in clean_obj
         is_energy = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["energy", "grid", "load", "substation", "electricity", "power"])
         is_investigative_why = any(re.search(rf"\b{re.escape(w)}\b", clean_obj) for w in ["why", "cause", "reason", "due to"])
         explicit_interventions = any(w in clean_obj for w in ["different interventions", "multiple interventions", "candidate interventions", "compare interventions"])
@@ -556,13 +553,19 @@ class MockLLMProvider(BaseLLMProvider):
                 "reason": f"Determine current meteorological telemetry and precipitation at {loc}."
             })
         elif is_pollution and not is_traffic:
+            is_historical = any(w in clean_obj for w in ["historical", "history", "trend", "trends", "past", "archive", "dataset", "2020", "2024", "multi-year"])
+            is_current = any(w in clean_obj for w in ["current", "currect", "now", "live", "present", "real-time", "today", "latest", "instant", "right now"]) or not is_historical
+            data_mode = "current" if (is_current and not is_historical) else "historical"
+
             agent_requests.append({
                 "agent": "pollution",
                 "request": {
+                    "objective": clean_obj,
                     "location": loc,
+                    "data_mode": data_mode,
                     "purpose": "air_quality_assessment",
                 },
-                "reason": f"Retrieve ambient air quality index (AQI) and PM2.5 levels at {loc}."
+                "reason": f"Retrieve {'current real-time' if data_mode == 'current' else 'historical'} ambient air quality index (AQI) and PM2.5 levels at {loc}."
             })
         elif is_energy and not is_traffic:
             agent_requests.append({
@@ -593,13 +596,19 @@ class MockLLMProvider(BaseLLMProvider):
                     "reason": f"Retrieve precipitation telemetry for {loc} to assess wet-road friction drag."
                 })
             if is_pollution:
+                is_historical = any(w in clean_obj for w in ["historical", "history", "trend", "trends", "past", "archive", "dataset", "2020", "2024", "multi-year"])
+                is_current = any(w in clean_obj for w in ["current", "currect", "now", "live", "present", "real-time", "today", "latest", "instant", "right now"]) or not is_historical
+                data_mode = "current" if (is_current and not is_historical) else "historical"
+
                 agent_requests.append({
                     "agent": "pollution",
                     "request": {
+                        "objective": clean_obj,
                         "location": loc,
+                        "data_mode": data_mode,
                         "purpose": "emissions_correlation",
                     },
-                    "reason": f"Retrieve AQI and particulate telemetry at {loc} to correlate vehicle idling."
+                    "reason": f"Retrieve AQI and particulate telemetry ({data_mode}) at {loc} to correlate vehicle idling."
                 })
             if is_energy:
                 agent_requests.append({
@@ -691,6 +700,16 @@ class MockLLMProvider(BaseLLMProvider):
             w in obj_text for w in ["could improve", "optimize", "reduce", "how can we", "solve", "mitigate", "intervention"]
         )
         if is_purely_diagnostic:
+            requires_optimization = False
+
+        has_traffic_evidence = '"traffic":' in p_lower or 'congestion_index' in p_lower or 'average_speed_kmh' in p_lower
+        is_pollution_objective = any(w in obj_text for w in ["pollution", "air quality", "pm2.5", "pm25", "pm10", "aqi"])
+        is_traffic_objective = any(w in obj_text for w in ["traffic", "congestion", "speed", "bottleneck", "corridor", "delay", "queue"])
+        explicit_sim = any(w in obj_text for w in ["simulate", "simulation", "sumo", "run simulation"])
+
+        if is_pollution_objective and not is_traffic_objective and not explicit_sim:
+            requires_optimization = False
+        elif not has_traffic_evidence and not explicit_sim:
             requires_optimization = False
 
         # Check for analytical follow-up query
@@ -1209,10 +1228,87 @@ class MockLLMProvider(BaseLLMProvider):
                     f"It should not be treated as a standalone solution based on this simulation; other candidate interventions remain untested and require simulation before their effectiveness can be assessed."
                 )
         else:
-            spd_cite = [e for e in evidence_used if "average_speed_kmh" in e]
-            spd_text = f" ({spd_cite[0]})" if spd_cite else ""
-            summary_text = f"Telemetry analysis confirms empirical conditions at {loc}{spd_text}. Evidence collected from specialist agents provides empirical basis for municipal operational response."
-            rec_text = f"Deploy operational adjustments at {loc} bottlenecks and monitor corridor telemetry. Available candidate interventions remain untested in simulation."
+            from backend.agents.planner_agent.scope import classify_response_scope
+            obj_match = re.search(r'Objective:\s*"([^"]+)"', user_prompt, re.IGNORECASE) or re.search(r'OBJECTIVE:\s*([^\n]+)', user_prompt, re.IGNORECASE)
+            obj_text = obj_match.group(1).strip() if obj_match else ""
+            scopes = classify_response_scope(obj_text)
+
+            if scopes == ["bottleneck_corridor"]:
+                bottleneck_corr = "Westbound"
+                b_match = re.search(r'"corridor":\s*"([^"]+)"', user_prompt)
+                if b_match:
+                    bottleneck_corr = b_match.group(1)
+                else:
+                    c_matches = re.findall(r'"name":\s*"([^"]+)"[^}]+?"status":\s*"CRITICAL"', user_prompt)
+                    if c_matches:
+                        bottleneck_corr = c_matches[0]
+                summary_text = f"Bottleneck corridor: {bottleneck_corr}."
+                rec_text = ""
+            elif scopes == ["bottleneck_corridors_list"]:
+                corrs = re.findall(r'"corridor":\s*"([^"]+)"', user_prompt)
+                if not corrs:
+                    corrs = re.findall(r'"name":\s*"([^"]+)"[^}]+?"status":\s*"CRITICAL"', user_prompt)
+                corrs = list(dict.fromkeys(corrs)) or ["Westbound"]
+                prefix = "Bottleneck corridors" if len(corrs) > 1 else "Bottleneck corridor"
+                summary_text = f"{prefix}: {', '.join(corrs)}."
+                rec_text = ""
+            elif scopes == ["average_speed"]:
+                s_val = speed_match.group(1) if speed_match else "41.2"
+                summary_text = f"Average speed: {s_val} km/h."
+                rec_text = ""
+            elif scopes == ["bottleneck_speed"]:
+                bottleneck_corr = "Westbound"
+                b_match = re.search(r'"corridor":\s*"([^"]+)"', user_prompt)
+                if b_match:
+                    bottleneck_corr = b_match.group(1)
+                s_val = speed_match.group(1) if speed_match else "41.2"
+                summary_text = f"Average speed on bottleneck corridor ({bottleneck_corr}): {s_val} km/h."
+                rec_text = ""
+            elif "bottleneck_corridor" in scopes and "average_speed" in scopes:
+                bottleneck_corr = "Westbound"
+                b_match = re.search(r'"corridor":\s*"([^"]+)"', user_prompt)
+                if b_match:
+                    bottleneck_corr = b_match.group(1)
+                s_val = speed_match.group(1) if speed_match else "41.2"
+                summary_text = f"Bottleneck corridor: {bottleneck_corr}. Average speed: {s_val} km/h."
+                rec_text = ""
+            elif scopes == ["causes"]:
+                r_match = re.search(r'"reason":\s*"([^"]+)"', user_prompt)
+                reason = r_match.group(1) if r_match else "Lowest observed-speed corridor and elevated vehicle density"
+                summary_text = f"Congestion cause: {reason}."
+                rec_text = ""
+            elif scopes == ["congestion"]:
+                c_val = float(cong_match.group(1)) if cong_match else 0.176
+                c_disp = f"{c_val * 100:.1f}%" if c_val <= 1.0 else f"{c_val:.1f}%"
+                summary_text = f"Traffic congestion level: {c_disp}."
+                rec_text = ""
+            elif scopes == ["pm25"]:
+                p25_match = re.search(r'"pm25":\s*([0-9.]+)', user_prompt)
+                p25_val = p25_match.group(1) if p25_match else "20.8"
+                summary_text = f"PM2.5: {p25_val} µg/m³."
+                rec_text = ""
+            elif scopes == ["pm10"]:
+                p10_match = re.search(r'"pm10":\s*([0-9.]+)', user_prompt)
+                p10_val = p10_match.group(1) if p10_match else "31.7"
+                summary_text = f"PM10: {p10_val} µg/m³."
+                rec_text = ""
+            elif scopes in (["city_avg_aqi"], ["aqi"]):
+                aqi_match = re.search(r'"city_avg_aqi":\s*([0-9]+)', user_prompt) or re.search(r'"aqi":\s*([0-9]+)', user_prompt)
+                aqi_val = aqi_match.group(1) if aqi_match else "64"
+                summary_text = f"Air Quality Index (AQI): {aqi_val}."
+                rec_text = ""
+            elif set(scopes) == {"pm25", "pm10"}:
+                p25_match = re.search(r'"pm25":\s*([0-9.]+)', user_prompt)
+                p10_match = re.search(r'"pm10":\s*([0-9.]+)', user_prompt)
+                p25_val = p25_match.group(1) if p25_match else "20.8"
+                p10_val = p10_match.group(1) if p10_match else "31.7"
+                summary_text = f"PM2.5: {p25_val} µg/m³. PM10: {p10_val} µg/m³."
+                rec_text = ""
+            else:
+                spd_cite = [e for e in evidence_used if "average_speed_kmh" in e]
+                spd_text = f" ({spd_cite[0]})" if spd_cite else ""
+                summary_text = f"Telemetry analysis confirms empirical conditions at {loc}{spd_text}. Evidence collected from specialist agents provides empirical basis for municipal operational response."
+                rec_text = f"Deploy operational adjustments at {loc} bottlenecks and monitor corridor telemetry. Available candidate interventions remain untested in simulation."
 
         if has_multi_scenarios:
             ev_status = "EVIDENCE: MULTI-SIMULATION EVALUATION"
@@ -1224,7 +1320,13 @@ class MockLLMProvider(BaseLLMProvider):
             ev_status = "EVIDENCE: OBSERVATIONAL"
             rec_basis = "OBSERVATIONAL_TELEMETRY_ONLY"
 
+        from backend.agents.planner_agent.scope import determine_response_scope
+        obj_match = re.search(r'Objective:\s*"([^"]+)"', user_prompt, re.IGNORECASE) or re.search(r'OBJECTIVE:\s*([^\n]+)', user_prompt, re.IGNORECASE)
+        obj_text = obj_match.group(1).strip() if obj_match else ""
+        determined_scope = determine_response_scope(obj_text)
+
         return {
+            "response_scope": determined_scope.model_dump(),
             "summary": summary_text,
             "evidence_used": evidence_used,
             "cross_domain_relationships": cross_rel,
@@ -1233,6 +1335,7 @@ class MockLLMProvider(BaseLLMProvider):
             "synthetic_data_note": "SUMO simulation metrics represent simulated/synthetic evidence under a defined traffic-demand scenario, distinct from live physical road sensors.",
             "uncertainty_and_limitations": "Estimates assume regular driver compliance and absence of unplanned lane blockages.",
             "recommendation": rec_text,
+            "requested_scope": determined_scope.fields,
             "evidence_status": ev_status,
             "recommendation_basis": rec_basis,
             "confidence": None,

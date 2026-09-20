@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import time
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -20,6 +21,8 @@ from backend.config import (
     HISTORICAL_EVALUATION_DURATION_SECONDS,
 )
 from backend.supervisor.agent_client import dispatch_agent
+
+logger = logging.getLogger("supervisor")
 
 
 def utc_now_iso() -> str:
@@ -270,6 +273,7 @@ class PlannerExecuteResponse(BaseModel):
     evidence_status: Optional[str] = Field(default="EVIDENCE: OBSERVATIONAL")
     confidence: Optional[float] = None
     created_at: str
+    runtime: Optional[Dict[str, Any]] = None
 
 
 class KnowledgeSearchRequest(BaseModel):
@@ -1022,35 +1026,28 @@ def verify_multi_intervention_invariant(tested_scenarios: List[Dict[str, Any]]) 
     summary="Execute autonomous planner pipeline (Plan -> Specialist Dispatch -> Feedback Evaluation)",
 )
 def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
+    t_start = time.perf_counter()
     req_id = payload.request_id or make_id("planreq")
     planner_agent = get_planner_agent()
+    stage_latencies: Dict[str, float] = {}
+    specialist_calls_record: List[Dict[str, Any]] = []
 
+    # CURRENT REQUEST: Objective must remain faithful to current user instruction without prepending stale history
     effective_objective = (payload.objective or payload.query or "").strip()
-    # Compact prior context: only inject for brief follow-up queries
-    # to avoid inflating input token budgets on self-contained instructions
-    if payload.conversation_history and len(effective_objective.split()) <= 12:
-        history_snippets = []
-        for turn in payload.conversation_history[-2:]:
-            u_txt = turn.get("content") if turn.get("role") == "user" else (turn.get("user") or turn.get("query") or "")
-            a_txt = turn.get("content") if turn.get("role") == "assistant" else (turn.get("assistant") or turn.get("summary") or "")
-            if u_txt:
-                history_snippets.append(f"Q: {u_txt[:80]}")
-            if a_txt:
-                history_snippets.append(f"A: {a_txt[:80]}")
-        if history_snippets:
-            context_str = " | ".join(history_snippets)
-            effective_objective = f"Context ({context_str}) Query: {effective_objective}"
 
-    # Ingest prior history in priority order:
-    # 1. explicitly supplied simulation_history
-    # 2. explicitly supplied tested_scenarios
-    # 3. explicitly supplied conversation_history
-    # 4. active session state for the SAME session_id
+    # Safe request diagnostics logging (Section 4 & Section 1)
+    logger.info(
+        f"[Planner Diagnostics] REQUEST_ID={req_id} | SESSION_ID={payload.session_id or 'none'} | "
+        f"CURRENT_QUERY='{payload.query or ''}' | CURRENT_OBJECTIVE='{payload.objective or ''}' | "
+        f"LOCATION='{payload.location or ''}' | HISTORY_COUNT={len(payload.conversation_history or [])} | "
+        f"SIM_HISTORY_COUNT={len(payload.simulation_history or [])} | TESTED_SCENARIOS_COUNT={len(payload.tested_scenarios or [])}"
+    )
+
+    # Ingest prior simulation history strictly for analytical follow-up comparisons
     session_id = (payload.session_id or "").strip()
     session_data = _PLANNER_SESSIONS.get(session_id, {}) if session_id else {}
 
     prior_sims: List[Dict[str, Any]] = []
-    prior_traffic: Optional[Dict[str, Any]] = None
 
     if payload.simulation_history:
         prior_sims.extend(payload.simulation_history)
@@ -1078,33 +1075,19 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         prior_sims.append(c_sims)
                         break
 
-    # Rule E: If conversation_history and structured history are empty for a new session, treat as fresh
     is_fresh_conversation = not payload.conversation_history and not payload.simulation_history and not payload.tested_scenarios
     if not prior_sims and session_id and not is_fresh_conversation:
         cached_sims = session_data.get("simulations_history") or session_data.get("simulations") or []
         if cached_sims:
             prior_sims.extend(cached_sims)
 
-    if payload.conversation_history:
-        for turn in reversed(payload.conversation_history):
-            if isinstance(turn, dict):
-                trf = turn.get("traffic") or turn.get("traffic_evidence") or (turn.get("collected_results", {}).get("traffic") if isinstance(turn.get("collected_results"), dict) else None)
-                if trf and isinstance(trf, dict):
-                    prior_traffic = trf
-                    break
-    if not prior_traffic and session_id and not is_fresh_conversation:
-        prior_traffic = session_data.get("traffic")
-
+    # STRICT SEPARATION: collected_results holds specialist evidence collected strictly for THIS turn.
+    # It must start empty. Prior observational traffic/pollution must NEVER be injected into collected_results.
     collected_results: Dict[str, Any] = {}
-    if prior_sims:
-        simulations_history = list(prior_sims)
+    simulations_history: List[Dict[str, Any]] = list(prior_sims) if prior_sims else []
+    if simulations_history:
         collected_results["simulations"] = simulations_history
-        collected_results["simulation"] = simulations_history if len(simulations_history) > 1 else simulations_history[0]
-    else:
-        simulations_history = []
-
-    if prior_traffic:
-        collected_results["traffic"] = prior_traffic
+        collected_results["simulations_history"] = simulations_history
 
     # Determine effective duration, scenario, and seed
     obj_lower = effective_objective.lower()
@@ -1143,6 +1126,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
             req_duration = DEFAULT_PRODUCTION_EVALUATION_DURATION_SECONDS
 
     # Stage 1: Autonomous Initial Plan & Agent Selection
+    t_stage1_start = time.perf_counter()
     try:
         plan_decision = planner_agent.plan_autonomous(
             objective=effective_objective,
@@ -1154,6 +1138,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
             scenario=payload.scenario,
             seed=payload.seed,
         )
+        stage_latencies["stage_1_ms"] = round((time.perf_counter() - t_stage1_start) * 1000.0, 1)
     except (LLMConfigurationError, LLMProviderError) as exc:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1351,13 +1336,26 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         else:
                             agent_res = dispatch_agent(agent_cap, req_payload)
                     else:
+                        t_sim_start = time.perf_counter()
                         try:
                             agent_res = dispatch_agent(agent_cap, req_payload)
                             executed_scenario_ids.add(scen_id)
                             simulations_history.append(agent_res)
+                            sim_dur = round((time.perf_counter() - t_sim_start) * 1000.0, 1)
+                            specialist_calls_record.append({
+                                "agent": agent_cap,
+                                "status": "completed",
+                                "latency_ms": sim_dur,
+                            })
                         except Exception as exc:
                             failures[agent_cap] = str(exc)
                             agent_res = None
+                            sim_dur = round((time.perf_counter() - t_sim_start) * 1000.0, 1)
+                            specialist_calls_record.append({
+                                "agent": agent_cap,
+                                "status": "failed",
+                                "latency_ms": sim_dur,
+                            })
 
                     if agent_res is not None:
                         collected_results["simulations"] = simulations_history
@@ -1366,6 +1364,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         if agent_tag not in dispatched_agents:
                             dispatched_agents.append(agent_tag)
                 else:
+                    t_spec_start = time.perf_counter()
                     try:
                         if agent_cap == "traffic":
                             if req_duration is not None and "duration_seconds" not in req_payload:
@@ -1379,10 +1378,33 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         agent_tag = f"{agent_cap}_agent"
                         if agent_tag not in dispatched_agents:
                             dispatched_agents.append(agent_tag)
+                        spec_dur = round((time.perf_counter() - t_spec_start) * 1000.0, 1)
+                        spec_rec = {
+                            "agent": agent_cap,
+                            "status": "completed",
+                            "latency_ms": spec_dur,
+                        }
+                        if isinstance(agent_res, dict):
+                            if "data_mode" in agent_res:
+                                spec_rec["data_mode"] = agent_res["data_mode"]
+                            if "data_source" in agent_res:
+                                spec_rec["data_source"] = agent_res["data_source"]
+                        specialist_calls_record.append(spec_rec)
+                        logger.info(
+                            f"[Supervisor] Specialist '{agent_cap}' completed in {spec_dur}ms "
+                            f"(mode={spec_rec.get('data_mode', 'standard')}, source={spec_rec.get('data_source', 'standard')})"
+                        )
                     except Exception as exc:
                         failures[agent_cap] = str(exc)
+                        spec_dur = round((time.perf_counter() - t_spec_start) * 1000.0, 1)
+                        specialist_calls_record.append({
+                            "agent": agent_cap,
+                            "status": "failed",
+                            "latency_ms": spec_dur,
+                        })
 
         # Step B: Evaluate collected evidence with LLM Planner
+        t_eval_start = time.perf_counter()
         try:
             eval_result = planner_agent.evaluate_and_replan(
                 objective=effective_objective,
@@ -1393,6 +1415,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                 max_cycles=max_cycles,
                 location=payload.location or "Hyderabad",
             )
+            stage_latencies[f"cycle_{current_cycle}_eval_ms"] = round((time.perf_counter() - t_eval_start) * 1000.0, 1)
         except (LLMConfigurationError, LLMProviderError) as exc:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -1536,19 +1559,35 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         )
     )
 
-    # Session store caching for current session_id
+    # Session store caching for current session_id (simulation experiment history only, NO stale specialist evidence)
     if session_id:
-        current_traffic = collected_results.get("traffic") or prior_traffic
         _PLANNER_SESSIONS[session_id] = {
             "session_id": session_id,
             "simulations_history": simulations_history,
-            "traffic": current_traffic,
             "tested_scenarios": final_reasoning_dict.get("tested_scenarios", []),
             "tested_interventions": final_reasoning_dict.get("tested_interventions", []),
             "untested_candidates": final_reasoning_dict.get("untested_candidates", []),
             "evidence_status": det_evidence_status,
             "last_updated": utc_now_iso(),
         }
+
+    provider_obj = getattr(planner_agent, "llm_provider", None)
+    provider_name = getattr(provider_obj, "provider_name", "unknown") if provider_obj else "unknown"
+    provider_model = getattr(provider_obj, "model", "unknown") if provider_obj else "unknown"
+
+    total_latency_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
+    runtime_metadata = {
+        "request_id": req_id,
+        "session_id": session_id or None,
+        "llm_provider": provider_name,
+        "llm_model": provider_model,
+        "llm_calls": 3 if current_cycle == 1 else (3 + (current_cycle - 1) * 2),
+        "specialist_calls": specialist_calls_record,
+        "simulation_runs": [s.get("scenario_id") for s in simulations_history if isinstance(s, dict) and s.get("scenario_id")],
+        "cache_used": False,
+        "total_latency_ms": total_latency_ms,
+        "stage_latencies_ms": stage_latencies,
+    }
 
     return PlannerExecuteResponse(
         request_id=req_id,
@@ -1564,6 +1603,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         evidence_status=det_evidence_status,
         confidence=eval_result.confidence,
         created_at=utc_now_iso(),
+        runtime=runtime_metadata,
     )
 
 

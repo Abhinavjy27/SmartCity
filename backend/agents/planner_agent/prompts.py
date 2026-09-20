@@ -113,6 +113,7 @@ Workflow: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Fronten
    - D. Follow-up explicitly requesting NEW simulation testing (e.g. "Now test a different signal timing", "Simulate rerouting with 20% diversion"):
      Select `simulation` agent with requested parameters (`required_capabilities: ["simulation"]`, `next_action: "run_simulation"`).
 4. For multi-domain investigations, select `weather`, `pollution`, or `energy` only when relevant to the prompt.
+   - For `pollution`: specify `data_mode: "current"` when real-time or current AQI/pollution is requested. Specify `data_mode: "historical"` for historical trend or multi-year analysis.
 5. Set `next_action`: `"collect_evidence"` for new data collection, `"run_simulation"` for explicit new simulation, or `"finalize"` for follow-up analysis on existing history.
 
 ### OUTPUT JSON SCHEMA:
@@ -261,13 +262,37 @@ When reporting metric changes, always state the direction correctly:
   delay_change_pct = +4.80%  → "delay worsened by 4.80%"
   congestion_change_pct = -24.56% → "congestion improved by 24.56%"
 
-### TERMINOLOGY & CONCISENESS:
-- Slowest corridor must be termed "Lowest observed-speed corridor", never "Lowest flow corridor".
-- Keep the primary summary and recommendation concise, factual, and strictly evidence-grounded (2-3 sentences max per field). Do not repeat raw tables.
+### STRUCTURED RESPONSE SCOPE:
+Determine the user's requested response scope and return it in `response_scope`:
+- `fields`: A list of the specific fields or topics explicitly requested by the user.
+  Examples:
+  * "What is the bottleneck corridor?" → fields: ["bottleneck_corridor"], detail_level: "minimal"
+  * "What is the average speed?" → fields: ["average_speed"], detail_level: "minimal"
+  * "Give me the bottleneck corridor and average speed." → fields: ["bottleneck_corridor", "average_speed"], detail_level: "minimal"
+  * "Why is Narayanguda congested?" → fields: ["causes"], detail_level: "minimal"
+  * "What is the PM2.5 level in Narayanguda?" → fields: ["pm25"], detail_level: "minimal"
+  * "What is the air quality index?" → fields: ["city_avg_aqi"], detail_level: "minimal"
+  * "Analyze traffic congestion in Narayanguda." → fields: ["congestion", "relevant_metrics", "causes", "recommendations"], detail_level: "analysis"
+  * "Analyze air pollution in Hyderabad." → fields: ["pollution", "aqi", "pm25", "pm10", "suggested_interventions"], detail_level: "analysis"
+  * "How can we reduce congestion?" → fields: ["recommendations"], detail_level: "summary"
+  * "Simulate the best intervention." → fields: ["simulation"], detail_level: "analysis"
+- `detail_level`: "minimal" | "summary" | "analysis" | "full"
+
+### RESPONSE RENDERING RULES BASED ON RESPONSE SCOPE:
+- When `detail_level` is "minimal":
+  * Answer the question directly using ONLY the information needed to satisfy the requested `fields`.
+  * Do NOT automatically include unrequested metrics (average speed, congestion percentage, waiting time, throughput, vehicle counts, causes, recommendations, interventions, or simulation results) unless explicitly asked in `fields`.
+  * Set `recommendation` to "" (empty string) unless recommendations or interventions were explicitly requested in `fields`.
+- When `detail_level` is "analysis" or "summary" (or "recommendations" in `fields`):
+  * Provide the requested broader synthesis and municipal recommendations.
 
 ### OUTPUT JSON SCHEMA:
 Return ONLY valid JSON:
 {
+  "response_scope": {
+    "fields": ["..."],
+    "detail_level": "minimal" | "summary" | "analysis" | "full"
+  },
   "summary": "...",
   "evidence_used": ["..."],
   "cross_domain_relationships": "...",
@@ -641,5 +666,8 @@ def build_stage_3_prompt(
             f"{json.dumps(untested_candidates, separators=(',', ':'), default=str)}"
         )
 
+    from backend.agents.planner_agent.scope import classify_response_scope
+    scopes = classify_response_scope(objective)
+    prompt_parts.append(f"Target Output Scope: {json.dumps(scopes)}. If the scope is narrow (e.g. bottleneck_corridor, average_speed), answer ONLY what was asked directly and concisely without unrequested metrics or recommendations.")
     prompt_parts.append("Synthesize final reasoning, cite specific metrics, explain trade-offs, strictly distinguish tested from untested interventions, and recommend municipal action.")
     return "\n".join(prompt_parts)
