@@ -235,12 +235,6 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
         combined.dropna(subset=["timestamp"], inplace=True)
         combined.sort_values("timestamp", inplace=True)
 
-        if not combined.empty:
-            max_dt = combined["timestamp"].max()
-            current_dt = pd.Timestamp.now(tz=timezone.utc)
-            delta_days = (current_dt - max_dt).days
-            combined["timestamp"] = combined["timestamp"] + pd.Timedelta(days=delta_days)
-
         combined["date"] = combined["timestamp"].dt.date
 
         self._data_cache = combined
@@ -593,11 +587,38 @@ class PlaceholderLivePollutionProvider(BasePollutionDataProvider):
 _provider: Optional[BasePollutionDataProvider] = None
 
 
-def get_data_provider() -> BasePollutionDataProvider:
-    """Return the active pollution data provider (default: HistoricalTSPCBProvider)."""
-    global _provider
-    if _provider is None:
-        _provider = HistoricalTSPCBProvider()
+_historical_provider: Optional[BasePollutionDataProvider] = None
+
+def get_data_provider(force_historical: bool = False) -> BasePollutionDataProvider:
+    """
+    Return the active pollution data provider.
+    When a custom provider is injected via set_data_provider(), return it (unless it is live and force_historical is requested).
+    When POLLUTION_LIVE_MODE=True and no custom provider was injected:
+      - returns OpenAQLiveProvider for regular/live calls
+      - returns HistoricalTSPCBProvider when force_historical=True
+    Otherwise returns HistoricalTSPCBProvider.
+    """
+    global _provider, _historical_provider
+    if _provider is not None:
+        if force_historical and getattr(_provider, "is_live", False):
+            if _historical_provider is None:
+                _historical_provider = HistoricalTSPCBProvider()
+            return _historical_provider
+        return _provider
+
+    if force_historical:
+        if _historical_provider is None:
+            _historical_provider = HistoricalTSPCBProvider()
+        return _historical_provider
+
+    from .config import POLLUTION_LIVE_MODE
+    if POLLUTION_LIVE_MODE:
+        from .live_provider import OpenAQLiveProvider
+        _provider = OpenAQLiveProvider()
+    else:
+        if _historical_provider is None:
+            _historical_provider = HistoricalTSPCBProvider()
+        _provider = _historical_provider
     return _provider
 
 
@@ -608,9 +629,21 @@ def set_data_provider(provider: BasePollutionDataProvider) -> None:
     """
     global _provider
     _provider = provider
+    try:
+        from .unified_forecast.inference import UnifiedForecaster
+        forecaster = UnifiedForecaster.get_instance()
+        forecaster.clear_cache()
+    except Exception:
+        pass
 
 
 def reset_data_provider() -> None:
     """Reset provider singleton to default HistoricalTSPCBProvider."""
     global _provider
     _provider = None
+    try:
+        from .unified_forecast.inference import UnifiedForecaster
+        forecaster = UnifiedForecaster.get_instance()
+        forecaster.clear_cache()
+    except Exception:
+        pass

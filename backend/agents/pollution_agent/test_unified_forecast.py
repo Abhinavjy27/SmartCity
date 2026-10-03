@@ -31,7 +31,7 @@ class TestUnifiedForecastPipeline:
         assert forecaster.model is not None
         assert forecaster.feature_scaler is not None
         assert forecaster.target_scaler is not None
-        assert "TemporalOnlyGRU" in forecaster.model_name or "GAT" in forecaster.model_name
+        assert "TemporalOnlyGRU" in forecaster.model_name or "GAT" in forecaster.model_name or "TemporalGRU_KNNCovariate" in forecaster.model_name
 
     def test_daily_and_7day_and_summary_identical_d1_by_construction(self, client):
         """CRITICAL: Day-1 must be identical across /forecast/daily, /forecast/7day, and /summary."""
@@ -110,7 +110,7 @@ class TestUnifiedForecastPipeline:
         assert health["status"] == "ONLINE"
         assert health["model_status"] == "ready"
         assert health["model_name"] is not None
-        assert "TemporalOnlyGRU" in health["model_name"] or "GAT" in health["model_name"]
+        assert "TemporalOnlyGRU" in health["model_name"] or "GAT" in health["model_name"] or "TemporalGRU_KNNCovariate" in health["model_name"]
 
     def test_info_endpoint_provenance(self, client):
         info = client.get("/api/pollution/info").json()

@@ -34,26 +34,24 @@ export const MAP_PALETTE = {
 }
 
 /**
- * High-performance, reliable Raster-based Carto Positron / Voyager Style
+ * High-performance, reliable Raster-based OpenStreetMap / GIS Style
  * Displays authentic Hyderabad road network, lakes (Hussain Sagar, Osman Sagar, Himayat Sagar),
- * neighborhoods, and landmarks directly from OpenStreetMap data.
+ * neighborhoods, and landmarks directly from OpenStreetMap data without API key watermarks.
  */
 export function getDigitalTwin3DStyle() {
   return {
     version: 8,
     name: 'Hyderabad-Digital-Twin-Basemap',
     sources: {
-      'carto-voyager': {
+      'osm-basemap': {
         type: 'raster',
         tiles: [
-          'https://basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-          'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-          'https://c.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
-          'https://d.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}@2x.png',
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
         ],
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors, © CARTO',
+        attribution: '© OpenStreetMap contributors',
       },
     },
     layers: [
@@ -67,12 +65,11 @@ export function getDigitalTwin3DStyle() {
       {
         id: 'basemap-tiles',
         type: 'raster',
-        source: 'carto-voyager',
+        source: 'osm-basemap',
         paint: {
-          'raster-opacity': 0.94,
-          'raster-saturation': -0.15,
-          'raster-contrast': 0.05,
-          'raster-brightness-min': 0.02,
+          'raster-opacity': 0.92,
+          'raster-saturation': -0.1,
+          'raster-contrast': 0.04,
         },
       },
     ],
@@ -80,24 +77,24 @@ export function getDigitalTwin3DStyle() {
 }
 
 /**
- * Traffic Intelligence Map Style (Clean Light Carto Positron)
+ * Traffic Intelligence Map Style
+ * Uses authentic OpenStreetMap data for highly accurate street-level detail in Hyderabad.
  */
 export function getTrafficMapStyle() {
   return {
     version: 8,
     name: 'Hyderabad-Traffic-Intelligence-Basemap',
     sources: {
-      'carto-positron': {
+      'osm-basemap': {
         type: 'raster',
         tiles: [
-          'https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-          'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-          'https://b.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-          'https://c.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
-          'https://d.basemaps.cartocdn.com/light_all/{z}/{x}/{y}@2x.png',
+          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
         ],
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors, © CARTO',
+        maxzoom: 19,
+        attribution: '© OpenStreetMap contributors',
       },
     },
     layers: [
@@ -105,17 +102,16 @@ export function getTrafficMapStyle() {
         id: 'bg',
         type: 'background',
         paint: {
-          'background-color': '#F7F4EC',
+          'background-color': '#F4EFE6',
         },
       },
       {
-        id: 'positron-tiles',
+        id: 'basemap-tiles',
         type: 'raster',
-        source: 'carto-positron',
+        source: 'osm-basemap',
         paint: {
-          'raster-opacity': 0.92,
-          'raster-contrast': 0.06,
-          'raster-saturation': -0.1,
+          'raster-opacity': 0.85,
+          'raster-saturation': -0.3, // slight desaturation so traffic lines pop
         },
       },
     ],

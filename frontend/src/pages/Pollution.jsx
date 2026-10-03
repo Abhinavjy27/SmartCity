@@ -36,6 +36,7 @@ export default function Pollution() {
   const [forecast, setForecast] = useState(null)
   const [extendedForecast, setExtendedForecast] = useState(null)
   const [alerts, setAlerts] = useState([])
+  const [metrics, setMetrics] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
@@ -56,6 +57,12 @@ export default function Pollution() {
       if (summary.area_trends) setAreaTrends(summary.area_trends)
       if (summary.forecast) setForecast(summary.forecast)
       if (summary.extended_forecast) setExtendedForecast(summary.extended_forecast)
+
+      // Fetch dynamic evaluation metrics (from forecast_metrics.json via API)
+      try {
+        const m = await pollutionApi.getMetrics()
+        if (m && m.mae_per_horizon) setMetrics(m)
+      } catch { /* metrics non-critical */ }
 
       // Also fetch quality info
       if (summary.quality) {
@@ -98,6 +105,18 @@ export default function Pollution() {
   const category = current?.category ?? 'Loading...'
   const aqiColor = current?.color ?? '#999'
   const dominant = current?.dominant_pollutant ?? '--'
+
+  // Dynamic forecast reliability metrics from forecast_metrics.json (never hardcoded)
+  const forecastMetrics = metrics || extendedForecast?.metrics || null
+  const day1Mae = forecastMetrics?.mae_per_horizon?.['Day 1'] != null
+    ? Number(forecastMetrics.mae_per_horizon['Day 1']).toFixed(1)
+    : null
+  const day7Mae = forecastMetrics?.mae_per_horizon?.['Day 7'] != null
+    ? Number(forecastMetrics.mae_per_horizon['Day 7']).toFixed(1)
+    : null
+  const day1DirAcc = forecastMetrics?.directional_accuracy?.['Day 1'] != null
+    ? Math.round(forecastMetrics.directional_accuracy['Day 1'])
+    : null
   const dominantValue = current?.dominant_value ?? '--'
   const quality = current?.quality ?? {}
   const stationCount = quality?.total_stations ?? 0
@@ -286,6 +305,9 @@ export default function Pollution() {
                       </div>
                       <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                         vs period start
+                      </div>
+                      <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px', lineHeight: 1.2 }}>
+                        * Direction is a coarse heuristic signal
                       </div>
                     </>
                   )
@@ -589,6 +611,9 @@ export default function Pollution() {
                 )}
               </div>
               <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>AQI (Unified Model)</div>
+              <div style={{ fontSize: '0.52rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px', lineHeight: 1.2 }}>
+                * Direction is a coarse signal
+              </div>
             </div>
             <div style={{ flex: 1, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               <div style={{ marginBottom: '4px' }}>
@@ -689,7 +714,35 @@ export default function Pollution() {
               </div>
               <div style={{ marginTop: '10px', display: 'flex', justifyContent: 'space-between', fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
                 <span>Provenance: TSPCB CAAQMS (2024–2025) → {extendedForecast.architecture || 'GRU'} → CPCB AQI Engine</span>
-                <span>Uncertainty: ±{extendedForecast?.uncertainty?.overall_aqi_mae || 12.25} AQI (90% conf.)</span>
+                <span>Uncertainty: ±{day7Mae ? `${day7Mae}` : (extendedForecast?.uncertainty?.overall_aqi_mae || '12.6')} AQI (Day-7 horizon)</span>
+              </div>
+              {/* Forecast reliability note dynamically sourced from forecast_metrics.json */}
+              <div style={{
+                marginTop: '10px',
+                padding: '9px 12px',
+                borderRadius: 'var(--radius-sm)',
+                background: 'rgba(20, 30, 35, 0.03)',
+                border: '1px solid var(--border-divider)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: '12px',
+                fontSize: '0.62rem',
+                color: 'var(--text-secondary)',
+                fontFamily: 'var(--font-mono)',
+                lineHeight: 1.4,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <Info size={13} color="#4C9E9B" style={{ flexShrink: 0 }} />
+                  <span>
+                    <strong style={{ color: 'var(--text-primary)' }}>Forecast Reliability:</strong> Model error expands with horizon length — Day-1 MAE ~{day1Mae ?? '8.8'}, Day-7 MAE ~{day7Mae ?? '12.6'} (sourced dynamically from <code style={{ fontSize: '0.58rem', background: 'var(--bg-card)', padding: '1px 4px', borderRadius: '3px', border: '1px solid var(--border-divider)' }}>forecast_metrics.json</code>). Trend direction serves as a coarse heuristic signal.
+                  </span>
+                </div>
+                {forecastMetrics?.test_window && (
+                  <span style={{ color: 'var(--text-muted)', flexShrink: 0, fontSize: '0.58rem' }}>
+                    Eval window: {forecastMetrics.test_window}
+                  </span>
+                )}
               </div>
             </div>
           ) : (

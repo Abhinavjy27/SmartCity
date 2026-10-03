@@ -5,6 +5,8 @@ Zero code paths remain to the deprecated aqi_lstm_model.pt or HuggingFace downlo
 """
 from pathlib import Path
 from typing import Dict, Any, Optional, List
+
+from .data_quality import validate_forecast_readiness
 from .unified_forecast.inference import UnifiedForecaster
 from .unified_forecast.config import ALL_FEATURES, NUM_FEATURES, PRIMARY_TARGETS
 
@@ -21,7 +23,6 @@ class AQIForecastModel:
         self.unified = UnifiedForecaster.get_instance()
         self.status = "ready" if self.unified.loaded else "not_loaded"
         self.error_message = self.unified.error_message
-        self.city_enc_value = 0
 
     def load(self, city_name: str = "Hyderabad") -> bool:
         success = self.unified.load()
@@ -29,6 +30,15 @@ class AQIForecastModel:
         return success
 
     def predict(self, rows: Optional[List[Dict]] = None) -> Dict[str, Any]:
+        if rows is not None:
+            readiness = validate_forecast_readiness(rows)
+            if not readiness["ready"]:
+                return {
+                    "forecast_aqi": None,
+                    "forecast_status": "unavailable",
+                    "source": "unified_spatial_temporal_model",
+                    "reason": readiness["reason"],
+                }
         res = self.unified.predict()
         return res["daily"]
 

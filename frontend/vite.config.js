@@ -3,11 +3,18 @@ import react from '@vitejs/plugin-react'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    exclude: ['maplibre-gl'],
+  },
   server: {
     port: 3000,
     host: true,
     open: true,
     proxy: {
+      '/api/pollution': {
+        target: 'http://localhost:8002',
+        changeOrigin: true,
+      },
       '/api': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true

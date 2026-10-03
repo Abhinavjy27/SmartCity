@@ -280,6 +280,18 @@ def run_model_inference_citywide(
     return y_true_city, y_pred_city, total_time
 
 
+def instantiate_train_model(winning_model_name: str) -> nn.Module:
+    """Instantiate PyTorch neural candidate model for training and freezing."""
+    if winning_model_name == "SpatialTemporalGATGRU_Weighted":
+        return SpatialTemporalGATGRU()
+    elif winning_model_name == "TemporalGRU_KNNCovariate":
+        return TemporalGRU_KNNCovariate()
+    elif winning_model_name == "TemporalOnlyGRU":
+        return TemporalOnlyGRU()
+    else:
+        raise ValueError(f"Model '{winning_model_name}' cannot be frozen as a PyTorch checkpoint. (Unsupported architecture)")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Train and evaluate forecasting models.")
     parser.add_argument("--approve-deploy", type=str, default=None,
@@ -539,14 +551,7 @@ def main():
         final_train_w, final_val_w, feat_scaler_final, tgt_scaler_final
     )
 
-    if winning_model_name == "SpatialTemporalGATGRU_Weighted":
-        final_winner_model = SpatialTemporalGATGRU()
-    elif winning_model_name == "TemporalGRU_KNNCovariate":
-        final_winner_model = TemporalGRU_KNNCovariate()
-    elif winning_model_name == "TemporalOnlyGRU":
-        final_winner_model = TemporalOnlyGRU()
-    else:
-        raise ValueError(f"Model '{winning_model_name}' cannot be frozen as a PyTorch checkpoint. (Unsupported architecture)")
+    final_winner_model = instantiate_train_model(winning_model_name)
 
     final_winner_model, _ = train_neural_model(
         final_winner_model, final_train_loader, final_val_loader, f"FinalWinner_{winning_model_name}"

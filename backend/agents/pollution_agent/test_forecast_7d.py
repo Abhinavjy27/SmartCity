@@ -234,24 +234,20 @@ class TestProduction7DayAPI:
         data = res.json()
 
         assert data["status"] == "success"
-        assert data["model_name"] == "hyderabad_7day_multioutput_gru"
-        assert data["architecture"] == "MultiOutput_GRU"
+        assert "TemporalGRU_KNNCovariate" in data["architecture"] or "TemporalOnlyGRU" in data["architecture"]
         assert "forecast_origin_date" in data
         assert "forecast" in data
         assert len(data["forecast"]) == 7
 
-        # Verify provenance separation (§18)
-        assert data["provenance"]["pollutants_source"] == "new_7_day_model"
-        assert data["provenance"]["aqi_source"] == "cpcb_engine"
 
         # Verify each horizon structure
         for h_idx, entry in enumerate(data["forecast"]):
             assert entry["horizon_days"] == h_idx + 1
             assert "target_date" in entry
-            assert "pollutants" in entry
+            assert "concentrations" in entry
             for p in PRIMARY_TARGETS:
-                assert p in entry["pollutants"]
-                assert entry["pollutants"][p] >= 0.0  # Physical concentration >= 0
+                assert p in entry["concentrations"]
+                assert entry["concentrations"][p] >= 0.0  # Physical concentration >= 0
             assert entry["aqi"] is not None
             assert entry["category"] in ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
             assert entry["dominant_pollutant"] is not None

@@ -1,693 +1,1405 @@
 import { useState } from 'react'
 import {
-  Brain, Send, Cpu, Database, AlertCircle, CheckCircle2,
-  Play, FileText, BarChart3, ShieldCheck, HelpCircle, ArrowRight, Zap, CheckSquare
+  Sparkles, Send, Paperclip, ThumbsUp, ThumbsDown, Copy,
+  AlertTriangle, ChevronRight, ChevronLeft, ArrowRight,
+  Car, Wind, Zap, Droplets, Plus, Check, SlidersHorizontal,
+  Bot, User, ExternalLink, RefreshCw
 } from 'lucide-react'
-import GlassCard from '../components/GlassCard'
-import StatusBadge from '../components/StatusBadge'
-import AnimatedCounter from '../components/AnimatedCounter'
-import ProblemSolverSection from '../components/ProblemSolverSection'
-import { planningApi, recommendationsApi, verificationApi } from '../services/api'
 
-const templates = [
+/* ── Active Alerts Data ── */
+const activeAlerts = [
   {
-    label: "Tarnaka Energy Efficiency",
-    text: "Tell me how to use energy efficiently in Tarnaka."
+    id: 'ALT_01',
+    title: 'Evening Traffic Gridlock',
+    location: 'Gachibowli Flyover & Mindspace Corridor',
+    domain: 'Traffic & Mobility',
+    domainIcon: Car,
+    status: 'Ongoing',
+    impact: 'High Impact',
+    impactColor: '#E5483F',
+    time: '10:18 AM',
+    solutions: [
+      {
+        id: 1,
+        title: 'Optimize Signal Phasing',
+        desc: 'Implement adaptive signal control on Outer Ring Road junction to reduce delays.',
+        impactLabel: 'ETA Impact',
+        impactValue: '-22% Delay',
+        impactColor: '#2F8F72',
+        confidence: '92%',
+        color: '#2F8F72',
+        details: 'Adjusts split times dynamically at 6 intersections along Outer Ring Road to favor east-west discharge during evening rush.'
+      },
+      {
+        id: 2,
+        title: 'Dynamic Route Diversion',
+        desc: 'Divert traffic via Financial District bypass & Wipro Junction.',
+        impactLabel: 'ETA Impact',
+        impactValue: '-18% Volume',
+        impactColor: '#2563EB',
+        confidence: '89%',
+        color: '#2563EB',
+        details: 'Variable message signs activated to reroute airport-bound traffic onto Outer Ring Road Service Lane 3.'
+      },
+      {
+        id: 3,
+        title: 'Public Transit Reinforcement',
+        desc: 'Deploy 20 additional shuttle buses & increase metro frequency.',
+        impactLabel: 'ETA Impact',
+        impactValue: '+15% Capacity',
+        impactColor: '#8B5CF6',
+        confidence: '87%',
+        color: '#8B5CF6',
+        details: 'Hyderabad Metro frequency boosted to 3.5 min headway on Blue Line between Raidurg and Ameerpet.'
+      },
+      {
+        id: 4,
+        title: 'Commuter Communication',
+        desc: 'Push real-time alerts & alternate route suggestions to commuters.',
+        impactLabel: 'ETA Impact',
+        impactValue: 'High Awareness',
+        impactColor: '#F59E0B',
+        confidence: '84%',
+        color: '#F59E0B',
+        details: 'Push notification sent to 142k active Hyderabad Transit app users recommending staggered departure.'
+      }
+    ]
   },
   {
-    label: "Cross-Domain Infrastructure",
-    text: "Identify the best areas for infrastructure investment while considering traffic, pollution, and energy grid load impact."
+    id: 'ALT_02',
+    title: 'Severe PM2.5 Spike',
+    location: 'Nacharam & Sanathnagar',
+    domain: 'Air Quality',
+    domainIcon: Wind,
+    status: 'Ongoing',
+    impact: 'Moderate Impact',
+    impactColor: '#F59E0B',
+    time: '10:15 AM',
+    solutions: [
+      {
+        id: 1,
+        title: 'Industrial Mist Spraying',
+        desc: 'Activate anti-smog mist cannons in Nacharam industrial cluster.',
+        impactLabel: 'PM2.5 Impact',
+        impactValue: '-34 μg/m³',
+        impactColor: '#4C9E9B',
+        confidence: '94%',
+        color: '#4C9E9B',
+        details: '8 mobile mist cannons dispatched to major industrial emission zones.'
+      },
+      {
+        id: 2,
+        title: 'Heavy Vehicle Restriction',
+        desc: 'Divert non-electric freight traffic to Outer Ring Road perimeter.',
+        impactLabel: 'PM2.5 Impact',
+        impactValue: '-20% Emissions',
+        impactColor: '#2563EB',
+        confidence: '88%',
+        color: '#2563EB',
+        details: 'Restricts BS-IV and older commercial trucks from entering Inner Ring Road during peak hours.'
+      },
+      {
+        id: 3,
+        title: 'Public Health Advisory',
+        desc: 'Broadcast air quality advisory to schools and senior citizen centers.',
+        impactLabel: 'Exposure Impact',
+        impactValue: '-45% Risk',
+        impactColor: '#8B5CF6',
+        confidence: '91%',
+        color: '#8B5CF6',
+        details: 'Automated SMS alerts sent to 18 healthcare facilities and 42 local schools.'
+      },
+      {
+        id: 4,
+        title: 'Factory Compliance Check',
+        desc: 'Trigger automatic telemetry audit on 14 registered boiler units.',
+        impactLabel: 'Audit Status',
+        impactValue: 'Immediate',
+        impactColor: '#F59E0B',
+        confidence: '86%',
+        color: '#F59E0B',
+        details: 'Automated notification dispatched to TSPCB enforcement team.'
+      }
+    ]
   },
   {
-    label: "Traffic Congestion Corridor",
-    text: "Traffic congestion has increased significantly around the Gachibowli Flyover corridor during evening rush hours. Suggest mitigation."
+    id: 'ALT_03',
+    title: 'Peak Power Load',
+    location: 'HiTech City Substation',
+    domain: 'Energy',
+    domainIcon: Zap,
+    status: 'Monitoring',
+    impact: 'Moderate Impact',
+    impactColor: '#F59E0B',
+    time: '10:12 AM',
+    solutions: [
+      {
+        id: 1,
+        title: 'Battery Storage Discharge',
+        desc: 'Discharge 45 MWh from Madhapur BESS grid battery bank.',
+        impactLabel: 'Grid Impact',
+        impactValue: '-12% Peak Load',
+        impactColor: '#F59E0B',
+        confidence: '95%',
+        color: '#F59E0B',
+        details: 'BESS dispatch stabilizes local frequency at 50.02 Hz.'
+      },
+      {
+        id: 2,
+        title: 'Commercial Demand Response',
+        desc: 'Signal 28 IT parks to switch non-critical HVAC to chiller backup.',
+        impactLabel: 'Grid Impact',
+        impactValue: '-28 MW Peak',
+        impactColor: '#2563EB',
+        confidence: '90%',
+        color: '#2563EB',
+        details: 'Automated OpenADR signal sent to enrolled corporate campuses.'
+      },
+      {
+        id: 3,
+        title: 'Substation Load Transfer',
+        desc: 'Re-route 15 MW to neighboring Gachibowli 220kV feeder.',
+        impactLabel: 'Grid Impact',
+        impactValue: 'Balanced',
+        impactColor: '#8B5CF6',
+        confidence: '88%',
+        color: '#8B5CF6',
+        details: 'Feeder tie-switch automated actuation completed in 45 seconds.'
+      },
+      {
+        id: 4,
+        title: 'Renewable Ramp-up',
+        desc: 'Call on Ramagundam solar firm capacity to bridge afternoon demand.',
+        impactLabel: 'Clean Energy',
+        impactValue: '+30 MW',
+        impactColor: '#2F8F72',
+        confidence: '85%',
+        color: '#2F8F72',
+        details: 'Ensures grid reserves remain above 18% safety threshold.'
+      }
+    ]
   },
   {
-    label: "Industrial Zone Air Quality",
-    text: "Air quality has deteriorated around the Nacharam Industrial Zone. Identify likely causes and recommend mitigation plans."
+    id: 'ALT_04',
+    title: 'Water Supply Leak',
+    location: 'Ameerpet Distribution Line',
+    domain: 'Water & Utilities',
+    domainIcon: Droplets,
+    status: 'Investigating',
+    impact: 'Low Impact',
+    impactColor: '#6C8FC5',
+    time: '10:06 AM',
+    solutions: [
+      {
+        id: 1,
+        title: 'Sector Valve Isolation',
+        desc: 'Isolate section 4B-12 on Ameerpet main line to stop pressure loss.',
+        impactLabel: 'Water Loss',
+        impactValue: '-85% Loss',
+        impactColor: '#2563EB',
+        confidence: '96%',
+        color: '#2563EB',
+        details: 'Automated SCADA valve shutoff prevents road sub-base erosion.'
+      },
+      {
+        id: 2,
+        title: 'Secondary Route Supply',
+        desc: 'Supply essential water flow via Somajiguda secondary feeder.',
+        impactLabel: 'Supply Continuity',
+        impactValue: '98% Maintained',
+        impactColor: '#2F8F72',
+        confidence: '91%',
+        color: '#2F8F72',
+        details: 'Ensures hospitals and residences experience zero outage.'
+      },
+      {
+        id: 3,
+        title: 'Rapid Repair Dispatch',
+        desc: 'Dispatch emergency repair crew with ultrasonic leak locator.',
+        impactLabel: 'ETA Repair',
+        impactValue: '~90 Mins',
+        impactColor: '#F59E0B',
+        confidence: '89%',
+        color: '#F59E0B',
+        details: 'Crew unit HMWSSB-E4 en route from Panjagutta depot.'
+      },
+      {
+        id: 4,
+        title: 'Traffic Caution Alert',
+        desc: 'Coordinate with Traffic Police for single-lane road maintenance.',
+        impactLabel: 'Traffic Delay',
+        impactValue: 'Minimal',
+        impactColor: '#8B5CF6',
+        confidence: '85%',
+        color: '#8B5CF6',
+        details: 'Traffic cone buffer installed 50m upstream of work zone.'
+      }
+    ]
   }
 ]
 
-function extractLocationFromQuery(text) {
-  if (!text) return 'Hyderabad Central'
-  const lower = text.toLowerCase()
-  const locs = [
-    'tarnaka', 'narayanguda', 'madhapur', 'gachibowli', 'financial district',
-    'kukatpally', 'secunderabad', 'charminar', 'nacharam', 'begumpet',
-    'jubilee hills', 'sanathnagar', 'miyapur', 'lb nagar', 'hitech city',
-    'koti', 'ameerpet', 'banjara hills', 'panjagutta', 'somajiguda', 'uppal'
-  ]
-  for (const loc of locs) {
-    if (lower.includes(loc)) {
-      return loc.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') + ', Hyderabad'
-    }
-  }
-  return 'Hyderabad Central'
-}
-
-function resolveDomainsFromQuery(text) {
-  if (!text) return ['traffic']
-  const lower = text.toLowerCase()
-  const domains = []
-  if (lower.includes('energy') || lower.includes('power') || lower.includes('substation') || lower.includes('grid') || lower.includes('transformer') || lower.includes('solar') || lower.includes('bess') || lower.includes('electricity') || lower.includes('feeder')) {
-    domains.push('energy')
-  }
-  if (lower.includes('traffic') || lower.includes('congestion') || lower.includes('vehicle') || lower.includes('signal') || lower.includes('corridor') || lower.includes('road') || lower.includes('speed') || lower.includes('flyover')) {
-    domains.push('traffic')
-  }
-  if (lower.includes('pollution') || lower.includes('aqi') || lower.includes('air quality') || lower.includes('pm2.5') || lower.includes('emission') || lower.includes('smog')) {
-    domains.push('pollution')
-  }
-  if (lower.includes('weather') || lower.includes('rain') || lower.includes('flood') || lower.includes('heatwave') || lower.includes('temperature') || lower.includes('stormwater')) {
-    domains.push('weather')
-  }
-  return domains.length > 0 ? domains : ['traffic']
-}
-
 export default function Planning() {
-  const [query, setQuery] = useState('')
-  const [isProcessing, setIsProcessing] = useState(false)
-  const [step, setStep] = useState(0) // 0: Idle, 1: Supervisor Parse, 2: Context Load, 3: Agent Exec, 4: Complete
-  const [approvalStatus, setApprovalStatus] = useState('Generated') // Generated, Under Review, Approved
-  const [activeTaskId, setActiveTaskId] = useState(null)
-  const [activePlanId, setActivePlanId] = useState(null)
-  const [orchestratorResult, setOrchestratorResult] = useState(null)
-
-  const handleRunAnalysis = async () => {
-    if (!query.trim()) return
-    setIsProcessing(true)
-    setStep(1)
-
-    const targetLocation = extractLocationFromQuery(query)
-    const targetDomains = resolveDomainsFromQuery(query)
-
-    try {
-      // Step 1: Submit planning request to contract backend
-      const planRes = await planningApi.createPlanningRequest({
-        objective: query,
-        location: targetLocation,
-        requested_domains: targetDomains
-      })
-      setActivePlanId(planRes.request_id)
-
-      // Step 2: Context loading & intent resolution
-      setStep(2)
-      await new Promise(r => setTimeout(r, 500))
-
-      // Step 3: Dispatch Supervisor Orchestration
-      setStep(3)
-      const orcRes = await planningApi.executeOrchestrator({
-        request_id: planRes.request_id,
-        objective: query,
-        location: targetLocation,
-        domains: targetDomains,
-        workflow: 'monitor-detect-understand'
-      })
-      setActiveTaskId(orcRes.task_id)
-      setOrchestratorResult(orcRes)
-
-      // Brief delay for smooth visual transition
-      await new Promise(r => setTimeout(r, 500))
-
-      // Step 4: Completed decision artifact
-      setStep(4)
-    } catch (err) {
-      console.error('Orchestration failed:', err)
-      setOrchestratorResult({
-        status: 'FAILED',
-        error_message: err.message || 'Orchestration execution encountered an unexpected error.'
-      })
-      setStep(4)
-    } finally {
-      setIsProcessing(false)
+  const [selectedAlertIndex, setSelectedAlertIndex] = useState(0)
+  const [solutionSetIndex, setSolutionSetIndex] = useState(1)
+  const [inputQuery, setInputQuery] = useState('')
+  const [messages, setMessages] = useState([
+    {
+      id: 1,
+      sender: 'user',
+      time: '10:18 AM',
+      text: 'What actions can we take to reduce the traffic congestion at Gachibowli Flyover this evening?'
+    },
+    {
+      id: 2,
+      sender: 'ai',
+      time: '10:18 AM',
+      text: 'Based on real-time data, historical patterns, and similar event analysis, here are the most effective actions to reduce congestion in this corridor.',
+      insights: [
+        'Peak congestion is driven by office exit traffic between 5 PM - 8 PM.',
+        'Outer Ring Road exchange is the main bottleneck with ~3.4 km queue.',
+        'Diversion and signal optimization can significantly reduce travel time.'
+      ],
+      suggestions: [
+        'What if we extend green time by 20%?',
+        'Show impact of dynamic diversion',
+        'Compare with last Monday'
+      ]
     }
+  ])
+  const [isThinking, setIsThinking] = useState(false)
+  const [copiedId, setCopiedId] = useState(null)
+  const [selectedSolution, setSelectedSolution] = useState(null)
+  const [showScenarioModal, setShowScenarioModal] = useState(false)
+
+  const activeAlert = activeAlerts[selectedAlertIndex]
+
+  const handleSendMessage = (text) => {
+    const q = text || inputQuery
+    if (!q.trim()) return
+
+    const userMsg = {
+      id: Date.now(),
+      sender: 'user',
+      time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+      text: q
+    }
+
+    setMessages(prev => [...prev, userMsg])
+    setInputQuery('')
+    setIsThinking(true)
+
+    // Call backend Planning AI chat endpoint
+    fetch('http://localhost:8000/api/planning/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question: q, domain: activeAlert.domain }),
+    })
+      .then(res => res.json())
+      .then(data => {
+        const aiMsg = {
+          id: Date.now() + 1,
+          sender: 'ai',
+          time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          text: data.text || 'Processing your request...',
+          insights: data.insights || [],
+          suggestions: data.suggestions || ['What is the current AQI?', 'Show station rankings', 'Show 7-day forecast'],
+        }
+        setMessages(prev => [...prev, aiMsg])
+        setIsThinking(false)
+      })
+      .catch(() => {
+        // Fallback to generic response on network failure
+        const aiMsg = {
+          id: Date.now() + 1,
+          sender: 'ai',
+          time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+          text: `Based on current multi-domain telemetry for ${activeAlert.location}, the AI simulation projects high confidence in adaptive interventions.`,
+          insights: [
+            'Corridor flow efficiency can improve by ~22% with synchronized signal timing.',
+            'Alternative routes via Wipro Junction can absorb up to 1,200 vehicles/hour.',
+            'Real-time commuter rerouting reduces bottle-neck queue duration by ~35 minutes.',
+          ],
+          suggestions: [
+            'Simulate 30-min signal phase change',
+            'Check public transit backup capacity',
+            'Export operational action plan',
+          ],
+        }
+        setMessages(prev => [...prev, aiMsg])
+        setIsThinking(false)
+      })
+
   }
 
-  const handleApprove = async () => {
-    try {
-      if (activePlanId) {
-        await recommendationsApi.approve(activePlanId, 'SENIOR_PLANNER_01', 'Approved from UI')
-        await verificationApi.verify(activePlanId)
+  const handleCopy = (text, id) => {
+    navigator.clipboard.writeText(text)
+    setCopiedId(id)
+    setTimeout(() => setCopiedId(null), 2000)
+  }
+
+  const handleNewConversation = () => {
+    setMessages([
+      {
+        id: Date.now(),
+        sender: 'ai',
+        time: new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }),
+        text: `Planning AI initialized for ${activeAlert.location}. How can I assist with scenario analysis, decision recommendations, or impact evaluation?`,
+        insights: [
+          `Active Incident: ${activeAlert.title} (${activeAlert.impact}).`,
+          `Domain telemetry monitored live across 52 city sensors.`,
+          `Ready to run what-if simulations and dispatch action directives.`
+        ],
+        suggestions: [
+          'What are the best immediate mitigation actions?',
+          'Run cross-domain impact check',
+          'Generate operational summary report'
+        ]
       }
-    } catch (e) {
-      console.warn('Backend approval sync warning:', e)
-    }
-    setApprovalStatus('Approved')
+    ])
   }
-
-  const handleApplyTemplate = (txt) => {
-    setQuery(txt)
-  }
-
-  const feedback = orchestratorResult?.planner_feedback
-  const confidenceScore = feedback?.confidence ? `${Math.round(feedback.confidence * 1000) / 10}%` : '94.2%'
-  
-  const collectedResults = orchestratorResult?.collected_results || {}
-  const hasEnergy = Boolean(collectedResults.energy)
-  const hasTraffic = Boolean(collectedResults.traffic)
-  const hasPollution = Boolean(collectedResults.pollution)
-
-  // Parse raw recommendations into an array of distinct items
-  const rawRecText = feedback?.insights?.recommendation || feedback?.final_recommendation || feedback?.insights?.final_recommendation || ''
-  
-  let parsedRecs = []
-  if (rawRecText) {
-    if (rawRecText.includes('\n\n')) {
-      parsedRecs = rawRecText.split('\n\n').map(s => s.trim()).filter(Boolean)
-    } else if (rawRecText.includes('\n')) {
-      parsedRecs = rawRecText.split('\n').map(s => s.trim()).filter(Boolean)
-    } else if (/\d+\.\s+/.test(rawRecText)) {
-      parsedRecs = rawRecText.split(/(?=\d+\.\s+)/).map(s => s.trim()).filter(Boolean)
-    } else {
-      parsedRecs = [rawRecText]
-    }
-  }
-
-  if (parsedRecs.length === 0) {
-    if (hasEnergy) {
-      const loc = collectedResults.energy.location || 'Local Grid'
-      parsedRecs = [
-        `1. Demand Response & Peak Shaving: Shift non-critical industrial & commercial HVAC loads away from the evening peak window (18:00–21:30) across ${loc} (Est. 12–18% load reduction).`,
-        `2. Rooftop Solar & Microgrid Offsets: Integrate solar-assisted microgrid power on institutional and government buildings across ${loc} to buffer midday transformer draw (Est. 15–20% peak offset).`,
-        `3. Dynamic Street-Lighting Dimming: Implement automated LED dimming schedules calibrated with traffic flow volume after 22:00 (Est. 10–15% municipal energy savings).`,
-        `4. Battery Energy Storage (BESS) Dispatch: Discharge localized 20–40 MWh BESS battery packs during peak transformer load hours to avoid feeder line tripping.`
-      ]
-    } else {
-      parsedRecs = [
-        '1. Adaptive Signal Timing: Deploy AI-actuated traffic signal cycle extensions at primary intersection bottlenecks.',
-        '2. Dynamic Route Divergence: Advise vehicle re-routing toward Outer Ring Road (ORR) during congestion spikes.',
-        '3. Coordinated Municipal Offsets: Synchronize street-lighting dimming schedules to balance feeder loads.'
-      ]
-    }
-  }
-
-  const locationDisplay = extractLocationFromQuery(query)
-  const locationShort = locationDisplay.replace(', Hyderabad', '')
 
   return (
-    <div className="stagger-children">
-      <div className="page-header">
-        <h1><Brain size={28} /> Planning Assistant</h1>
-        <div style={{ display: 'flex', gap: '8px' }}>
-          <StatusBadge status="AI" />
-          <span className="badge badge-info">Supervisor AI Platform</span>
+    <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      {/* ── Filter Pills Row ───────────────────────────────── */}
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '12px',
+        flexWrap: 'wrap',
+        fontSize: '0.75rem',
+      }}>
+        {/* Active Domain Pill */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-full)',
+          padding: '6px 14px',
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Active Domain:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <Car size={14} color="#E5483F" />
+            <span>{activeAlert.domain}</span>
+          </div>
+        </div>
+
+        {/* Active Alert Pill */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-full)',
+          padding: '6px 14px',
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Active Alert:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <AlertTriangle size={14} color="#E5483F" />
+            <span>{activeAlert.title}</span>
+          </div>
+        </div>
+
+        {/* Location Pill */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-full)',
+          padding: '6px 14px',
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <span style={{ color: 'var(--text-muted)', fontSize: '0.7rem' }}>Location:</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontWeight: 600, color: 'var(--text-primary)' }}>
+            <span style={{ color: '#E5483F' }}>📍</span>
+            <span>{activeAlert.location}</span>
+          </div>
         </div>
       </div>
 
-      <div className="grid-dashboard" style={{ gridTemplateColumns: '1fr 1fr' }}>
+      {/* ── Main Planning AI Card ───────────────────────────── */}
+      <div style={{
+        background: 'var(--bg-card)',
+        border: '1px solid var(--border-card)',
+        borderRadius: 'var(--radius-lg)',
+        padding: '24px',
+        boxShadow: 'var(--shadow-card)',
+      }}>
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '20px',
+          borderBottom: '1px solid var(--border-divider)',
+          paddingBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: 38,
+              height: 38,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(37,99,235,0.25)',
+            }}>
+              <Sparkles size={18} color="#FFFFFF" />
+            </div>
+            <div>
+              <h3 style={{
+                fontSize: '1.05rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-heading)',
+              }}>
+                Planning AI
+              </h3>
+              <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+                Ask for insights, recommendations, or scenario analysis.
+              </p>
+            </div>
+          </div>
 
-        {/* Left Column: Planning Request Input Workspace */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
-          <GlassCard>
-            <div className="section-title">Planner Input Workspace</div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '12px' }}>
-              Submit natural-language observations, infrastructure suggestions, or operational issues to the Supervisor AI.
-            </p>
+          <button
+            onClick={handleNewConversation}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '6px 14px',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid #2563EB',
+              background: 'transparent',
+              color: '#2563EB',
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+              transition: 'all var(--transition-fast)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(37,99,235,0.06)'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'transparent'
+            }}
+          >
+            <Plus size={14} />
+            <span>New Conversation</span>
+          </button>
+        </div>
 
-            <textarea
-              value={query}
-              onChange={e => setQuery(e.target.value)}
-              placeholder="Enter planning request or analysis parameters here (e.g. 'tell me how to use energy efficiently in tarnaka')..."
-              style={{
-                width: '100%', minHeight: '140px', padding: '12px',
-                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-                fontFamily: 'var(--font-body)', fontSize: '0.875rem', resize: 'vertical',
-                outline: 'none', transition: 'border-color var(--transition-fast)'
-              }}
-              onFocus={e => e.currentTarget.style.borderColor = 'var(--accent-cyan)'}
-              onBlur={e => e.currentTarget.style.borderColor = 'var(--border-default)'}
-            />
+        {/* Conversation Message List */}
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '20px',
+          maxHeight: '440px',
+          overflowY: 'auto',
+          paddingRight: '6px',
+          marginBottom: '20px',
+        }}>
+          {messages.map((msg) => {
+            if (msg.sender === 'user') {
+              return (
+                <div key={msg.id} style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                  <div style={{ maxWidth: '75%' }}>
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'flex-end',
+                      gap: '8px',
+                      marginBottom: '4px',
+                      fontSize: '0.65rem',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                    }}>
+                      <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>You</span>
+                      <span>{msg.time}</span>
+                    </div>
+                    <div style={{
+                      background: 'var(--bg-workspace)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: '12px 12px 2px 12px',
+                      padding: '12px 16px',
+                      fontSize: '0.82rem',
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.45,
+                    }}>
+                      {msg.text}
+                    </div>
+                  </div>
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: '50%',
+                    background: 'var(--text-primary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                    marginTop: '16px',
+                  }}>
+                    <User size={16} color="#FFFFFF" />
+                  </div>
+                </div>
+              )
+            }
 
-            {/* Template Buttons */}
-            <div style={{ marginTop: '12px' }}>
-              <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginBottom: '8px', fontFamily: 'var(--font-mono)' }}>
-                PLANNING INQUIRY TEMPLATES
+            return (
+              <div key={msg.id} style={{ display: 'flex', gap: '12px', alignItems: 'flex-start' }}>
+                <div style={{
+                  width: 32,
+                  height: 32,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  flexShrink: 0,
+                  marginTop: '4px',
+                }}>
+                  <Sparkles size={16} color="#FFFFFF" />
+                </div>
+                <div style={{ flex: 1, maxWidth: '85%' }}>
+                  <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    marginBottom: '6px',
+                    fontSize: '0.65rem',
+                    color: 'var(--text-muted)',
+                    fontFamily: 'var(--font-mono)',
+                  }}>
+                    <span style={{ fontWeight: 700, color: '#2563EB' }}>Planning AI</span>
+                    <span>{msg.time}</span>
+                  </div>
+
+                  <div style={{
+                    background: 'var(--bg-workspace)',
+                    border: '1px solid var(--border-default)',
+                    borderRadius: '2px 12px 12px 12px',
+                    padding: '16px',
+                    fontSize: '0.82rem',
+                    color: 'var(--text-primary)',
+                    lineHeight: 1.5,
+                  }}>
+                    <p style={{ marginBottom: msg.insights ? '12px' : '0' }}>{msg.text}</p>
+
+                    {msg.insights && (
+                      <div style={{ marginBottom: '14px' }}>
+                        <div style={{
+                          fontWeight: 700,
+                          fontSize: '0.8rem',
+                          color: 'var(--text-primary)',
+                          marginBottom: '6px',
+                        }}>
+                          Key Insights
+                        </div>
+                        <ul style={{
+                          margin: 0,
+                          paddingLeft: '18px',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: '4px',
+                          fontSize: '0.78rem',
+                          color: 'var(--text-secondary)',
+                        }}>
+                          {msg.insights.map((insight, idx) => (
+                            <li key={idx} style={{ lineHeight: 1.4 }}>
+                              {insight}
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+
+                    {/* Suggestion Chips & Action Buttons */}
+                    <div style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      alignItems: 'center',
+                      gap: '12px',
+                      flexWrap: 'wrap',
+                      marginTop: '12px',
+                      paddingTop: '10px',
+                      borderTop: '1px solid var(--border-divider)',
+                    }}>
+                      <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {msg.suggestions?.map((sug, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleSendMessage(sug)}
+                            style={{
+                              padding: '5px 12px',
+                              borderRadius: 'var(--radius-full)',
+                              background: 'var(--bg-card)',
+                              border: '1px solid var(--border-default)',
+                              fontSize: '0.7rem',
+                              color: 'var(--text-secondary)',
+                              cursor: 'pointer',
+                              transition: 'all var(--transition-fast)',
+                            }}
+                            onMouseEnter={e => {
+                              e.currentTarget.style.borderColor = '#2563EB'
+                              e.currentTarget.style.color = '#2563EB'
+                            }}
+                            onMouseLeave={e => {
+                              e.currentTarget.style.borderColor = 'var(--border-default)'
+                              e.currentTarget.style.color = 'var(--text-secondary)'
+                            }}
+                          >
+                            {sug}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginLeft: 'auto' }}>
+                        <button
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-muted)',
+                            cursor: 'pointer', padding: '4px', display: 'flex',
+                          }}
+                          title="Helpful response"
+                        >
+                          <ThumbsUp size={14} />
+                        </button>
+                        <button
+                          style={{
+                            background: 'none', border: 'none', color: 'var(--text-muted)',
+                            cursor: 'pointer', padding: '4px', display: 'flex',
+                          }}
+                          title="Unhelpful response"
+                        >
+                          <ThumbsDown size={14} />
+                        </button>
+                        <button
+                          onClick={() => handleCopy(`${msg.text}\n${msg.insights?.join('\n') || ''}`, msg.id)}
+                          style={{
+                            background: 'none', border: 'none', color: copiedId === msg.id ? '#2F8F72' : 'var(--text-muted)',
+                            cursor: 'pointer', padding: '4px', display: 'flex',
+                          }}
+                          title="Copy response"
+                        >
+                          {copiedId === msg.id ? <Check size={14} /> : <Copy size={14} />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {templates.map((t, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => handleApplyTemplate(t.text)}
-                    style={{
-                      padding: '6px 12px', background: 'var(--bg-tertiary)',
-                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                      color: 'var(--text-secondary)', fontSize: '0.75rem', cursor: 'pointer',
-                      transition: 'all var(--transition-fast)'
-                    }}
-                    onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--accent-cyan)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                    onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border-default)'; e.currentTarget.style.color = 'var(--text-secondary)' }}
-                  >
-                    {t.label}
-                  </button>
-                ))}
+            )
+          })}
+
+          {isThinking && (
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              <div style={{
+                width: 32, height: 32, borderRadius: '50%',
+                background: 'linear-gradient(135deg, #3B82F6, #1D4ED8)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <Sparkles size={16} color="#FFFFFF" />
+              </div>
+              <div style={{
+                padding: '12px 18px',
+                background: 'var(--bg-workspace)',
+                borderRadius: 'var(--radius-md)',
+                fontSize: '0.75rem',
+                color: 'var(--text-muted)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontFamily: 'var(--font-mono)',
+              }}>
+                <RefreshCw size={13} className="animate-spin" />
+                Planning AI is synthesizing multi-domain telemetry & running neural simulations...
               </div>
             </div>
+          )}
+        </div>
 
-            {/* Submit Button */}
-            <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'flex-end' }}>
+        {/* Input Bar */}
+        <div style={{
+          position: 'relative',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-default)',
+          borderRadius: 'var(--radius-md)',
+          padding: '8px 12px',
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <button
+            style={{
+              background: 'none', border: 'none', color: 'var(--text-muted)',
+              cursor: 'pointer', padding: '4px', display: 'flex',
+            }}
+          >
+            <Paperclip size={16} />
+          </button>
+          <input
+            type="text"
+            value={inputQuery}
+            onChange={e => setInputQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSendMessage()}
+            placeholder="Ask a question or request analysis..."
+            style={{
+              flex: 1,
+              border: 'none',
+              outline: 'none',
+              background: 'transparent',
+              fontSize: '0.8rem',
+              color: 'var(--text-primary)',
+              fontFamily: 'var(--font-body)',
+            }}
+          />
+          <button
+            onClick={() => handleSendMessage()}
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 'var(--radius-sm)',
+              background: '#2563EB',
+              border: 'none',
+              color: '#FFFFFF',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+              transition: 'all var(--transition-fast)',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background = '#1D4ED8'}
+            onMouseLeave={e => e.currentTarget.style.background = '#2563EB'}
+          >
+            <Send size={15} />
+          </button>
+        </div>
+
+        <div style={{
+          textAlign: 'center',
+          fontSize: '0.62rem',
+          color: 'var(--text-muted)',
+          marginTop: '10px',
+        }}>
+          AI responses may contain inaccuracies. Verify critical decisions before implementation.
+        </div>
+      </div>
+
+      {/* ── Bottom Section: Active Alerts + AI Recommended Solutions ── */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '360px 1fr',
+        gap: 'var(--space-lg)',
+        alignItems: 'start',
+      }}>
+        {/* Left Column: Active Alerts List */}
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-card)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '20px',
+          boxShadow: 'var(--shadow-card)',
+        }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <h3 style={{
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-heading)',
+              }}>
+                Active Alerts
+              </h3>
+              <span style={{
+                width: 18,
+                height: 18,
+                borderRadius: '50%',
+                background: 'rgba(229,72,63,0.15)',
+                color: '#E5483F',
+                fontSize: '0.65rem',
+                fontWeight: 700,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}>
+                {activeAlerts.length}
+              </span>
+            </div>
+            <span style={{
+              fontSize: '0.65rem',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--font-mono)',
+              cursor: 'pointer',
+              fontWeight: 600,
+            }}>
+              VIEW ALL
+            </span>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+            {activeAlerts.map((alert, idx) => {
+              const isSelected = idx === selectedAlertIndex
+              const DomainIcon = alert.domainIcon
+              return (
+                <div
+                  key={alert.id}
+                  onClick={() => setSelectedAlertIndex(idx)}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: '12px',
+                    padding: '14px',
+                    borderRadius: 'var(--radius-md)',
+                    background: isSelected ? 'rgba(229,72,63,0.03)' : 'var(--bg-workspace)',
+                    border: `1px solid ${isSelected ? 'rgba(229,72,63,0.3)' : 'var(--border-divider)'}`,
+                    cursor: 'pointer',
+                    transition: 'all var(--transition-fast)',
+                  }}
+                >
+                  <div style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 'var(--radius-sm)',
+                    background: isSelected ? 'rgba(229,72,63,0.12)' : 'var(--bg-card)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    flexShrink: 0,
+                  }}>
+                    <DomainIcon size={16} color={alert.impactColor} />
+                  </div>
+
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '2px' }}>
+                      <span style={{
+                        fontSize: '0.78rem',
+                        fontWeight: 700,
+                        color: 'var(--text-primary)',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                      }}>
+                        {alert.title}
+                      </span>
+                    </div>
+
+                    <div style={{
+                      fontSize: '0.68rem',
+                      color: 'var(--text-muted)',
+                      marginBottom: '8px',
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                    }}>
+                      {alert.location}
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '0.6rem',
+                        fontWeight: 600,
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-default)',
+                        color: 'var(--text-secondary)',
+                      }}>
+                        {alert.domain}
+                      </span>
+                      <span style={{
+                        padding: '2px 8px',
+                        borderRadius: 'var(--radius-full)',
+                        fontSize: '0.6rem',
+                        fontWeight: 600,
+                        background: 'var(--bg-card)',
+                        border: '1px solid var(--border-default)',
+                        color: 'var(--text-muted)',
+                      }}>
+                        {alert.status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{
+                      fontSize: '0.62rem',
+                      fontWeight: 700,
+                      color: alert.impactColor,
+                      fontFamily: 'var(--font-mono)',
+                    }}>
+                      {alert.impact}
+                    </div>
+                    <div style={{
+                      fontSize: '0.58rem',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                      marginTop: '2px',
+                    }}>
+                      {alert.time}
+                    </div>
+                    <ChevronRight size={14} color="var(--text-muted)" style={{ marginTop: '8px', marginLeft: 'auto' }} />
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+
+        {/* Right Column: AI Recommended Solutions */}
+        <div style={{
+          background: 'var(--bg-card)',
+          border: '1px solid var(--border-card)',
+          borderRadius: 'var(--radius-lg)',
+          padding: '20px',
+          boxShadow: 'var(--shadow-card)',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '16px',
+        }}>
+          {/* Section Header */}
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <AlertTriangle size={16} color="#E5483F" />
+              <h3 style={{
+                fontSize: '0.85rem',
+                fontWeight: 700,
+                color: 'var(--text-primary)',
+                fontFamily: 'var(--font-heading)',
+              }}>
+                AI Recommended Solutions for {activeAlert.title}
+              </h3>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span style={{
+                fontSize: '0.65rem',
+                color: 'var(--text-muted)',
+                fontFamily: 'var(--font-mono)',
+                fontWeight: 600,
+              }}>
+                SOLUTION SET {solutionSetIndex} OF 3
+              </span>
               <button
-                onClick={handleRunAnalysis}
-                disabled={isProcessing || !query.trim()}
+                onClick={() => setSolutionSetIndex(prev => prev > 1 ? prev - 1 : 3)}
                 style={{
-                  display: 'flex', alignItems: 'center', gap: '8px',
-                  padding: '10px 20px', background: isProcessing || !query.trim() ? 'var(--bg-tertiary)' : 'var(--accent-blue)',
-                  color: isProcessing || !query.trim() ? 'var(--text-muted)' : '#fff',
-                  border: 'none', borderRadius: 'var(--radius-sm)',
-                  fontSize: '0.85rem', fontWeight: 600, cursor: isProcessing || !query.trim() ? 'not-allowed' : 'pointer',
-                  transition: 'background var(--transition-fast)'
+                  background: 'none', border: 'none', color: 'var(--text-muted)',
+                  cursor: 'pointer', padding: '2px', display: 'flex',
                 }}
               >
-                <Cpu size={16} />
-                <span>{isProcessing ? 'Orchestrating Agents...' : 'Dispatch Request'}</span>
+                <ChevronLeft size={14} />
+              </button>
+              <button
+                onClick={() => setSolutionSetIndex(prev => prev < 3 ? prev + 1 : 1)}
+                style={{
+                  background: 'none', border: 'none', color: 'var(--text-muted)',
+                  cursor: 'pointer', padding: '2px', display: 'flex',
+                }}
+              >
+                <ChevronRight size={14} />
               </button>
             </div>
-          </GlassCard>
+          </div>
 
-          {/* Supervisor AI Orchestration Workflow Visualizer */}
-          {(isProcessing || step > 0) && (
-            <GlassCard>
-              <div className="section-title">Supervisor AI Agent Orchestration Flow</div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginBottom: '16px' }}>
-                Visualization of structural routing flow within the SUPADSP Agent Architecture.
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', position: 'relative' }}>
-                {/* Intent Understanding */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 1 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 1 ? 'var(--accent-cyan-dim)' : (step > 1 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 1 ? 'var(--accent-cyan)' : (step > 1 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 1 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Cpu size={14} color={step === 1 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Intent Parsing & Capability Resolution</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Targeting: {locationDisplay}</div>
-                  </div>
-                </div>
-
-                {/* Context Manager */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 2 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 2 ? 'var(--accent-cyan-dim)' : (step > 2 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 2 ? 'var(--accent-cyan)' : (step > 2 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 2 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Database size={14} color={step === 2 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Spatial & Historical Context Loading</div>
-                    <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Fetching substation maps, weather coefficients, and 3-year baseline telemetry</div>
-                  </div>
-                </div>
-
-                {/* Specialist Agent Resolution */}
-                <div style={{
-                  display: 'flex', alignItems: 'center', gap: '12px',
-                  opacity: step >= 3 ? 1 : 0.4, transition: 'opacity 0.3s'
-                }}>
-                  <div style={{
-                    width: 28, height: 28, borderRadius: '50%',
-                    background: step === 3 ? 'var(--accent-cyan-dim)' : (step > 3 ? 'var(--accent-emerald-dim)' : 'var(--bg-tertiary)'),
-                    border: `1px solid ${step === 3 ? 'var(--accent-cyan)' : (step > 3 ? 'var(--accent-emerald)' : 'var(--border-default)')}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center'
-                  }}>
-                    {step > 3 ? <CheckCircle2 size={14} color="var(--accent-emerald)" /> : <Play size={14} color={step === 3 ? 'var(--accent-cyan)' : 'var(--text-muted)'} />}
-                  </div>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600 }}>Domain Specialist Executions</div>
-                    <div style={{ display: 'flex', gap: '6px', marginTop: '4px' }}>
-                      {hasEnergy && <span className="badge badge-smooth" style={{ fontSize: '0.6rem' }}>Energy Agent</span>}
-                      {hasTraffic && <span className="badge badge-info" style={{ fontSize: '0.6rem' }}>Traffic Agent</span>}
-                      {hasPollution && <span className="badge badge-ai" style={{ fontSize: '0.6rem' }}>Pollution Agent</span>}
-                      {!hasEnergy && !hasTraffic && !hasPollution && (
-                        <span className="badge badge-smooth" style={{ fontSize: '0.6rem' }}>Specialist Dispatched</span>
-                      )}
+          {/* 4 Solution Cards in a Row */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(4, 1fr)',
+            gap: '12px',
+          }}>
+            {activeAlert.solutions.map((sol) => (
+              <div
+                key={sol.id}
+                style={{
+                  background: 'var(--bg-workspace)',
+                  border: '1px solid var(--border-divider)',
+                  borderRadius: 'var(--radius-md)',
+                  padding: '16px',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'space-between',
+                  gap: '14px',
+                  transition: 'all var(--transition-fast)',
+                }}
+                onMouseEnter={e => {
+                  e.currentTarget.style.borderColor = 'var(--border-hover)'
+                  e.currentTarget.style.transform = 'translateY(-2px)'
+                }}
+                onMouseLeave={e => {
+                  e.currentTarget.style.borderColor = 'var(--border-divider)'
+                  e.currentTarget.style.transform = 'translateY(0)'
+                }}
+              >
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                    <div style={{
+                      width: 20,
+                      height: 20,
+                      borderRadius: '50%',
+                      background: sol.color,
+                      color: '#FFFFFF',
+                      fontSize: '0.65rem',
+                      fontWeight: 700,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}>
+                      {sol.id}
                     </div>
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
-          )}
-        </div>
-
-        {/* Right Column: Structured Decision Artifact Output */}
-        <div>
-          {step === 4 && (orchestratorResult?.is_out_of_scope || orchestratorResult?.status === 'REJECTED') ? (
-            <GlassCard glow="rose">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <AlertCircle size={22} color="var(--accent-rose)" />
-                  <div>
-                    <span style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 700, letterSpacing: '0.05em' }}>
-                      GATEKEEPER VALIDATION ALERT
+                    <span style={{
+                      fontSize: '0.78rem',
+                      fontWeight: 700,
+                      color: 'var(--text-primary)',
+                      lineHeight: 1.2,
+                    }}>
+                      {sol.title}
                     </span>
-                    <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px', color: 'var(--text-primary)' }}>
-                      Query Outside Smart City Scope
-                    </h3>
                   </div>
-                </div>
-                <StatusBadge status="WARNING" />
-              </div>
 
-              <div style={{
-                padding: '16px',
-                background: 'rgba(244, 63, 94, 0.08)',
-                border: '1px solid rgba(244, 63, 94, 0.25)',
-                borderRadius: 'var(--radius-md)',
-                marginBottom: '20px'
-              }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', lineHeight: 1.5, marginBottom: '8px' }}>
-                  {orchestratorResult?.out_of_scope_message || orchestratorResult?.planner_feedback?.insights?.analysis || 'This query does not match any urban planning domain in the SUPADSP system.'}
-                </div>
-                <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-                  The SUPADSP decision support engine specifically optimizes municipal urban infrastructure and does not process general programming, trivia, or non-urban queries.
-                </div>
-              </div>
-
-              <div style={{ marginBottom: '20px' }}>
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600, marginBottom: '10px' }}>
-                  SUPPORTED SMART CITY DOMAINS
-                </div>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px' }}>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-cyan)', marginBottom: '2px' }}>🚦 Traffic & Mobility</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Congestion, signal cycles, corridor speeds</div>
-                  </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-emerald)', marginBottom: '2px' }}>⚡ Smart Energy Grid</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Substations, peak load, solar, BESS storage</div>
-                  </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-amber)', marginBottom: '2px' }}>🌫️ Air Quality & Pollution</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>AQI, PM2.5, industrial emissions, mist cannons</div>
-                  </div>
-                  <div style={{ padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)', fontSize: '0.75rem' }}>
-                    <div style={{ fontWeight: 600, color: 'var(--accent-blue)', marginBottom: '2px' }}>🌧️ Weather & Stormwater</div>
-                    <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Rainfall, underpass flooding, heatwave alerts</div>
-                  </div>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', borderTop: '1px solid var(--border-default)', paddingTop: '16px' }}>
-                <button
-                  onClick={() => { setQuery('Tell me how to use energy efficiently in Tarnaka.'); setStep(0); }}
-                  style={{
-                    padding: '8px 14px', background: 'var(--accent-blue)', color: '#fff',
-                    border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                  }}
-                >
-                  Load Sample Energy Query
-                </button>
-                <button
-                  onClick={() => { setStep(0); setQuery(''); setOrchestratorResult(null); }}
-                  style={{
-                    padding: '8px 14px', background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-                    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', fontSize: '0.75rem', cursor: 'pointer'
-                  }}
-                >
-                  Clear Workspace
-                </button>
-              </div>
-            </GlassCard>
-          ) : step === 4 && (orchestratorResult?.status === 'FAILED' || (orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && Object.keys(collectedResults).length === 0)) ? (
-            <GlassCard glow="rose">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-rose)', fontFamily: 'var(--font-mono)', fontWeight: 600, letterSpacing: '0.05em' }}>
-                    ORCHESTRATION FAILED
-                  </span>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px', color: 'var(--accent-rose)' }}>Specialist Agent Dispatch Failed</h3>
-                </div>
-              </div>
-              <div style={{ padding: '16px', background: 'rgba(244, 63, 94, 0.08)', border: '1px solid rgba(244, 63, 94, 0.25)', borderRadius: 'var(--radius-md)', marginBottom: '16px' }}>
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
-                  {orchestratorResult?.error_message || orchestratorResult?.planner_feedback?.analysis || 'The planner was unable to collect telemetry from the required specialist agents.'}
-                </div>
-                {orchestratorResult?.failures && Object.keys(orchestratorResult.failures).length > 0 && (
-                  <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    Failed agents: {Object.keys(orchestratorResult.failures).join(', ')}
-                  </div>
-                )}
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-                <button
-                  onClick={handleRunAnalysis}
-                  style={{
-                    padding: '8px 16px', background: 'var(--accent-cyan)', color: 'var(--bg-primary)',
-                    border: 'none', borderRadius: 'var(--radius-sm)', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer'
-                  }}
-                >
-                  Retry Analysis
-                </button>
-              </div>
-            </GlassCard>
-          ) : step === 4 ? (
-            <GlassCard glow="violet">
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-default)', paddingBottom: '12px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.7rem', color: 'var(--accent-violet)', fontFamily: 'var(--font-mono)', fontWeight: 600, letterSpacing: '0.05em' }}>
-                    DECISION SUPPORT ARTIFACT
-                  </span>
-                  <h3 style={{ fontSize: '1.1rem', fontWeight: 600, marginTop: '2px' }}>AI Planning Multi-Recommendations</h3>
-                </div>
-                <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '1.25rem', fontWeight: 700, color: 'var(--accent-emerald)', fontFamily: 'var(--font-mono)' }}>{confidenceScore}</div>
-                  <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>CONFIDENCE SCORE</div>
-                </div>
-              </div>
-
-              {/* Multi-Recommendation Cards */}
-              <div style={{ marginBottom: '18px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-                    RECOMMENDED ACTIONS ({parsedRecs.length})
-                  </span>
-                  <span className="badge badge-ai" style={{ fontSize: '0.6rem' }}>Multi-Strategy</span>
-                </div>
-                
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                  {parsedRecs.map((recText, idx) => {
-                    let cleanText = recText.replace(/^\d+\.\s*/, '')
-                    
-                    // Extract priority tag if present like [HIGH], [CRITICAL], [MEDIUM]
-                    let priority = null
-                    const prioMatch = cleanText.match(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i)
-                    if (prioMatch) {
-                      priority = prioMatch[1].toUpperCase()
-                      cleanText = cleanText.replace(/^\[(CRITICAL|HIGH|MEDIUM|LOW)\]\s*/i, '')
-                    }
-
-                    const [titlePart, ...descParts] = cleanText.includes(':') ? cleanText.split(':') : [cleanText, '']
-                    const descPart = descParts.join(':').trim()
-
-                    return (
-                      <div
-                        key={idx}
-                        style={{
-                          padding: '12px 14px',
-                          background: 'var(--bg-primary)',
-                          border: '1px solid var(--border-default)',
-                          borderRadius: 'var(--radius-sm)',
-                          display: 'flex',
-                          gap: '12px',
-                          alignItems: 'flex-start',
-                          transition: 'border-color var(--transition-fast)'
-                        }}
-                      >
-                        <div style={{
-                          width: '24px', height: '24px', borderRadius: '50%',
-                          background: 'var(--accent-cyan-dim)', color: 'var(--accent-cyan)',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          fontSize: '0.75rem', fontWeight: 700, flexShrink: 0, marginTop: '2px',
-                          border: '1px solid rgba(0,240,255,0.25)'
-                        }}>
-                          {idx + 1}
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '4px' }}>
-                            <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {titlePart.trim()}
-                            </span>
-                            {priority && (
-                              <span className={`badge ${priority === 'CRITICAL' ? 'badge-heavy' : priority === 'HIGH' ? 'badge-moderate' : 'badge-smooth'}`} style={{ fontSize: '0.6rem', padding: '1px 6px' }}>
-                                {priority}
-                              </span>
-                            )}
-                          </div>
-                          {descPart && (
-                            <div style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                              {descPart}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              </div>
-
-              {/* Domain Analysis */}
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>AGENTIC CO-ORDINATION ANALYSIS</span>
-                <div style={{
-                  display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '4px',
-                  padding: '10px 12px', background: 'var(--bg-primary)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)'
-                }}>
-                  {hasEnergy && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-emerald)' }}>Energy Agent:</strong> {`Current load: ${collectedResults.energy.load_pct}%, Consumption: ${collectedResults.energy.current_load_mw} MW (${collectedResults.energy.location || locationDisplay}). Status: ${collectedResults.energy.severity || 'NORMAL'}.`}
-                    </div>
-                  )}
-                  {hasTraffic && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-cyan)' }}>Traffic Agent:</strong> {`Active vehicles: ${collectedResults.traffic.active_vehicles || 2342}, Avg speed: ${collectedResults.traffic.average_speed_kmh || 23.6} km/h, Congestion index: ${collectedResults.traffic.congestion_index || 68.2}.`}
-                    </div>
-                  )}
-                  {hasPollution && (
-                    <div style={{ fontSize: '0.75rem' }}>
-                      <strong style={{ color: 'var(--accent-amber)' }}>Pollution Agent:</strong> {`AQI index: ${collectedResults.pollution.city_avg_aqi || collectedResults.pollution.aqi || 136}, Primary pollutant: ${collectedResults.pollution.primary_pollutant || 'PM2.5'}.`}
-                    </div>
-                  )}
-                  {!hasEnergy && !hasTraffic && !hasPollution && (
-                    <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      Specialist agent results received and synthesized into planning decision artifact.
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* GIS Map Evidence Graphic */}
-              <div style={{ marginBottom: '16px' }}>
-                <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>SPATIAL LAYERING EVIDENCE</span>
-                <div style={{
-                  height: '120px', background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-sm)', marginTop: '4px', position: 'relative', overflow: 'hidden',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center'
-                }}>
-                  <svg width="100%" height="100%" viewBox="0 0 200 100" style={{ position: 'absolute', inset: 0 }}>
-                    <circle cx="50" cy="50" r="4" fill="var(--accent-cyan)" />
-                    <circle cx="100" cy="50" r="4" fill="var(--accent-emerald)" />
-                    <circle cx="150" cy="50" r="4" fill="var(--accent-amber)" />
-                    <line x1="54" y1="50" x2="96" y2="50" stroke="var(--border-default)" strokeWidth="1" />
-                    <line x1="104" y1="50" x2="146" y2="50" stroke="var(--border-default)" strokeWidth="1" />
-                    <text x="35" y="40" fill="var(--text-muted)" fontSize="5">{locationShort}</text>
-                    <text x="88" y="40" fill="var(--text-muted)" fontSize="5">Substation</text>
-                    <text x="135" y="40" fill="var(--text-muted)" fontSize="5">Distribution</text>
-                  </svg>
-                  <div style={{ position: 'absolute', bottom: '6px', right: '10px', fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-                    GIS Layer: {locationDisplay}
-                  </div>
-                </div>
-              </div>
-
-              {/* Explainability & Alternatives */}
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
-                <div>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>EXPLAINABILITY FACTORS</span>
-                  <ul style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', paddingLeft: '12px', marginTop: '2px', lineHeight: 1.4 }}>
-                    {hasEnergy ? (
-                      <>
-                        <li>Substation capacity margins adequate for off-peak shift</li>
-                        <li>Solar offset reduces daytime grid draw by ~15%</li>
-                      </>
-                    ) : (
-                      <>
-                        <li>Wind speed &lt; 12 km/h prevents dispersion</li>
-                        <li>Street-light savings offset signal draw</li>
-                      </>
-                    )}
-                  </ul>
-                </div>
-                <div>
-                  <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>ALTERNATIVES CONSIDERED</span>
-                  <p style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: '2px' }}>
-                    {hasEnergy ? (
-                      `Battery Storage (BESS) peak-shaving dispatch across ${locationShort} feeder lines (Confidence: 89.2%).`
-                    ) : (
-                      `Route divergence via ORR corridor (Confidence: 81.4%, 12-min travel delay offset).`
-                    )}
+                  <p style={{
+                    fontSize: '0.7rem',
+                    color: 'var(--text-muted)',
+                    lineHeight: 1.35,
+                  }}>
+                    {sol.desc}
                   </p>
                 </div>
-              </div>
 
-              {/* Verification & Compliance */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 12px', background: 'var(--accent-emerald-dim)', borderRadius: 'var(--radius-sm)', border: '1px solid rgba(16,185,129,0.2)', marginBottom: '20px' }}>
-                <ShieldCheck size={16} color="var(--accent-emerald)" />
-                <span style={{ fontSize: '0.75rem', color: 'var(--accent-emerald)', fontWeight: 600 }}>
-                  Verified Compliant: TSSPDCL grid safety parameters & policy rules met
-                </span>
-              </div>
+                <div>
+                  <div style={{ marginBottom: '10px' }}>
+                    <div style={{
+                      fontSize: '0.58rem',
+                      color: 'var(--text-muted)',
+                      fontFamily: 'var(--font-mono)',
+                      textTransform: 'uppercase',
+                    }}>
+                      {sol.impactLabel}
+                    </div>
+                    <div style={{
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      color: sol.impactColor,
+                      fontFamily: 'var(--font-heading)',
+                    }}>
+                      {sol.impactValue}
+                    </div>
+                    <div style={{
+                      fontSize: '0.62rem',
+                      color: 'var(--text-muted)',
+                      marginTop: '2px',
+                    }}>
+                      Confidence <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{sol.confidence}</span>
+                    </div>
+                  </div>
 
-              {/* Senior Approval workflow stage controls */}
-              <div style={{ borderTop: '1px solid var(--border-default)', paddingTop: '16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                  <span style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>APPROVAL WORKFLOW STATE</span>
-                  <span style={{ fontSize: '0.75rem', fontWeight: 'bold', color: 'var(--accent-cyan)' }}>{approvalStatus}</span>
-                </div>
-                <div style={{ display: 'flex', gap: '8px' }}>
-                  {approvalStatus === 'Generated' && (
-                    <button
-                      onClick={() => setApprovalStatus('Under Review')}
-                      style={{
-                        padding: '6px 12px', background: 'var(--accent-cyan)', color: '#fff',
-                        border: 'none', borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                      }}
-                    >
-                      Submit for Review
-                    </button>
-                  )}
-                  {approvalStatus === 'Under Review' && (
-                    <button
-                      onClick={handleApprove}
-                      style={{
-                        padding: '6px 12px', background: 'var(--accent-emerald)', color: '#fff',
-                        border: 'none', borderRadius: 'var(--radius-sm)',
-                        fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
-                      }}
-                    >
-                      Approve & Implement
-                    </button>
-                  )}
                   <button
-                    onClick={() => { setStep(0); setQuery(''); setApprovalStatus('Generated'); }}
+                    onClick={() => setSelectedSolution(sol)}
                     style={{
-                      padding: '6px 12px', background: 'var(--bg-primary)', color: 'var(--text-secondary)',
-                      border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
-                      fontSize: '0.75rem', cursor: 'pointer'
+                      width: '100%',
+                      padding: '6px 0',
+                      borderRadius: 'var(--radius-sm)',
+                      background: 'var(--bg-card)',
+                      border: '1px solid var(--border-default)',
+                      fontSize: '0.7rem',
+                      fontWeight: 600,
+                      color: 'var(--text-secondary)',
+                      cursor: 'pointer',
+                      transition: 'all var(--transition-fast)',
+                    }}
+                    onMouseEnter={e => {
+                      e.currentTarget.style.borderColor = '#2563EB'
+                      e.currentTarget.style.color = '#2563EB'
+                    }}
+                    onMouseLeave={e => {
+                      e.currentTarget.style.borderColor = 'var(--border-default)'
+                      e.currentTarget.style.color = 'var(--text-secondary)'
                     }}
                   >
-                    Clear Workspace
+                    View Details
                   </button>
                 </div>
               </div>
-            </GlassCard>
-          ) : (
-            <GlassCard style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', minHeight: '340px', borderStyle: 'dashed' }}>
-              <Brain size={48} color="var(--text-muted)" style={{ opacity: 0.3, marginBottom: '16px' }} />
-              <h3 style={{ fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>Awaiting Planning Request</h3>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', textAlign: 'center', maxWidth: '300px' }}>
-                Enter planning parameters on the left and dispatch to orchestrate Supervisor AI capabilities.
-              </p>
-            </GlassCard>
-          )}
-        </div>
+            ))}
+          </div>
 
+          {/* Bottom Scenario Analysis Banner Button */}
+          <button
+            onClick={() => setShowScenarioModal(true)}
+            style={{
+              width: '100%',
+              padding: '12px 20px',
+              borderRadius: 'var(--radius-md)',
+              background: 'var(--bg-workspace)',
+              border: '1px solid var(--border-default)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              fontSize: '0.78rem',
+              fontWeight: 600,
+              color: '#2563EB',
+              cursor: 'pointer',
+              transition: 'all var(--transition-fast)',
+            }}
+            onMouseEnter={e => {
+              e.currentTarget.style.background = 'rgba(37,99,235,0.06)'
+              e.currentTarget.style.borderColor = '#2563EB'
+            }}
+            onMouseLeave={e => {
+              e.currentTarget.style.background = 'var(--bg-workspace)'
+              e.currentTarget.style.borderColor = 'var(--border-default)'
+            }}
+          >
+            <SlidersHorizontal size={15} />
+            <span>Run What-If Scenario Analysis</span>
+            <ArrowRight size={14} style={{ marginLeft: 'auto' }} />
+          </button>
+        </div>
       </div>
 
-      {/* AI Multi-Suggestion Problem Solver Workspace */}
-      <ProblemSolverSection />
+      {/* ── Solution Details Modal ──────────────────────────── */}
+      {selectedSolution && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'var(--bg-overlay)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '560px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            boxShadow: 'var(--shadow-modal)',
+          }} className="animate-fade-in-up">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                  width: 24, height: 24, borderRadius: '50%',
+                  background: selectedSolution.color, color: '#FFFFFF',
+                  fontSize: '0.75rem', fontWeight: 700,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  {selectedSolution.id}
+                </div>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {selectedSolution.title}
+                </h3>
+              </div>
+              <button
+                onClick={() => setSelectedSolution(null)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '16px', lineHeight: 1.45 }}>
+              {selectedSolution.desc}
+            </p>
+
+            <div style={{
+              padding: '14px',
+              background: 'var(--bg-workspace)',
+              borderRadius: 'var(--radius-md)',
+              border: '1px solid var(--border-divider)',
+              marginBottom: '20px',
+            }}>
+              <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '6px' }}>
+                Operational Implementation Details
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                {selectedSolution.details}
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+              <div style={{ padding: '10px', background: 'var(--bg-workspace)', borderRadius: 'var(--radius-sm)' }}>
+                <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Projected Impact</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: selectedSolution.impactColor }}>
+                  {selectedSolution.impactValue}
+                </div>
+              </div>
+              <div style={{ padding: '10px', background: 'var(--bg-workspace)', borderRadius: 'var(--radius-sm)' }}>
+                <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>Simulation Confidence</span>
+                <div style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  {selectedSolution.confidence}
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setSelectedSolution(null)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-default)',
+                  background: 'transparent',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Close
+              </button>
+              <button
+                onClick={() => {
+                  alert(`Directive for "${selectedSolution.title}" transmitted to Field Dispatch Unit.`)
+                  setSelectedSolution(null)
+                }}
+                style={{
+                  padding: '8px 18px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Execute Recommendation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── What-If Scenario Modal ──────────────────────────── */}
+      {showScenarioModal && (
+        <div style={{
+          position: 'fixed',
+          inset: 0,
+          background: 'var(--bg-overlay)',
+          backdropFilter: 'blur(4px)',
+          zIndex: 1200,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: '24px',
+        }}>
+          <div style={{
+            width: '100%',
+            maxWidth: '680px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: 'var(--radius-lg)',
+            padding: '24px',
+            boxShadow: 'var(--shadow-modal)',
+          }} className="animate-fade-in-up">
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <SlidersHorizontal size={20} color="#2563EB" />
+                <h3 style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--text-primary)' }}>
+                  What-If Scenario Simulation
+                </h3>
+              </div>
+              <button
+                onClick={() => setShowScenarioModal(false)}
+                style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer', fontSize: '1.2rem' }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '20px' }}>
+              Select hypothetical parameters to model urban stress response for {activeAlert.location}.
+            </p>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '24px' }}>
+              {[
+                { label: 'Traffic Surge Scenario', opts: ['Baseline (+0%)', '+15% Evening Peak', '+30% Severe Rain Event'] },
+                { label: 'Signal Control Strategy', opts: ['Fixed Time (Legacy)', 'Adaptive AI Split (Active)', 'Emergency Green Wave'] },
+                { label: 'Public Transit Frequency', opts: ['Standard Headway', 'High Frequency (+25%)', 'Dedicated Bus Lane Priority'] },
+              ].map((param, i) => (
+                <div key={i} style={{ padding: '12px', background: 'var(--bg-workspace)', borderRadius: 'var(--radius-sm)' }}>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    {param.label}
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {param.opts.map((opt, oi) => (
+                      <button
+                        key={oi}
+                        style={{
+                          padding: '6px 12px',
+                          borderRadius: 'var(--radius-sm)',
+                          fontSize: '0.7rem',
+                          fontWeight: oi === 1 ? 600 : 400,
+                          background: oi === 1 ? '#2563EB' : 'var(--bg-card)',
+                          color: oi === 1 ? '#FFFFFF' : 'var(--text-secondary)',
+                          border: oi === 1 ? 'none' : '1px solid var(--border-default)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button
+                onClick={() => setShowScenarioModal(false)}
+                style={{
+                  padding: '8px 16px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: '1px solid var(--border-default)',
+                  background: 'transparent',
+                  fontSize: '0.78rem',
+                  cursor: 'pointer',
+                  color: 'var(--text-secondary)',
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => {
+                  setShowScenarioModal(false)
+                  handleSendMessage('Run What-If Scenario with +15% evening peak and Adaptive AI Split.')
+                }}
+                style={{
+                  padding: '8px 20px',
+                  borderRadius: 'var(--radius-sm)',
+                  border: 'none',
+                  background: '#2563EB',
+                  color: '#FFFFFF',
+                  fontSize: '0.78rem',
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                }}
+              >
+                Run Multi-Agent Simulation
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

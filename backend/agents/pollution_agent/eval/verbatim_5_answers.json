@@ -1,0 +1,75 @@
+{
+  "how to reduce aqi in kapra": {
+    "text": "ECIL Kapra's observed AQI is 74 (Satisfactory), with PM10 as the dominant pollutant, though the data is significantly stale (6612.5 hours old, last updated 2025-12-31 23:45 UTC).",
+    "insights": [
+      "Baseline: ECIL Kapra's AQI of 74 is 22 points below the city mean of 96, ranking it 12th out of 12 stations, indicating it is already among the better-performing areas in Hyderabad.",
+      "Honest framing: Since the AQI is in the Satisfactory range, the focus should be on maintaining current air quality and preventing deterioration rather than treating it as an emergency.",
+      "Immediate action: Deploy mechanical street sweepers and intensive water misting along major arterial corridors (MIT-PM10-01, GHMC Sanitation & Public Works Wing) to suppress resuspended roadway dust, a major contributor to PM10.",
+      "Immediate action: Enforce strict dust management at construction and demolition sites, including perimeter windbreak netting and wheel-washing bays (MIT-PM10-02, GHMC Town Planning & Enforcement Wing / Builders) to prevent fugitive dust drift.",
+      "Medium-term action: Pave or green unpaved road shoulders and central medians with turf or native shrubs (MIT-PM10-03, GHMC Engineering & Urban Forestry Wing) to permanently reduce silt resuspension from vehicle tires."
+    ],
+    "suggestions": [
+      "What is the current live AQI in Kapra?",
+      "How does Kapra's PM10 compare to other stations?",
+      "What are the health impacts of Satisfactory AQI?"
+    ]
+  },
+  "what can be done about PM10 at Bollaram": {
+    "text": "Bollaram Industrial currently has no available AQI reading, so specific PM10 levels cannot be confirmed; however, city-wide data indicates PM10 is the dominant pollutant, and standard mitigation measures for PM10 can be applied.",
+    "insights": [
+      "Bollaram Industrial station data is unavailable (AQI: null, category: Unavailable) and is stale (6612.5 hours old, last updated 2025-12-31 23:45 UTC); no live or recent PM10 sub-index exists for this specific location.",
+      "City-wide observed data (stale, 6612.5 hours old) shows an AQI of 96 (Satisfactory) with PM10 as the dominant pollutant (value 95.99), indicating that PM10 is a primary concern across the network.",
+      "Immediate intervention: Deploy mechanical street sweepers and intensive water misting along major arterial corridors (MIT-PM10-01, GHMC Sanitation & Public Works Wing) to suppress resuspended roadway dust, per CPCB CAP guidelines.",
+      "Immediate intervention: Enforce strict dust management at construction & demolition sites, including perimeter windbreak netting and wheel-washing bays (MIT-PM10-02, GHMC Town Planning & Enforcement Wing), per MoEFCC C&D Rules.",
+      "Because the monitoring network does not have source-apportionment telemetry, local emission sources at Bollaram must be verified on-site before deploying capital resources; the system has no source-attribution sensors to assert specific real-world causes."
+    ],
+    "suggestions": [
+      "Check current AQI at Zoo Park (highest priority station)",
+      "View city-wide PM10 trends for the last 7 days",
+      "List all active monitoring stations in Hyderabad"
+    ]
+  },
+  "why is Nacharam high and what should we do": {
+    "text": "Nacharam TSIIC records a Satisfactory AQI of 96 (PM10‑dominant) from a stale observation dated 2025‑12‑31 23:45 UTC, matching the city mean but ranking highest among stations.",
+    "insights": [
+      "Observed AQI 96, category Satisfactory, dominant pollutant PM10 with sub‑index 96; diff_vs_city_mean = 0 (same as city mean) and rank 1 of 12 stations (per station_explanation), but the reading is stale (6612.5 h old, last updated 2025‑12‑31 23:45 UTC).",
+      "Since the AQI is in the Satisfactory range (51‑100), air quality is not yet Poor; actions should aim at maintenance and preventing deterioration rather than emergency mitigation (per CPCB category definitions).",
+      "Recommended PM10 interventions: MIT‑PM10‑01 – Deploy mechanical street sweepers and intensive water misting along major arterial corridors (GHMC Sanitation & Public Works, immediate); MIT‑PM10‑02 – Enforce strict dust management at construction & demolition sites with windbreak netting, water sprinkling, wheel‑washing bays (GHMC Town Planning & Enforcement, immediate); MIT‑PM10‑03 – Pave or green unpaved road shoulders and medians (GHMC Engineering & Urban Forestry, medium_term). Because the monitoring network lacks source‑attribution telemetry, local emission sources must be verified on‑site before deploying capital resources. Note: this reading is stale (6612.5 h old, last updated 2025‑12‑31 23:45 UTC)."
+    ],
+    "suggestions": [
+      "What is the forecasted AQI for Nacharam over the next 7 days?",
+      "How does PM10 concentration at Nacharam compare with other Hyderabad stations?",
+      "What health precautions are recommended for residents when AQI is Satisfactory?"
+    ]
+  },
+  "suggest measures to improve Hyderabad air quality": {
+    "text": "Hyderabad’s city‑wide AQI is observed at 96 (Satisfactory) with PM10 as the dominant pollutant as of 2025‑12‑31 23:45 UTC, but the data is stale (6612.5 h old).",
+    "insights": [
+      "Observed AQI = 96 (Satisfactory) with PM10 dominant (value ≈ 96) and city‑wide daily average also 96, indicating the current level matches the city mean (per current_city data).",
+      "Because the AQI is only Satisfactory, actions focus on maintaining and preventing deterioration rather than an emergency response (CPCB health category).",
+      "Recommended interventions: MIT‑PM10‑01 – Deploy mechanical street sweepers and intensive water misting on major arterials (GHMC Sanitation & Public Works, immediate); MIT‑PM10‑02 – Enforce strict dust management at construction/demolition sites with windbreak netting, water sprinkling, wheel‑washing bays (GHMC Town Planning & Builders, immediate); MIT‑PM10‑03 – Pave or green unpaved road shoulders and medians with turf/shrubs (GHMC Engineering & Urban Forestry, medium‑term).",
+      "Because the monitoring network lacks source‑attribution telemetry, local emission sources must be verified on‑site before deploying capital resources (source‑attribution caveat).",
+      "Note: this reading is stale (6612.5 h old, last updated 2025‑12‑31 23:45 UTC)."
+    ],
+    "suggestions": [
+      "What are the health implications of a Satisfactory AQI level?",
+      "How does AQI vary across different Hyderabad neighborhoods?",
+      "What are the forecasted AQI trends for Hyderabad over the next week?"
+    ]
+  },
+  "is it safe to jog at Zoo Park now": {
+    "text": "The observed AQI at Zoo Park is 125 (Moderate) with PM10 as the dominant pollutant, but the data is stale (6612.6 h old, last updated 2025-12-31 23:45 UTC).",
+    "insights": [
+      "Observed AQI 125 (Moderate) exceeds the city mean of 96 by 29 points and ranks 1st among 12 stations (per explain_Zoo Park).",
+      "Health advisory for Moderate AQI: most people can be outdoors, but prolonged vigorous exercise may cause throat irritation; sensitive groups should limit exertion (per health_advisory). Note: General guidance based on CPCB AQI health descriptors, not personal medical advice.",
+      "Because the reading is >3 h old, it may not reflect current conditions; consider checking a live source before deciding (staleness caveat).",
+      "Mitigation: MIT-PM10-01 – Deploy mechanical street sweepers and intensive water misting along major arterial corridors (GHMC Sanitation & Public Works Wing, immediate).",
+      "Mitigation: MIT-PM10-02 – Enforce strict dust management at construction & demolition sites with windbreak netting, water sprinkling, and wheel‑washing bays (GHMC Town Planning & Enforcement Wing, immediate)."
+    ],
+    "suggestions": [
+      "What is the current live AQI at Zoo Park?",
+      "Which pollutants contribute most to PM10 levels in Hyderabad?",
+      "What long‑term measures are planned to reduce PM10 city‑wide?"
+    ]
+  }
+}

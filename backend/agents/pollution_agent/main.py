@@ -6,6 +6,8 @@ All data from real TSPCB observations + CPCB AQI engine.
 Forecast from verified BiLSTM model (inference only, no training).
 Single consistent city-level pipeline (§11) and shared validation (§16).
 """
+import asyncio
+import json
 import logging
 import traceback
 from contextlib import asynccontextmanager
@@ -17,8 +19,8 @@ from fastapi import FastAPI, Query, Body, APIRouter
 from fastapi.middleware.cors import CORSMiddleware
 
 from pathlib import Path
-from .config import CITY_NAME
-from .data_provider import get_data_provider, POLLUTANT_FEATURES
+from .config import CITY_NAME, POLLUTION_LIVE_MODE, OPENAQ_STALE_HOURS
+from .data_provider import get_data_provider, set_data_provider, POLLUTANT_FEATURES
 from .aqi_engine import calculate_aqi, get_aqi_category
 from .unified_forecast.inference import UnifiedForecaster
 from .analytics import compute_hotspots, compute_distribution, compute_area_trends
@@ -35,22 +37,114 @@ from .data_quality import (
     compute_overall_data_quality,
     REQUIRED_FORECAST_POLLUTANTS,
 )
+from .live_accumulation import get_live_store
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 
+
+async def _daily_live_accumulation_task():
+    """
+    Background coroutine: runs every 24 hours, fetches live city aggregate
+    from OpenAQLiveProvider, and persists it to LiveAccumulationStore.
+    Runs regardless of POLLUTION_LIVE_MODE so accumulation starts immediately
+    and the 14-day window can be reached without needing live mode enabled first.
+    Records an explicit gap if live data is unavailable so the consecutive-day
+    counter resets correctly.
+    """
+    from datetime import date as date_type
+    from .live_provider import OpenAQLiveProvider
+
+    while True:
+        today = datetime.now(timezone.utc).date()
+        store = get_live_store()
+        try:
+            provider = OpenAQLiveProvider()
+            readings = provider.get_latest_readings()
+
+            if not readings:
+                reason = "OpenAQ returned no readings or all data was stale/failed sufficiency"
+                logger.warning("[live-accumulation] %s — recording gap for %s", reason, today)
+                store.record_gap(today, reason, overwrite_aggregate=True)
+            else:
+                # Check that at least one station passes CPCB sufficiency and is not stale
+                valid_readings = []
+                now_utc = datetime.now(timezone.utc)
+                for r in readings:
+                    is_stale = r.get("stale", False)
+                    obs_ts = r.get("timestamp")
+                    if not is_stale and obs_ts:
+                        try:
+                            dt = pd.to_datetime(obs_ts)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            if (now_utc - dt).total_seconds() > OPENAQ_STALE_HOURS * 3600:
+                                is_stale = True
+                        except Exception:
+                            is_stale = True
+                    if is_stale:
+                        continue
+                    conc = {p: r.get(p) for p in ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3", "NH3"]
+                            if r.get(p) is not None}
+                    has_pm = "PM2.5" in conc or "PM10" in conc
+                    if has_pm and len(conc) >= 3:
+                        valid_readings.append(r)
+
+                if not valid_readings:
+                    reason = f"No stations passed CPCB sufficiency and freshness (< {OPENAQ_STALE_HOURS}h old)"
+                    logger.warning("[live-accumulation] %s — recording gap for %s", reason, today)
+                    store.record_gap(today, reason, overwrite_aggregate=True)
+                else:
+                    # City-level mean concentrations from valid stations
+                    city_conc: dict = {}
+                    for p in ["PM2.5", "PM10", "NO2", "SO2", "CO", "O3", "NH3"]:
+                        vals = [r.get(p) for r in valid_readings if r.get(p) is not None]
+                        if vals:
+                            city_conc[p] = round(float(np.mean(vals)), 4)
+
+                    ok = store.append_day(today, city_conc, valid_readings)
+                    if ok:
+                        status = store.get_status()
+                        logger.info(
+                            "[live-accumulation] Stored aggregate for %s. "
+                            "consecutive_live_days=%d, ready_for_live_forecast=%s",
+                            today,
+                            status["consecutive_live_days"],
+                            status["ready_for_live_forecast"],
+                        )
+        except Exception as exc:
+            logger.error("[live-accumulation] Unexpected error for %s: %s", today, exc)
+            store.record_gap(today, f"Unexpected error: {exc}")
+
+        # Wait until next day (24 hours)
+        await asyncio.sleep(86400)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load unified forecasting engine once at startup."""
+    """Load unified forecasting engine and start live accumulation background task."""
     logger.info("Pollution Agent starting — loading unified spatial-temporal forecasting engine...")
     forecaster = UnifiedForecaster.get_instance()
     if forecaster.loaded:
         logger.info(f"Unified forecasting engine ready: {forecaster.model_name}")
     else:
         logger.warning(f"Unified forecasting engine unavailable: {forecaster.error_message}")
+
+    # Start daily live accumulation in the background; runs forever until shutdown.
+    # Runs an immediate first fetch, then sleeps 24h between subsequent fetches.
+    accum_task = asyncio.create_task(_daily_live_accumulation_task())
+    logger.info("Live accumulation background task started.")
+
     yield
+
+    accum_task.cancel()
+    try:
+        await accum_task
+    except asyncio.CancelledError:
+        pass
     logger.info("Pollution Agent shutting down.")
+
 
 
 app = FastAPI(
@@ -72,75 +166,103 @@ router = APIRouter()
 # ── Pipeline Helpers (§11, §15, §16) ──
 
 def _compute_freshness(observation_timestamp_str: datetime | str | None, is_live: bool):
-    """Compute server heartbeat, data age in seconds, and staleness flag."""
+    """Compute server heartbeat, data age in seconds, data age in hours, staleness flag, and label."""
     server_time_dt = datetime.now(timezone.utc)
     server_time_str = server_time_dt.isoformat()
     if not observation_timestamp_str:
-        return server_time_str, None, True
+        return server_time_str, None, None, True, "Unavailable"
     try:
         obs_dt = pd.to_datetime(observation_timestamp_str)
         if obs_dt.tzinfo is None:
             obs_dt = obs_dt.replace(tzinfo=timezone.utc)
-        data_age = (server_time_dt - obs_dt).total_seconds()
-        stale = (not is_live) or (data_age > 3600)  # >1 hour without update or historical
-        return server_time_str, max(0.0, round(data_age, 1)), stale
+        data_age_seconds = max(0.0, round((server_time_dt - obs_dt).total_seconds(), 1))
+        data_age_hours = round(data_age_seconds / 3600.0, 1)
+        stale = (not is_live) or (data_age_seconds > OPENAQ_STALE_HOURS * 3600)
+        formatted_obs = obs_dt.strftime("%Y-%m-%d %H:%M UTC")
+        last_updated_label = f"Last updated {data_age_hours} hours ago ({formatted_obs})"
+        return server_time_str, data_age_seconds, data_age_hours, stale, last_updated_label
     except Exception:
-        return server_time_str, None, True
+        return server_time_str, None, None, True, "Unavailable"
 
 
-def _compute_city_aqi_and_readings():
+def _compute_city_aqi_and_readings(force_historical: bool = False):
     """
     Research-grade observed AQI pipeline:
     raw observations -> CPCB temporal window aggregation (24h for particulates/acid gases, 8h for CO/O3)
       -> station-level window aggregates & sub-indices -> spatial aggregation (concentration-first & station-first)
       -> observed city AQI.
     """
-    provider = get_data_provider()
-    raw_24h = provider.get_observations(hours=24)
+    provider = get_data_provider(force_historical=force_historical)
+    if not provider.is_live:
+        raw_24h = provider.get_observations(hours=24)
 
-    if not raw_24h.empty:
-        city_temp = compute_city_temporal_aggregates(raw_24h)
-        spatial_result = compute_city_aqi(city_temp["station_aggregates"], primary_method="concentration_first")
-        city_result = spatial_result["primary"]
-        city_conc = city_temp["city_concentrations"]
-        station_aggregates = city_temp["station_aggregates"]
+        if not raw_24h.empty:
+            city_temp = compute_city_temporal_aggregates(raw_24h)
+            spatial_result = compute_city_aqi(city_temp["station_aggregates"], primary_method="concentration_first")
+            city_result = spatial_result["primary"]
+            city_conc = city_temp["city_concentrations"]
+            station_aggregates = city_temp["station_aggregates"]
 
-        station_aqis = [s["aqi"] for s in station_aggregates if s.get("aqi") is not None]
-        latest_obs_ts = city_temp["anchor_timestamp"]
+            station_aqis = [s["aqi"] for s in station_aggregates if s.get("aqi") is not None]
+            latest_obs_ts = city_temp["anchor_timestamp"]
 
-        readings = []
-        for s in station_aggregates:
-            r = {
-                "station_name": s["station_name"],
-                "timestamp": latest_obs_ts,
-                "data_mode": provider.data_mode,
-                "is_live": provider.is_live,
-                "area": s["area"],
-                "lat": s["lat"],
-                "lon": s["lon"],
-                "aqi": s["aqi"],
-                "category": s["category"],
-                "color": s["color"],
-                "dominant_pollutant": s["dominant_pollutant"],
-                "dominant_value": s["dominant_value"],
-                "sub_indices": s["sub_indices"],
-                "completeness": s["completeness"],
-            }
-            for p, val in s["concentrations"].items():
-                r[p] = val
-            readings.append(r)
+            readings = []
+            for s in station_aggregates:
+                r = {
+                    "station_name": s["station_name"],
+                    "timestamp": latest_obs_ts,
+                    "data_mode": provider.data_mode,
+                    "is_live": provider.is_live,
+                    "area": s["area"],
+                    "lat": s["lat"],
+                    "lon": s["lon"],
+                    "aqi": s["aqi"],
+                    "category": s["category"],
+                    "color": s["color"],
+                    "dominant_pollutant": s["dominant_pollutant"],
+                    "dominant_value": s["dominant_value"],
+                    "sub_indices": s["sub_indices"],
+                    "completeness": s["completeness"],
+                }
+                for p, val in s["concentrations"].items():
+                    r[p] = val
+                readings.append(r)
 
-        return city_result, city_conc, readings, station_aqis, latest_obs_ts, city_temp, spatial_result
+            return city_result, city_conc, readings, station_aqis, latest_obs_ts, city_temp, spatial_result
 
     # Fallback to single latest readings if raw observations window is unavailable
     readings = provider.get_latest_readings()
     if not readings:
         return None, {}, [], [], None, {}, {}
 
-    station_aqis = []
+    valid_readings = []
+    stale_sufficient_readings = []
+    now_utc = datetime.now(timezone.utc)
+
     for r in readings:
+        # Check staleness: if provider is live, check if reading is older than OPENAQ_STALE_HOURS (3 hours)
+        is_stale = r.get("stale", False)
+        obs_ts_str = r.get("timestamp")
+        if provider.is_live and not is_stale and obs_ts_str:
+            try:
+                obs_dt = pd.to_datetime(obs_ts_str)
+                if obs_dt.tzinfo is None:
+                    obs_dt = obs_dt.replace(tzinfo=timezone.utc)
+                age = (now_utc - obs_dt).total_seconds()
+                if age > OPENAQ_STALE_HOURS * 3600:
+                    is_stale = True
+            except Exception:
+                is_stale = True
+        elif provider.is_live and not obs_ts_str:
+            is_stale = True
+
+        r["stale"] = is_stale
+
         conc = {p: r[p] for p in ["PM2.5", "PM10", "NO2", "SO2", "O3", "CO", "NH3"] if r.get(p) is not None}
-        if conc:
+        has_pm = "PM2.5" in conc or "PM10" in conc
+        passes_sufficiency = has_pm and len(conc) >= 3
+
+        if passes_sufficiency:
             res = calculate_aqi(conc)
             r["aqi"] = res.get("aqi")
             r["category"] = res.get("category")
@@ -148,8 +270,12 @@ def _compute_city_aqi_and_readings():
             r["dominant_pollutant"] = res.get("dominant_pollutant")
             r["dominant_value"] = res.get("dominant_value")
             r["sub_indices"] = res.get("sub_indices", {})
-            if res.get("aqi") is not None:
-                station_aqis.append(res["aqi"])
+            if not is_stale:
+                if res.get("aqi") is not None:
+                    valid_readings.append(r)
+            else:
+                if res.get("aqi") is not None:
+                    stale_sufficient_readings.append(r)
         else:
             r["aqi"] = None
             r["category"] = "Unavailable"
@@ -158,19 +284,48 @@ def _compute_city_aqi_and_readings():
             r["dominant_value"] = None
             r["sub_indices"] = {}
 
-    city_conc = {}
-    for p in ["PM2.5", "PM10", "NO2", "SO2", "O3", "CO", "NH3"]:
-        vals = [r[p] for r in readings if r.get(p) is not None]
-        if vals:
-            city_conc[p] = round(sum(vals) / len(vals), 2)
+    if valid_readings:
+        # Case 1: Fresh stations present and sufficient (§ Requirement 1)
+        # Exclude stale or insufficient stations! ONLY aggregate valid_readings!
+        target_readings = valid_readings
+        station_aqis = [r["aqi"] for r in valid_readings if r.get("aqi") is not None]
+    elif stale_sufficient_readings and provider.is_live:
+        # Case 2: ALL-STALE FALLBACK (§ Requirement 2 & 5)
+        # When active_stations would otherwise be 0 due to staleness, compute and return
+        # the AQI/concentrations from the most recent available readings (even though stale),
+        # provided they pass CPCB sufficiency (>= 3 pollutants, >= 1 PM fraction).
+        target_readings = stale_sufficient_readings
+        station_aqis = [r["aqi"] for r in stale_sufficient_readings if r.get("aqi") is not None]
+    else:
+        # Case 3: Empty readings or all stations fail CPCB sufficiency
+        target_readings = []
+        station_aqis = []
 
-    valid_ts = [r["timestamp"] for r in readings if r.get("timestamp")]
-    latest_obs_ts = max(valid_ts) if valid_ts else None
-    city_result = calculate_aqi(city_conc)
+    city_conc = {}
+    if target_readings:
+        for p in ["PM2.5", "PM10", "NO2", "SO2", "O3", "CO", "NH3"]:
+            vals = [r[p] for r in target_readings if r.get(p) is not None]
+            if vals:
+                city_conc[p] = round(sum(vals) / len(vals), 2)
+
+        valid_ts = [r["timestamp"] for r in target_readings if r.get("timestamp")]
+        latest_obs_ts = max(valid_ts) if valid_ts else None
+
+        has_city_pm = "PM2.5" in city_conc or "PM10" in city_conc
+        if has_city_pm and len(city_conc) >= 3:
+            city_result = calculate_aqi(city_conc)
+        else:
+            city_result = {"aqi": None, "category": "Unavailable", "color": "#999999", "reason": "Insufficient station data for CPCB AQI"}
+    else:
+        valid_ts = [r["timestamp"] for r in readings if r.get("timestamp")]
+        latest_obs_ts = max(valid_ts) if valid_ts else None
+        city_result = {"aqi": None, "category": "Unavailable", "color": "#999999", "reason": "Insufficient station data for CPCB AQI"}
+
+    active_count = len(target_readings)
     city_temp = {
-        "active_stations": len(station_aqis),
+        "active_stations": active_count,
         "total_stations": len(readings),
-        "coverage_percent": round(len(station_aqis) / len(readings) * 100, 1) if readings else 0.0,
+        "coverage_percent": round(active_count / len(readings) * 100, 1) if readings else 0.0,
         "averaging_windows": AVERAGING_WINDOWS_DESCRIPTION,
     }
     spatial_result = {
@@ -228,23 +383,73 @@ def health():
 
 
 @router.get("/api/pollution/current")
-def get_current():
+def get_current(force_historical: bool = False):
     """
     Latest observation AQI summary across reporting stations (§1, §2, §3, §4, §11).
-    Calculated using genuine CPCB temporal averaging windows (24h/8h).
+    Calculated using genuine CPCB temporal averaging windows (24h/8h) for historical,
+    or live CPCB breakpoint interpolation for OpenAQ live telemetry.
     Exposes actual latest observation timestamp and explicit data mode ('historical' vs 'live').
     """
     try:
-        provider = get_data_provider()
-        city_result, city_conc, readings, station_aqis, latest_obs_ts, city_temp, spatial_result = _compute_city_aqi_and_readings()
+        provider = get_data_provider(force_historical=force_historical)
+        city_result, city_conc, readings, station_aqis, latest_obs_ts, city_temp, spatial_result = _compute_city_aqi_and_readings(force_historical=force_historical)
         if city_result is None or not readings:
-            return {"status": "unavailable", "reason": "insufficient_data", "message": "No station readings available"}
+            return {
+                "status": "unavailable",
+                "reason": "insufficient_data",
+                "message": "Live OpenAQ data is currently unavailable" if provider.is_live else "No station readings available",
+                "data_mode": provider.data_mode,
+                "is_live": provider.is_live,
+                "provider_name": provider.provider_name,
+                "is_stale": True,
+                "stale": True,
+                "data_age_seconds": None,
+                "data_age_hours": None,
+                "last_updated_label": "Unavailable",
+            }
 
         quality = compute_overall_data_quality(readings)
-        server_time, data_age_seconds, stale = _compute_freshness(latest_obs_ts, provider.is_live)
+        server_time, data_age_seconds, data_age_hours, stale, last_updated_label = _compute_freshness(latest_obs_ts, provider.is_live)
+
+        # If city_result has no AQI (e.g. all stations failed sufficiency rule), status is unavailable
+        if city_result.get("aqi") is None:
+            return {
+                "status": "unavailable",
+                "reason": "insufficient_data",
+                "message": city_result.get("reason", "Insufficient station data for CPCB AQI"),
+                "observed_aqi": None,
+                "aqi": None,
+                "category": "Unavailable",
+                "color": "#999999",
+                "dominant_pollutant": None,
+                "dominant_value": None,
+                "source": "cpcb_engine",
+                "calculation_engine": "cpcb_engine",
+                "data_mode": provider.data_mode,
+                "is_live": provider.is_live,
+                "provider_name": provider.provider_name,
+                "methodology": "CPCB Breakpoint Interpolation with 24h/8h Temporal Windowing",
+                "averaging_windows": city_temp.get("averaging_windows", AVERAGING_WINDOWS_DESCRIPTION),
+                "station_count": city_temp.get("total_stations", quality["total_stations"]),
+                "active_stations": city_temp.get("active_stations", 0),
+                "coverage_percent": city_temp.get("coverage_percent", 0.0),
+                "daily_max": None,
+                "daily_min": None,
+                "daily_avg": None,
+                "timestamp": latest_obs_ts,
+                "observation_timestamp": latest_obs_ts,
+                "server_time": server_time,
+                "data_age_seconds": data_age_seconds,
+                "data_age_hours": data_age_hours,
+                "is_stale": stale,
+                "stale": stale,
+                "last_updated_label": last_updated_label,
+                "spatial_aggregation": spatial_result,
+                "reason_detail": city_result.get("reason"),
+            }
 
         return {
-            "status": "success" if city_result.get("aqi") is not None else "unavailable",
+            "status": "success",
             "observed_aqi": city_result.get("aqi"),
             "aqi": city_result.get("aqi"),
             "category": city_result.get("category"),
@@ -268,7 +473,10 @@ def get_current():
             "observation_timestamp": latest_obs_ts,
             "server_time": server_time,
             "data_age_seconds": data_age_seconds,
+            "data_age_hours": data_age_hours,
+            "is_stale": stale,
             "stale": stale,
+            "last_updated_label": last_updated_label,
             "spatial_aggregation": spatial_result,
             "reason": city_result.get("reason"),
         }
@@ -490,7 +698,7 @@ def get_summary():
                     "data_mode": provider.data_mode,
                 })
 
-        server_time, data_age_seconds, stale = _compute_freshness(latest_obs_ts, provider.is_live)
+        server_time, data_age_seconds, data_age_hours, stale, last_updated_label = _compute_freshness(latest_obs_ts, provider.is_live)
         city_aqi = city_result.get("aqi") if city_result else None
 
         # Call unified forecasting engine: guarantees daily D1 == extended D1 == summary D1
@@ -529,13 +737,17 @@ def get_summary():
                 "observation_timestamp": latest_obs_ts,
                 "server_time": server_time,
                 "data_age_seconds": data_age_seconds,
+                "data_age_hours": data_age_hours,
+                "is_stale": stale,
                 "stale": stale,
+                "last_updated_label": last_updated_label,
                 "spatial_aggregation": spatial_result,
                 "reason": city_result.get("reason") if city_result else "No readings",
             },
             "quality": quality,
             "pollutants": pollutants,
             "hotspots": hotspots,
+            "stations": readings,
             "distribution": dist,
             "area_trends": trends,
             "forecast": forecast,
@@ -544,7 +756,10 @@ def get_summary():
             "observation_timestamp": latest_obs_ts,
             "server_time": server_time,
             "data_age_seconds": data_age_seconds,
+            "data_age_hours": data_age_hours,
+            "is_stale": stale,
             "stale": stale,
+            "last_updated_label": last_updated_label,
         }
     except Exception as e:
         logger.error(f"Error in /summary: {e}\n{traceback.format_exc()}")
@@ -556,8 +771,9 @@ def get_historical_latest():
     """
     Explicit historical observation endpoint (§11: separating historical archive from live telemetry).
     Allows callers to query the latest historical observation without conflating with live streaming feeds.
+    Always uses the HistoricalTSPCBProvider regardless of POLLUTION_LIVE_MODE.
     """
-    return get_current()
+    return get_current(force_historical=True)
 
 
 @router.get("/api/pollution/reconciliation")
@@ -576,6 +792,15 @@ def predict(data: dict = Body(None)):
     """
     Ad-hoc prediction endpoint backed by unified forecasting engine.
     """
+    if data and "days" in data:
+        readiness = validate_forecast_readiness(data["days"])
+        if not readiness["ready"]:
+            return {
+                "forecast_aqi": None,
+                "forecast_status": "unavailable",
+                "source": "unified_spatial_temporal_model",
+                "reason": readiness["reason"]
+            }
     forecaster = UnifiedForecaster.get_instance()
     res = forecaster.predict()
     return res["daily"]
@@ -613,5 +838,85 @@ def get_info():
         "test_category_accuracy_pct": test_bm.get("category_accuracy_pct", 64.45),
         "license": "Apache-2.0",
     }
+
+
+@router.get("/api/pollution/metrics")
+def get_metrics():
+    """Authoritative forecast evaluation metrics loaded from knowledge/forecast_metrics.json."""
+    metrics_path = Path(__file__).resolve().parent / "knowledge" / "forecast_metrics.json"
+    if metrics_path.exists():
+        with open(metrics_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {
+        "status": "unavailable",
+        "reason": "Forecast metrics file not found",
+    }
+
+
+@router.get("/api/pollution/live-data-status")
+def get_live_data_status():
+    """
+    Returns the current state of the live accumulation store.
+
+    Schema:
+        consecutive_live_days: int   resets to 0 on any gap day
+        earliest_date: str | null    ISO date of first accumulated record
+        latest_date: str | null      ISO date of most recent record
+        gap_dates: list[str]         ISO dates with explicit gap markers
+        ready_for_live_forecast: bool  true iff consecutive_live_days >= 14
+        total_days_recorded: int
+        min_days_required: int       always 14
+        forecast_input_source: str   which source the forecaster is currently using
+    """
+    store = get_live_store()
+    status = store.get_status()
+
+    # Also report which input source the forecaster is currently using
+    consecutive = status.get("consecutive_live_days", 0)
+    from .config import MIN_LIVE_DAYS_FOR_FORECAST
+    status["forecast_input_source"] = (
+        "live_accumulation" if consecutive >= MIN_LIVE_DAYS_FOR_FORECAST else "historical_archive"
+    )
+    status["forecast_input_note"] = (
+        "Forecast model automatically uses live accumulation as input once 14 consecutive "
+        "days are accumulated. Currently using historical archive (origin 2025-12-31)."
+        if consecutive < MIN_LIVE_DAYS_FOR_FORECAST
+        else f"Forecast model is using live accumulation window (last {consecutive} consecutive days)."
+    )
+    return status
+
+
+@router.post("/api/pollution/chat")
+def pollution_chat(data: dict = Body(None)):
+    """
+    Planning AI chat endpoint for pollution/air-quality questions.
+    Receives {"question": "..."} and returns {"text": ..., "insights": [...], "suggestions": [...]}.
+    """
+    try:
+        question = (data or {}).get("question", "").strip()
+        if not question:
+            return {
+                "text": "Please ask a question about Hyderabad's air quality.",
+                "insights": ["No question was provided."],
+                "suggestions": [
+                    "What is the current city AQI?",
+                    "Which station has the highest AQI?",
+                    "Show the 7-day forecast",
+                ],
+            }
+        from .grounding.handler import handle_pollution_chat
+        return handle_pollution_chat(question)
+    except Exception as e:
+        logger.error(f"Error in /api/pollution/chat: {e}\n{traceback.format_exc()}")
+        return {
+            "text": "An error occurred while processing your air quality question.",
+            "insights": [f"Error: {str(e)}"],
+            "suggestions": [
+                "What is the current city AQI?",
+                "Which station has the highest AQI?",
+                "Show the 7-day forecast",
+            ],
+        }
+
 
 app.include_router(router)

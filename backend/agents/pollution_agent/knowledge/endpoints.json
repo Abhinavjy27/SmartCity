@@ -134,5 +134,29 @@
       "GET"
     ],
     "handler": "get_info"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/metrics",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_metrics"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/live-data-status",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_live_data_status"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/chat",
+    "methods": [
+      "POST"
+    ],
+    "handler": "pollution_chat"
   }
 ]

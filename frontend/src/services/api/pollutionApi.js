@@ -32,6 +32,7 @@ export const pollutionApi = {
   getAlerts: () => fetchPollution('/alerts'),
   getSummary: () => fetchPollution('/summary'),
   getInfo: () => fetchPollution('/info'),
+  getMetrics: () => fetchPollution('/metrics'),
   predict: (days) => fetchPollution('/predict', {
     method: 'POST',
     body: JSON.stringify({ days }),

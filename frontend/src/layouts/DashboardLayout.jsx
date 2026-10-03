@@ -1,9 +1,9 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Car, Wind, Zap, CloudSun, Brain,
   Bell, User, Menu, X, AlertOctagon, CheckCircle2,
-  MapPin, ChevronDown, Shield
+  MapPin, ChevronDown, Shield, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import CommandMenu from '../components/cult-ui/CommandMenu'
 
@@ -84,6 +84,8 @@ function CurrentTime() {
   )
 }
 
+const SIDEBAR_STORAGE_KEY = 'supadsp-sidebar-collapsed'
+
 export default function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [emergencyAlert, setEmergencyAlert] = useState(null)
@@ -99,6 +101,24 @@ export default function DashboardLayout() {
     check()
     window.addEventListener('resize', check)
     return () => window.removeEventListener('resize', check)
+  }, [])
+
+  // User-controlled sidebar collapse (persisted in localStorage)
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    try {
+      const stored = localStorage.getItem(SIDEBAR_STORAGE_KEY)
+      if (stored !== null) return stored === 'true'
+    } catch {}
+    // Default: collapsed on tablet-sized screens, expanded on desktop
+    return window.innerWidth <= 1024 && window.innerWidth > 768
+  })
+
+  const toggleSidebar = useCallback(() => {
+    setSidebarCollapsed(prev => {
+      const next = !prev
+      try { localStorage.setItem(SIDEBAR_STORAGE_KEY, String(next)) } catch {}
+      return next
+    })
   }, [])
 
   const [isMobile, setIsMobile] = useState(false)
@@ -139,7 +159,7 @@ export default function DashboardLayout() {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
-  const collapsed = isTablet
+  const collapsed = isMobile ? false : sidebarCollapsed
   const sidebarVisible = !isMobile || mobileOpen
 
   const currentPage = navItems.find(n => n.path === location.pathname)
@@ -200,18 +220,21 @@ export default function DashboardLayout() {
           transition: 'width var(--transition-base)',
         }}>
           {/* Logo Section */}
-          <div style={{
+          <div 
+            onClick={!isMobile ? toggleSidebar : undefined}
+            style={{
             padding: collapsed ? '20px 12px' : '20px 20px',
             display: 'flex',
             alignItems: 'center',
             gap: '10px',
             flexShrink: 0,
+            cursor: !isMobile ? 'pointer' : 'default',
           }}>
             <div style={{ flexShrink: 0 }}>
               <LogoIcon />
             </div>
             {!collapsed && (
-              <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
+              <div style={{ overflow: 'hidden', whiteSpace: 'nowrap', flex: 1, minWidth: 0 }}>
                 <div style={{
                   fontFamily: "'Sora', sans-serif", fontWeight: 600, fontSize: '0.95rem',
                   color: '#F3F1E8', lineHeight: 1.2, letterSpacing: '0.12em',
@@ -225,7 +248,7 @@ export default function DashboardLayout() {
             )}
             {isMobile && (
               <button
-                onClick={() => setMobileOpen(false)}
+                onClick={(e) => { e.stopPropagation(); setMobileOpen(false); }}
                 style={{ marginLeft: 'auto', background: 'none', border: 'none', color: 'var(--text-sidebar)', cursor: 'pointer' }}
               >
                 <X size={18} />
@@ -316,7 +339,7 @@ export default function DashboardLayout() {
         }}>
           <div style={{ flex: 1 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '4px' }}>
-              {isMobile && (
+              {isMobile ? (
                 <button
                   onClick={() => setMobileOpen(true)}
                   style={{
@@ -325,6 +348,38 @@ export default function DashboardLayout() {
                   }}
                 >
                   <Menu size={24} />
+                </button>
+              ) : collapsed && (
+                <button
+                  onClick={toggleSidebar}
+                  aria-label="Expand sidebar"
+                  title="Expand sidebar"
+                  className="sidebar-toggle-btn-main"
+                  style={{
+                    background: 'none',
+                    border: '1px solid var(--border-default)',
+                    color: 'var(--text-secondary)',
+                    cursor: 'pointer',
+                    padding: '6px',
+                    borderRadius: 'var(--radius-sm)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transition: 'all var(--transition-fast)',
+                    flexShrink: 0,
+                  }}
+                  onMouseEnter={e => {
+                    e.currentTarget.style.color = 'var(--text-primary)'
+                    e.currentTarget.style.borderColor = 'var(--border-hover)'
+                    e.currentTarget.style.background = 'var(--bg-card-hover)'
+                  }}
+                  onMouseLeave={e => {
+                    e.currentTarget.style.color = 'var(--text-secondary)'
+                    e.currentTarget.style.borderColor = 'var(--border-default)'
+                    e.currentTarget.style.background = 'none'
+                  }}
+                >
+                  <PanelLeftOpen size={18} />
                 </button>
               )}
               <h1 style={{
@@ -617,11 +672,16 @@ export default function DashboardLayout() {
       {/* Command Menu */}
       <CommandMenu isOpen={showCommandMenu} onClose={() => setShowCommandMenu(false)} />
 
-      {/* Mobile-hide helper style */}
+      {/* Mobile-hide helper style + sidebar toggle focus styles */}
       <style>{`
         .hide-mobile { display: flex; }
         @media (max-width: 768px) {
           .hide-mobile { display: none !important; }
+        }
+        .sidebar-toggle-btn:focus-visible,
+        .sidebar-toggle-btn-main:focus-visible {
+          outline: 2px solid var(--accent-traffic);
+          outline-offset: 2px;
         }
       `}</style>
     </div>
