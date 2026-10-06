@@ -4,7 +4,7 @@
 
 ### Enterprise Architecture Document
 
-**Document Classification:** Government Restricted — Internal Use Only  
+**Document Classification:** MIT License (Open Source)  
 **Version:** 2.0.0  
 **Date:** August 2026  
 **Prepared For:** Government of Telangana, Greater Hyderabad Municipal Corporation (GHMC), Hyderabad Metropolitan Development Authority (HMDA)  
@@ -19,7 +19,7 @@
 | Document ID | SUPADSP-ARCH-V2-VOL1 |
 | Version | 2.0.0 |
 | Status | Final Draft |
-| Classification | Government Restricted |
+| Classification | MIT License |
 | Review Cycle | Quarterly |
 | Next Review | November 2026 |
 
@@ -54,7 +54,7 @@
 
 ### 1.1 Purpose
 
-This document presents the complete enterprise architecture for the **Smart Urban Planning & AI Decision Support Platform (SUPADSP)** — a production-grade, government-internal decision support system designed to enable municipal authorities in Hyderabad to make intelligent, data-driven, evidence-based urban planning decisions across three core intelligence domains: **Traffic**, **Pollution**, and **Energy Consumption**.
+This document presents the complete enterprise architecture for the **Smart Urban Planning & AI Decision Support Platform (SUPADSP)** — a production-grade decision support system designed to enable municipal authorities in Hyderabad to make intelligent, data-driven, evidence-based urban planning decisions across four core intelligence domains: **Traffic**, **Pollution**, **Weather**, and **Energy Consumption**.
 
 The platform is **not** a citizen-facing application, complaint management system, public dashboard, IoT management platform, or emergency call center. It is an **internal enterprise decision-support platform** exclusively designed for government authorities to perform:
 

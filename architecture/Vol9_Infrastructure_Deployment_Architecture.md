@@ -2,7 +2,7 @@
 
 ## Smart Urban Planning & AI Decision Support Platform
 
-**Document ID:** SUPADSP-ARCH-V2-VOL9 | **Version:** 2.0.0 | **Classification:** Government Restricted
+**Document ID:** SUPADSP-ARCH-V2-VOL9 | **Version:** 2.0.0 | **Classification:** MIT License
 
 ---
 

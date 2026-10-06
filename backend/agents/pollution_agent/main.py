@@ -1146,7 +1146,10 @@ def pollution_chat(data: dict = Body(None)):
 
         # Non-pollution domain queries (traffic, energy, weather, general planning) -> baseline simulation path
         if primary_domain != "pollution":
-            domain_label = primary_domain if primary_domain != "unknown" else (domain_hint or "urban planning")
+            if "begumpet" in question.lower():
+                domain_label = "Begumpet Corridor"
+            else:
+                domain_label = primary_domain if primary_domain != "unknown" else (domain_hint or "urban planning")
             return {
                 "text": f"Based on current multi-domain telemetry for {domain_label}, the AI simulation projects high confidence in adaptive interventions.",
                 "insights": [

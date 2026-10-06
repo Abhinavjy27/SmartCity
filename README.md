@@ -1,122 +1,181 @@
 # SUPADSP — Smart Urban Planning & AI Decision Support Platform
 
-> Enterprise-grade AI-powered decision support for municipal urban planning. Built for GHMC/HMDA, Hyderabad.
+> Enterprise-grade AI-powered decision support platform for municipal urban planning and smart governance in Hyderabad.
 
-[![License](https://img.shields.io/badge/license-Government--Restricted-red.svg)]()
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)]()
-[![TypeScript](https://img.shields.io/badge/typescript-5.x-blue.svg)]()
+[![React](https://img.shields.io/badge/react-18.x-blue.svg)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.100+-green.svg)]()
 
 ---
 
 ## Overview
 
-SUPADSP enables government officials to **monitor city conditions**, **predict future events**, **optimize resources**, **evaluate planning scenarios**, and **make AI-assisted strategic decisions** across three core intelligence domains:
+**SUPADSP** (Smart Urban Planning and Decision Support Platform) enables municipal planners and government administrators to monitor real-time city telemetry, forecast future conditions, simulate interventions, and receive grounded, actionable recommendations across four core intelligence domains:
 
-- **Traffic Intelligence** — forecasting, congestion prediction, signal optimization, route planning
-- **Pollution Intelligence** — AQI forecasting, hotspot detection, dispersion modeling, source attribution
-- **Energy Intelligence** — demand forecasting, peak prediction, building efficiency, grid optimization
+- **Traffic Intelligence** — Micro-simulation via Eclipse SUMO, corridor flow analysis, congestion prediction, and adaptive signal timing optimization.
+- **Pollution Intelligence** — Live air quality ingestion across 13 Hyderabad CAAQMS stations via WeatherAPI telemetry, CPCB NAQI calculation engine, Spatial-Temporal GRU forecasting model, and statutory CPCB/NCAP mitigation playbook reasoning.
+- **Weather Intelligence** — Live meteorological telemetry and atmospheric forecasts via accurate WeatherAPI integration, monitoring temperature, humidity, wind vectors, precipitation, and environmental dispersion parameters.
+- **Energy Intelligence** — Grid load monitoring, peak shaving analysis, substation load distribution, and battery energy storage simulation.
 
-The platform uses a **Supervisor AI Agent** orchestrating **8 specialist agents** with **50+ sub-agents**, powered entirely by locally-trained ML/DL models — **no external LLM APIs**.
+The platform coordinates specialist domain agents through an autonomous **Planner AI Agent** and **Supervisor API Gateway**, providing natural language decision support with verifiable grounding and deterministic statutory playbook fallbacks.
+
+---
+
+## Key Features
+
+1. **Autonomous Planning AI Assistant**
+   - Natural-language interface at `/api/planning/chat` and `/agents/planner/execute`.
+   - Domain router supporting traffic, pollution, weather, energy, and multi-domain queries.
+   - LLM-powered multi-stage planning and causal analysis with `<think>` tag stripping and strict token controls.
+   - Deterministic rule-based fallback grounded in verified statutory mitigation playbooks (CPCB, MoEFCC, NCAP).
+
+2. **Accurate Weather Agent**
+   - Live weather telemetry fetching ambient temperature, relative humidity, barometric pressure, wind vectors, and precipitation.
+   - Hourly and 7-day weather forecasting using accurate external API telemetry.
+   - Atmospheric dispersion context for pollution modeling and weather-traffic correlation analysis.
+
+3. **Grounded Pollution Engine**
+   - CPCB breakpoint interpolation engine (PM2.5, PM10, NO2, SO2, CO, O3, NH3) with zero arithmetic hallucination.
+   - Live telemetry ingestion from 13 Telangana monitoring stations (Bollaram, Sanathnagar, Zoo Park, ECIL Kapra, etc.).
+   - Spatial-Temporal GRU forecaster with KNN covariate modeling.
+   - 14-day zero-gap accumulation rule before transitioning from verified historical archive to live-trained forecasts.
+
+4. **Traffic Simulation Loop**
+   - SUMO microsimulation for corridor bottlenecks (Narayanguda, Begumpet, Jubilee Hills).
+   - Realism audit validating speed, flow, density, and queue length conventions.
+
+---
 
 ## Architecture
 
-| Layer | Technology |
-|---|---|
-| Frontend | React 18, MapLibre GL JS, Recharts, D3.js |
-| API Gateway | Kong (OSS) |
-| Backend | FastAPI (Python) |
-| AI/ML | PyTorch, XGBoost, pymoo (NSGA-II), SUMO |
-| GIS | GeoServer, Martin, PostGIS, pgRouting |
-| Databases | PostgreSQL 16, PostGIS 3.4+, TimescaleDB, Redis 7, MinIO |
-| MLOps | MLflow, Feast, Evidently AI, Apache Airflow |
-| Identity | Keycloak (OAuth2/OIDC) |
-| Messaging | Apache Kafka |
-| Infrastructure | Docker & Docker Compose |
-| Monitoring | Prometheus, Grafana, Loki, Jaeger |
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        FRONTEND (React 18 + Vite)                      │
+│   Pages: Dashboard, Planning, Traffic, Weather, Pollution, Energy,     │
+│          Simulation                                                    │
+│   MapLibre GL JS · Recharts · Lucide Icons · TailwindCSS / CSS3        │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │ HTTP / JSON
+                                    ▼
+┌────────────────────────────────────────────────────────────────────────┐
+│               SUPERVISOR API GATEWAY (FastAPI :8000)                  │
+│                                                                        │
+│   Routes:                                                              │
+│   ├── /api/planning/chat         → Planning AI Chat (Domain Router)    │
+│   ├── /agents/planner/execute    → Autonomous Multi-Domain Dispatch    │
+│   ├── /api/pollution/*           → Specialist Agent - Pollution        │
+│   ├── /api/v1/weather/*          → Specialist Agent - Weather          │
+│   ├── /api/v1/traffic/*          → Specialist Agent - Traffic          │
+│   ├── /api/v1/energy/*           → Specialist Agent - Energy           │
+│   └── /api/v1/simulation/*       → Specialist Agent - Simulation       │
+└───────────────────────────────────┬────────────────────────────────────┘
+                                    │
+    ┌───────────────────────────────┼──────────────────────────────┐
+    ▼                               ▼                              ▼
+┌──────────────────────┐ ┌──────────────────────┐ ┌──────────────────────┐
+│   POLLUTION AGENT    │ │    WEATHER AGENT     │ │    TRAFFIC AGENT     │
+│   Port: 8002         │ │    Live API Provider │ │    SUMO Simulator    │
+│   • CPCB NAQI Engine │ │    • WeatherAPI Sync │ │    • Demand Gen      │
+│   • GRU Forecaster   │ │    • Wind & Precip   │ │    • Signal Opt      │
+│   • 13-Station Sync  │ │    • 7-Day Forecast  │ │    • Corridor KPIs   │
+│   • CPCB Playbook    │ │    • Dispersion Data │ │    • Queue Duration  │
+└──────────────────────┘ └──────────────────────┘ └──────────────────────┘
+```
+
+---
 
 ## Project Structure
 
 ```
-SUPADSP/
-├── frontend/          → React 18 + TypeScript dashboard application
-├── backend/           → FastAPI microservices (Supervisor, Agents, Platform)
-├── ml/                → ML model training, experiments, serving
-├── datasets/          → Raw, processed, synthetic, and feature datasets
-├── simulations/       → SUMO traffic simulation configs and outputs
-├── database/          → Database schemas, migrations, seeds
-├── infrastructure/    → Docker & Docker Compose configuration
-├── kafka/             → Event bus topics, schemas, producers/consumers
-├── configs/           → Environment-specific configurations
-├── scripts/           → Setup, deployment, maintenance scripts
-├── tests/             → Unit, integration, API, e2e, performance tests
-├── tools/             → OSM, GIS, model, and diagnostic utilities
-├── docs/              → Architecture, API, database, deployment docs
-├── logs/              → Application logs (gitignored)
-└── backups/           → Database backups (gitignored)
+SmartCity/
+├── frontend/                     # React 18 + Vite dashboard application
+│   ├── src/pages/                # Dashboard, Planning, Pollution, Weather, Traffic, Energy
+│   ├── src/components/           # Charts, maps, gauges, problem solver UI
+│   └── src/services/             # API client services & telemetry fetchers
+├── backend/
+│   ├── supervisor/               # FastAPI Supervisor Gateway & Agent Dispatcher
+│   ├── agents/
+│   │   ├── planner_agent/        # Autonomous LLM Planner & contract enforcement
+│   │   ├── pollution_agent/      # CPCB engine, GRU forecaster, live WeatherAPI client
+│   │   ├── weather_agent/        # Accurate WeatherAPI telemetry & forecast provider
+│   │   ├── traffic_agent/        # SUMO traffic integration & demand generator
+│   │   ├── energy_agent/         # Grid load & power peak analytics
+│   │   └── simulation_agent/     # SUMO simulation orchestrator & runners
+├── simulations/                  # SUMO road networks, OSM data, configuration files
+├── tests/                        # Comprehensive pytest test suites (grounding, contracts, SUMO)
+├── eval/                         # Golden evaluation sets & baseline benchmarks
+├── scripts/                      # Startup, reproduction, evaluation, and smoke-test utilities
+└── docs/                         # Architecture audit, route specifications, API inventory
 ```
+
+---
 
 ## Quick Start
 
-### Prerequisites
+### 1. Prerequisites
 
-- Docker & Docker Compose
-- Python 3.11+
-- Node.js 20+ & npm 10+
-- PostgreSQL 16 with PostGIS & TimescaleDB extensions
-- Redis 7
-- Apache Kafka
+- **Python 3.11+**
+- **Node.js 18+** & npm
+- (Optional) Eclipse SUMO for traffic microsimulations
 
-### Development Setup
+### 2. Environment Configuration
+
+Copy the example environment configuration:
 
 ```bash
-# Clone the repository
-git clone https://github.com/your-org/SUPADSP.git
-cd SUPADSP
-
-# Copy environment file
 cp .env.example .env
+```
 
-# Start infrastructure services
-docker compose up -d postgres redis kafka minio
+Configure your credentials in `.env`:
+- `WEATHERAPI_KEY`: API key for live air quality and weather telemetry.
+- `LLM_PROVIDER`: e.g., `groq` or `openai`.
+- `LLM_MODEL`: e.g., `qwen/qwen3.8-27b` or `llama-3.3-70b-versatile`.
+- `LLM_API_KEY`: API key for the selected LLM provider.
 
-# Backend setup
-cd backend
-python -m venv venv
-source venv/bin/activate  # or venv\Scripts\activate on Windows
-pip install -r requirements.txt
+### 3. Running the Backend
 
-# Frontend setup
-cd ../frontend
+Start the Specialist Agents and Supervisor Gateway:
+
+```bash
+# Terminal 1: Pollution Agent (Port 8002)
+python -m uvicorn backend.agents.pollution_agent.main:app --host 127.0.0.1 --port 8002
+
+# Terminal 2: Supervisor Gateway (Port 8000)
+python -m uvicorn backend.supervisor.main:app --host 127.0.0.1 --port 8000
+```
+
+### 4. Running the Frontend
+
+Start the Vite development server:
+
+```bash
+cd frontend
 npm install
 npm run dev
 ```
 
-### Using Make
+Open [`http://localhost:3000`](http://localhost:3000) in your browser.
+
+---
+
+## Testing & Verification
+
+Run the test suite and evaluation benchmarks:
 
 ```bash
-make setup          # Full development setup
-make dev            # Start all services in development mode
-make test           # Run all tests
-make lint           # Lint all code
-make build          # Build production images
-make deploy-staging # Deploy to staging via ArgoCD
+# Grounding & reasoning test suite (37 tests)
+python -m pytest backend/agents/pollution_agent/test_grounding.py
+
+# Full 123-question Golden Set & non-pollution regression
+python backend/agents/pollution_agent/eval/run_eval.py
+
+# 60-question 3-mode Advice Evaluation
+python backend/agents/pollution_agent/eval/run_advice_eval.py
 ```
 
-## Documentation
-
-| Document | Location |
-|---|---|
-| Consolidated Architecture | `docs/architecture/SUPADSP_Architecture_Consolidated.md` |
-| API Documentation | `docs/api/` |
-| Database Schemas | `docs/database/` |
-| Deployment Guide | `docs/deployment/` |
-| Security Architecture | `docs/security/` |
-| User Manual | `docs/user_manual/` |
-
-## Core Constraint
-
-> **No external LLM APIs** (OpenAI, Claude, Gemini, etc.) are used anywhere in the operational workflow. The entire AI system relies on locally-trained Machine Learning, Deep Learning, Graph Neural Networks, Optimization, Simulation, Computer Vision, Time-Series Forecasting, Reinforcement Learning, and Statistical Models.
+---
 
 ## License
 
-Government Restricted — Internal Use Only. See [LICENSE](LICENSE) for details.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.

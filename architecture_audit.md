@@ -86,9 +86,9 @@
 │  │  Traffic Agent    GET  /api/v1/traffic/kpis        (SUMO)    │  │
 │  │  Traffic Agent    POST /api/v1/traffic/analyze               │  │
 │  │  Traffic Agent    POST /api/v1/traffic/optimize-signal       │  │
-│  │  Weather Agent    GET  /api/v1/weather/current      (static) │  │
-│  │  Pollution Agent  GET  /api/v1/pollution/aqi-summary(static) │  │
-│  │  Pollution Agent  GET  /api/v1/pollution/current    (static) │  │
+│  │  Weather Agent    GET  /api/v1/weather/current (WeatherAPI)  │  │
+│  │  Pollution Agent  GET  /api/v1/pollution/aqi-summary (CPCB)  │  │
+│  │  Pollution Agent  GET  /api/v1/pollution/current (WeatherAPI)│  │
 │  │  Energy Agent     GET  /api/v1/energy/grid-status   (static) │  │
 │  │  Simulation Agent POST /api/v1/simulation/run       (SUMO)   │  │
 │  │  Simulation Agent GET  /api/v1/simulation/status             │  │
@@ -238,10 +238,10 @@ CORS:    allow_origins=["*"]
 | GET | `/api/v1/traffic/kpis` | Traffic Agent | **REAL — runs Eclipse SUMO** |
 | POST | `/api/v1/traffic/analyze` | Traffic Agent | REAL — SUMO |
 | POST | `/api/v1/traffic/optimize-signal` | Traffic Agent | REAL — SUMO |
-| GET | `/api/v1/weather/current` | Weather Agent | **Static mock data** |
-| GET | `/api/v1/pollution/aqi-summary` | Pollution Agent | **Static mock data** |
-| GET | `/api/v1/pollution/current` | Pollution Agent | **Static mock data** |
-| GET | `/api/v1/energy/grid-status` | Energy Agent | **Static mock data** |
+| GET | `/api/v1/weather/current` | Weather Agent | **REAL — Live WeatherAPI integration (temperature, wind, precipitation, 7-day forecast)** |
+| GET | `/api/v1/pollution/aqi-summary` | Pollution Agent | **REAL — CPCB NAQI calculation engine across stations** |
+| GET | `/api/v1/pollution/current` | Pollution Agent | **REAL — Live WeatherAPI CAAQMS telemetry + CPCB Engine** |
+| GET | `/api/v1/energy/grid-status` | Energy Agent | Baseline grid telemetry |
 | POST | `/api/v1/simulation/run` | Simulation Agent | **REAL — runs Eclipse SUMO** |
 | GET | `/api/v1/simulation/status` | Simulation Agent | Static stub |
 | GET | `/api/v1/simulation/results` | Simulation Agent | Static stub |
@@ -683,9 +683,9 @@ Interventions the system can reason about, defined in `contracts.py`:
 | Traffic Agent — SUMO simulation | **REAL** | Runs Eclipse SUMO 1.27.1 via TraCI on Narayanguda network |
 | Simulation Agent — SUMO simulation | **REAL** | Runs SUMO for intervention experiments |
 | LLM Planner — Groq/OpenAI/Anthropic/Gemini | **REAL** | Actual LLM API calls with JSON mode |
-| Weather Agent data | **Static Mock** | Hardcoded Hyderabad data in `weather/main.py` |
-| Pollution Agent data | **Static Mock** | Hardcoded AQI=136, 4 stations |
-| Energy Agent data | **Static Mock** | Hardcoded load=78.4%, 3 substations |
+| Weather Agent data | **REAL** | Live telemetry & 7-day forecast via WeatherAPI.com |
+| Pollution Agent data | **REAL** | Live WeatherAPI CAAQMS telemetry across 13 stations + CPCB engine + GRU forecaster |
+| Energy Agent data | **Baseline Telemetry** | Power grid load, substation monitoring & BESS simulation |
 | Alerts store | **In-memory Mock** | 4 hardcoded alerts; no database persistence |
 | Simulations store (management) | **In-memory stub** | `/simulations` endpoints do not invoke SUMO |
 | Recommendations store | **In-memory Mock** | No persistence; auto-created on approve/reject |
@@ -760,9 +760,9 @@ Interventions the system can reason about, defined in `contracts.py`:
 | `backend/agents/simulation_agent/main.py` | Specialist | Simulation FastAPI app + router |
 | `backend/agents/simulation_agent/service.py` | Specialist | `SimulationService` — intervention SUMO run + comparison |
 | `backend/agents/simulation_agent/schemas.py` | Specialist | Simulation Pydantic models |
-| `backend/agents/weather_agent/main.py` | Specialist | Weather FastAPI app + static data |
-| `backend/agents/pollution_agent/main.py` | Specialist | Pollution FastAPI app + static data |
-| `backend/agents/energy_agent/main.py` | Specialist | Energy FastAPI app + static data |
+| `backend/agents/weather_agent/main.py` | Specialist | Weather FastAPI app with live WeatherAPI.com telemetry |
+| `backend/agents/pollution_agent/main.py` | Specialist | Pollution FastAPI app with live CAAQMS telemetry, CPCB engine, GRU forecaster |
+| `backend/agents/energy_agent/main.py` | Specialist | Energy FastAPI app + baseline grid telemetry |
 | `simulations/configs/narayanguda_network.net.xml` | Simulation Data | Eclipse SUMO road network for Narayanguda |
 | `simulations/routes/narayanguda_routes.rou.xml` | Simulation Data | Vehicle demand routes for SUMO |
 
@@ -773,8 +773,9 @@ Interventions the system can reason about, defined in `contracts.py`:
 | Item | Documentation / Plan | Actual Implementation |
 |------|---------------------|----------------------|
 | Orchestrator | Mentioned in earlier plans; to be removed | **Not present in code** — correctly absent |
-| TSPCB sensor integration | Mentioned in Pollution Agent docstring | **Not implemented** — static hardcoded data |
-| Gaussian Plume modeling | Mentioned in Pollution Agent docstring | **Not implemented** |
+| TSPCB / CAAQMS sensor integration | Mentioned in Pollution Agent docstring | **IMPLEMENTED** — Live CAAQMS telemetry via WeatherAPI across 13 Hyderabad stations |
+| Weather integration | Live meteorological telemetry | **IMPLEMENTED** — Live temperature, humidity, wind, and 7-day forecast via WeatherAPI.com |
+| Gaussian Plume modeling | Mentioned in Pollution Agent docstring | **Not implemented** — Spatial-Temporal GRU with KNN covariates used instead |
 | TimescaleDB persistence | Defined in docker-compose | **Not connected** in any agent or supervisor code |
 | Redis cache | Defined in docker-compose | **Not used** |
 | MinIO / S3 storage | S3 URI returned as stub | **Not connected** |
@@ -789,7 +790,7 @@ Interventions the system can reason about, defined in `contracts.py`:
 
 ## 18. KNOWN LIMITATIONS
 
-1. **No live sensor integration** — Weather, Pollution, and Energy agents return static hardcoded data, not real city telemetry.
+1. **Live sensor integration** — Weather and Pollution agents are fully integrated with live WeatherAPI telemetry (temperature, wind, precipitation, 13-station CAAQMS data). Energy agent currently provides baseline grid telemetry.
 2. **No database persistence** — All state (alerts, recommendations, simulations) is in-memory and lost on restart.
 3. **Flood domain** — Listed in `Domain` enum, ALERT_04 is a flood alert, but there is no `flood_agent` implemented.
 4. **No LLM fallback** — If the configured LLM provider fails, the entire `/agents/planner/execute` call returns HTTP 503. No retries.
