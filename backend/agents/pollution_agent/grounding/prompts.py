@@ -71,16 +71,20 @@ You MUST return a JSON object with exactly these fields:
 Output ONLY the JSON object. No markdown wrapping, no explanation outside the JSON.
 """
 
-# Keywords indicating advice / mitigation / intervention intent
+# Keywords indicating advice / mitigation / intervention / causal intent
 ADVICE_KEYWORDS = [
-    "reduce", "improve", "control", "lower", "fix", "mitigate", "mitigation",
-    "measures", "measure", "preventive", "prevention", "maintain", "maintaining", "keep",
-    "what should we do", "what can we do", "what can be done", "what can be done about", "what to do",
-    "what measures", "measures should", "steps should", "what steps", "what actions", "actions can",
-    "suggest measures", "suggest actions", "action plan", "recommend", "recommendations", "solutions",
-    "steps to", "how can we", "upay", "upaye", "kaise kam kare", "kaise kam karein",
-    "kaise sudhare", "sudhare", "kaise kam hoga", "kya karna chahiye", "kya kare", "kya karein", "how to redue",
-    "how to reudce", "how to improv", "mitigtion", "recommed", "recomended", "sugest", "measurs"
+    "reduce", "lower", "improve", "control", "cut", "fix", "bring down",
+    "what can be done", "what can we do", "what should we do", "what to do",
+    "what can the city do", "what actions", "actions can", "suggest",
+    "suggest measures", "suggest actions", "recommend", "recommendations",
+    "solutions", "mitigate", "mitigation", "measures", "measure",
+    "preventive", "prevention", "action plan", "steps should", "what steps",
+    "steps to", "how can we", "why", "cause", "source", "reasons", "reason for",
+    "maintain", "maintaining", "keep", "upay", "upaye", "kaise kam kare",
+    "kaise kam karein", "kaise sudhare", "sudhare", "kaise kam hoga",
+    "kya karna chahiye", "kya kare", "kya karein", "how to redue",
+    "how to reudce", "how to improv", "mitigtion", "recommed",
+    "recomended", "sugest", "measurs"
 ]
 
 # Keywords indicating public health advice intent

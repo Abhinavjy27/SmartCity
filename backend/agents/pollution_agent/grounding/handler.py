@@ -23,6 +23,9 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger("pollution_grounding.handler")
 
@@ -66,12 +69,29 @@ def _load_fact_sheet() -> str:
 
 # ── Question Analysis ──
 
+NEAR_STATION_MAP = {
+    "banjara hills": ("Somajiguda", 3.4),
+    "begumpet": ("Somajiguda", 2.3),
+    "jubilee hills": ("Somajiguda", 5.8),
+    "kukatpally": ("Sanathnagar", 6.1),
+    "hitec city": ("Central University", 5.2),
+    "secunderabad": ("Somajiguda", 4.5),
+    "madhapur": ("Central University", 4.8),
+    "ameerpet": ("Sanathnagar", 1.6),
+    "charminar": ("Zoo Park", 2.6),
+    "koti": ("New Malakpet", 3.1),
+    "gachibowli": ("Central University", 2.0),
+    "mehdipatnam": ("Zoo Park", 4.2),
+}
+
+
 def _analyze_question(question: str) -> Dict[str, Any]:
     """Analyze question to determine which tools to call."""
     q = question.lower().strip()
     result = {
         "tools_needed": [],
         "stations_mentioned": [],
+        "unmonitored_area": None,
         "unknown_station": None,
         "is_comparison": False,
         "is_forecast": False,
@@ -86,6 +106,9 @@ def _analyze_question(question: str) -> Dict[str, Any]:
         "is_adversarial_estimate": False,
         "is_adversarial_cause": False,
         "is_adversarial_guarantee": False,
+        "is_adversarial_jailbreak": False,
+        "is_data_sufficiency": False,
+        "is_sensors_offline": False,
         "is_out_of_scope": False,
     }
 
@@ -115,6 +138,19 @@ def _analyze_question(question: str) -> Dict[str, Any]:
                     result["stations_mentioned"].append(s["primary_name"])
                 break
 
+    # Check for recognized unmonitored Hyderabad areas
+    if not result["stations_mentioned"]:
+        for loc, (near_st, dist_km) in NEAR_STATION_MAP.items():
+            if loc in q:
+                result["unmonitored_area"] = {
+                    "area": loc.title(),
+                    "nearest_station": near_st,
+                    "distance_km": dist_km,
+                }
+                if near_st not in result["stations_mentioned"]:
+                    result["stations_mentioned"].append(near_st)
+                break
+
     # Known unmonitored or area locations to check if no station matched
     if not result["stations_mentioned"]:
         for loc in ["banjara hills", "kukatpally", "hitec city", "secunderabad", "jubilee hills", "madhapur", "begumpet", "ameerpet", "charminar", "koti"]:
@@ -122,21 +158,13 @@ def _analyze_question(question: str) -> Dict[str, Any]:
                 result["unknown_station"] = loc.title()
                 break
 
-    # Advice / Mitigation intent (gated by POLLUTION_REASONING)
-    reasoning_enabled = os.getenv("POLLUTION_REASONING", "true").lower() in ("true", "1", "yes")
-    if reasoning_enabled:
-        if is_advice_question(q):
-            result["is_advice"] = True
-            result["is_current"] = True  # Need current data for context
-            if "get_current" not in result["tools_needed"]:
-                result["tools_needed"].insert(0, "get_current")
-
-        # Health advice intent
-        if is_health_advice_question(q):
-            result["is_health_advice"] = True
-            result["is_current"] = True
-            if "get_current" not in result["tools_needed"]:
-                result["tools_needed"].insert(0, "get_current")
+    # If still no station and not unmonitored area, extract unknown location from "at <X>", "in <X>"
+    if not result["stations_mentioned"] and not result["unmonitored_area"] and not result["unknown_station"] and not result["is_health_advice"]:
+        loc_match = re.search(r"\b(?:at|in)\s+([a-zA-Z\s]{3,30}?)(?:\?|\.|\s+today|\s+now|\s+aqi|$)", q)
+        if loc_match:
+            cand_loc = loc_match.group(1).strip().lower()
+            if cand_loc and cand_loc not in ("hyderabad", "city", "greater hyderabad", "the city", "telangana", "india", "asthma", "asthma patients", "children", "elderly", "morning", "evening", "jogging", "running"):
+                result["unknown_station"] = cand_loc.title()
 
     # Adversarial patterns
     if any(w in q for w in ["just estimate", "guess the aqi", "make an estimate", "estimate it without", "approximate yourself", "personal estimate", "fabricate an aqi"]):
@@ -157,14 +185,14 @@ def _analyze_question(question: str) -> Dict[str, Any]:
         result["is_methodology"] = True
 
     # Model limits & Accuracy
-    if any(w in q for w in ["mae", "rmse", "limitation", "weakness", "how accurate", "accuracy", "inversion", "pblh",
-                             "directional accuracy", "flat", "trajectory", "error rate", "model limits", "held-out test"]):
+    if any(w in q for w in ["mae", "rmse", "limitation", "weakness", "how accurate", "accuracy", "inversion", "temperature inversion", "pblh",
+                             "directional accuracy", "flat", "trajectory", "error rate", "model limits", "held-out test", "held-out", "evaluation window"]):
         result["is_model_limits"] = True
 
     # Data status & Switchover
-    if any(w in q for w in ["live data", "switchover", "accumulation", "consecutive days", "data status",
+    if any(w in q for w in ["live data", "switchover", "accumulation", "accumulated", "stored", "consecutive days", "data status",
                              "live mode", "historical archive", "14 days", "14 consecutive", "sufficiency",
-                             "what provider ingests", "input window size", "staleness threshold in hours"]):
+                             "what provider ingests", "input window size", "staleness threshold", "validity range", "fabricate synthetic", "synthetic data"]):
         result["is_data_status"] = True
         result["tools_needed"].append("get_data_status")
 
@@ -174,7 +202,7 @@ def _analyze_question(question: str) -> Dict[str, Any]:
         result["tools_needed"].append("compare_stations")
 
     # Forecast
-    if any(w in q for w in ["forecast", "predict", "tomorrow", "next week", "7 day", "7-day", "future", "will the"]):
+    if any(w in q for w in ["forecast", "predict", "tomorrow", "next week", "7 day", "7-day", "future", "will the", "trajectory"]):
         result["is_forecast"] = True
         result["tools_needed"].append("get_forecast")
 
@@ -187,16 +215,49 @@ def _analyze_question(question: str) -> Dict[str, Any]:
         result["is_staleness"] = True
         result["is_current"] = True
 
+    # Advice / Mitigation intent (gated by POLLUTION_REASONING, defaults to ON when LLM is configured)
+    val = os.getenv("POLLUTION_REASONING")
+    if val is not None:
+        reasoning_enabled = val.lower() not in ("false", "0", "no")
+    else:
+        reasoning_enabled = True
+
+    is_adv = is_advice_question(q)
+    # Check causal/action words using word boundaries without matching 'bad' in 'hyderabad'
+    q_no_hyd = q.replace("hyderabad", "")
+    is_causal = bool(re.search(r"\b(why|cause|causes|source|sources|reason|reasons|reduce|reduction|lower|lowering|improve|improving|cut|bring down|how to|mitigate|mitigation)\b", q)) or bool(re.search(r"\b(bad|poor|severe|unhealthy)\b", q_no_hyd))
+    if (is_adv or is_causal) and not (
+        result["is_methodology"]
+        or result["is_model_limits"]
+        or result["is_data_sufficiency"]
+        or result["is_sensors_offline"]
+        or result["is_forecast"]
+        or result["is_data_status"]
+    ):
+        if reasoning_enabled:
+            result["is_advice"] = True
+        result["is_current"] = True
+        if "get_current" not in result["tools_needed"]:
+            result["tools_needed"].insert(0, "get_current")
+
+    # Health advice intent
+    if is_health_advice_question(q):
+        if reasoning_enabled:
+            result["is_health_advice"] = True
+        result["is_current"] = True
+        if "get_current" not in result["tools_needed"]:
+            result["tools_needed"].insert(0, "get_current")
+
     # Current
     if any(w in q for w in ["current", "right now", "today", "latest", "observed", "what is the aqi"]):
         result["is_current"] = True
 
     # Default tool selection
-    if not result["tools_needed"] or result["is_current"] or result["is_why_higher"] or result["is_staleness"]:
+    if not result["tools_needed"] or result["is_current"] or result["is_why_higher"] or result["is_staleness"] or result["is_advice"]:
         if "get_current" not in result["tools_needed"]:
             result["tools_needed"].insert(0, "get_current")
 
-    if result["stations_mentioned"] and (result["is_why_higher"] or "explain" in q or "detail" in q):
+    if result["stations_mentioned"] and (result["is_why_higher"] or result["is_advice"] or "explain" in q or "detail" in q):
         if "explain_station_aqi" not in result["tools_needed"]:
             result["tools_needed"].append("explain_station_aqi")
 
@@ -296,74 +357,171 @@ def _strip_think_blocks(text: str) -> str:
     return re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
 
-def _call_llm(question: str, tool_outputs: Dict, fact_sheet: str) -> Optional[Dict[str, Any]]:
-    """Call Groq LLM with the pollution domain prompt."""
-    try:
-        from backend.agents.planner_agent.llm_client import LLMClient
-        client = LLMClient()
-    except Exception as exc:
-        logger.warning("LLM client unavailable: %s", exc)
-        return None
+def _build_compact_context(question: str, analysis: Dict[str, Any], tool_outputs: Dict[str, Any]) -> str:
+    parts = []
+    current_city = tool_outputs.get("current_city", {})
+    current_st = tool_outputs.get("current_station", {})
 
-    # Build the user message with tool context
-    tool_context = json.dumps(tool_outputs, indent=2, default=str)
-    fs_text = fact_sheet[:6000] if len(fact_sheet) > 6000 else fact_sheet
+    # Station context
+    if analysis.get("stations_mentioned"):
+        st_name = analysis["stations_mentioned"][0]
+        unmon = analysis.get("unmonitored_area")
+        if unmon:
+            parts.append(f"Area '{unmon['area']}' is not directly monitored. Nearest monitored station is {unmon['nearest_station']} (~{unmon['distance_km']} km away).")
+        if current_st.get("status") == "success":
+            st_aqi = current_st.get("aqi")
+            st_cat = current_st.get("category")
+            st_dom = current_st.get("dominant_pollutant")
+            st_stale = current_st.get("is_stale", False)
+            st_age = current_st.get("data_age_hours")
+            st_label = current_st.get("last_updated_label", "")
+            sub_indices = current_st.get("sub_indices", {})
+            stale_str = f" [STALE: {st_age}h old, {st_label}]" if st_stale and st_age else " [FRESH]"
+            parts.append(f"Station: {st_name} | Observed AQI: {st_aqi} ({st_cat}) | Dominant Pollutant: {st_dom}{stale_str}")
+            if sub_indices:
+                sub_str = ", ".join([f"{k}: {v}" for k, v in sub_indices.items() if v is not None])
+                parts.append(f"Sub-indices (per CPCB engine): {sub_str}")
+            expl = tool_outputs.get(f"explain_{st_name}", {})
+            if expl.get("rank") and expl.get("total_stations"):
+                diff = expl.get("diff_vs_city_mean", 0)
+                diff_word = f"{abs(diff)} points higher than" if diff and diff > 0 else f"{abs(diff or 0)} points lower than"
+                parts.append(f"Rank: {expl['rank']}/{expl['total_stations']} stations ({diff_word} city mean {current_city.get('aqi')})")
 
-    # Include playbook items directly in prompt for advice questions
-    playbook_section = ""
+    # City context
+    if current_city.get("status") == "success":
+        c_aqi = current_city.get("aqi")
+        c_cat = current_city.get("category")
+        c_dom = current_city.get("dominant_pollutant")
+        c_stale = current_city.get("is_stale", False)
+        c_age = current_city.get("data_age_hours")
+        c_label = current_city.get("last_updated_label", "")
+        c_stale_str = f" [STALE: {c_age}h old, {c_label}]" if c_stale and c_age else ""
+        parts.append(f"City: Hyderabad Mean AQI: {c_aqi} ({c_cat}), dominant: {c_dom}{c_stale_str}, Active Stations: {current_city.get('active_stations')}/{current_city.get('station_count')}")
+
+    # Forecast context if relevant
+    forecast = tool_outputs.get("forecast", {})
+    if analysis.get("is_forecast") and forecast.get("status") == "success":
+        days = forecast.get("forecast_days", [])
+        days_str = ", ".join([f"Day {d.get('day', i+1)}: AQI {d.get('predicted_aqi')}" for i, d in enumerate(days[:5])])
+        parts.append(f"PREDICTED 7-day forecast (model {forecast.get('model_name')}): {days_str}. Overall MAE: {forecast.get('overall_mae', 11.38)} AQI points (Day 1: 8.76, Day 7: 12.63). Label explicitly as PREDICTED.")
+
+    # Data status if relevant
+    ds = tool_outputs.get("data_status", {})
+    if analysis.get("is_data_status") and ds:
+        parts.append(f"Live Accumulation: {ds.get('consecutive_live_days', 0)} consecutive days. Input source: {ds.get('forecast_input_source')}. 14-day switchover rule: requires 14 consecutive days of valid live observations with zero gaps to switch from the historical archive. Sufficiency rule: at least 16 hourly readings out of 24 required.")
+
+    # Playbook items for advice
     playbook_items = tool_outputs.get("playbook_items", [])
     if playbook_items:
-        pb_json = json.dumps(playbook_items[:8], indent=2, default=str)
-        playbook_section = f"""\n## Mitigation Playbook Items (ONLY recommend from these, cite item id)
-{pb_json}\n"""
+        parts.append("\n## Applicable Mitigation Playbook Items (ONLY cite from these, cite ID, action, who, time_horizon, source):")
+        for it in playbook_items[:6]:
+            parts.append(f"- ID: {it.get('id')} | Action: {it.get('action')} | Who: {it.get('who')} | Horizon: {it.get('time_horizon')} | Source: {it.get('source')}")
 
-    health_section = ""
-    health_advisory = tool_outputs.get("health_advisory", {})
-    if health_advisory:
-        ha_json = json.dumps(health_advisory, indent=2, default=str)
-        health_section = f"""\n## CPCB Health Advisory for Current Category
-{ha_json}
-Note: Always add disclaimer: 'General guidance based on CPCB AQI health descriptors, not personal medical advice.'\n"""
+    # Health advisory if relevant
+    ha = tool_outputs.get("health_advisory", {})
+    if ha:
+        parts.append(f"\n## CPCB Health Advisory: {ha.get('cpcb_descriptor')}. General: {ha.get('general_public')}. Sensitive: {ha.get('sensitive_groups')}. Mask: {ha.get('mask_guidance')}. Outdoor: {ha.get('outdoor_exercise')}")
+
+    # Specific topic facts if needed
+    if analysis.get("is_model_limits"):
+        parts.append("\n## Model Limits: Model TemporalGRU_KNNCovariate overall MAE is 11.38 AQI points (Day 1: 8.76, Day 7: 12.63). Directional accuracy 40.0% to 42.4%. Trajectory shows smoothing/flat trend toward seasonal mean. Lacks PBLH (planetary boundary layer height) telemetry, limiting winter thermal inversion peak detection.")
+    if analysis.get("is_methodology"):
+        parts.append("\n## CPCB NAQI Methodology: Piecewise linear interpolation between breakpoints. Mandatory particulate mandate: at least 3 valid pollutant sub-indices required with 16h/24h sufficiency, at least one MUST be PM2.5 or PM10. Overall AQI = max(sub-indices), pollutant with max is Dominant Pollutant.")
+
+    return "\n".join(parts)
+
+
+def _call_llm(
+    question: str,
+    analysis: Dict[str, Any],
+    tool_outputs: Dict[str, Any],
+    fact_sheet: str,
+    timeout: float = 20.0,
+) -> Tuple[Optional[Dict[str, Any]], str, Optional[str]]:
+    """
+    Call Groq LLM with concise grounded context (timeout 20s for advice with 1 retry).
+    Returns (result_dict, answer_path, error_reason).
+    """
+    api_key = os.getenv("LLM_API_KEY") or os.getenv("GROQ_API_KEY")
+    if not api_key or api_key.strip() in ("", "YOUR_API_KEY", "YOUR_API_KEY_HERE"):
+        fallback_mode = "rule_based_playbook_fallback" if analysis.get("is_advice") else "rule_based_fallback"
+        return None, f"{fallback_mode} (missing_api_key)", "missing_api_key"
+
+    model = os.getenv("LLM_MODEL", "qwen/qwen3.8-27b")
+    compact_context = _build_compact_context(question, analysis, tool_outputs)
 
     user_message = f"""## User Question
 "{question}"
 
-## Tool Outputs (verified data — use these numbers exactly)
-{tool_context}
-{playbook_section}{health_section}
-## Fact Sheet (reference)
-{fs_text}
+## Verified Data & Mitigation Playbook Context
+{compact_context}
 
-Based on the tool outputs and fact sheet above, answer the user's question.
+Based on the verified data and playbook items above, answer the user's question.
 Return ONLY a valid JSON object with keys: "text", "insights", "suggestions".
+- "text": 1-2 sentence intro stating observed AQI, category, dominant pollutant, staleness age if stale, and summarizing priority actions if advice was requested.
+- "insights": 2-5 bullet points showing:
+  1. Baseline reading: observed AQI, dominant pollutant, rank or comparison vs city mean.
+  2. Category framing / why dominant pollutant matters.
+  3. Immediate action from playbook with [ID], action, who, and source.
+  4. Medium-term municipal action from playbook with [ID], action, who, and source.
+  5. Mandatory caveat: "Because the monitoring network does not have source-apportionment telemetry, local emission sources must be verified on-site before deploying capital resources."
+- "suggestions": Exactly 3 relevant follow-up questions.
 """
 
     try:
-        raw = client.generate_json_plan(
-            system_prompt=POLLUTION_DOMAIN_PROMPT,
-            user_query=user_message,
+        from groq import Groq
+        client = Groq(api_key=api_key.strip(), max_retries=0, timeout=timeout)
+    except Exception as exc:
+        fallback_mode = "rule_based_playbook_fallback" if analysis.get("is_advice") else "rule_based_fallback"
+        return None, f"{fallback_mode} (groq_init_failed)", str(exc)
+
+    def _invoke() -> str:
+        completion = client.chat.completions.create(
+            model=model.strip(),
+            messages=[
+                {"role": "system", "content": POLLUTION_DOMAIN_PROMPT},
+                {"role": "user", "content": user_message},
+            ],
             temperature=0.1,
             max_tokens=1500,
+            response_format={"type": "json_object"},
         )
-        # Strip Qwen3 <think> blocks
-        raw = _strip_think_blocks(raw)
-        parsed = json.loads(raw)
-        if "text" in parsed and "insights" in parsed and "suggestions" in parsed:
-            return parsed
-        if "text" in parsed:
-            return {
-                "text": parsed["text"],
-                "insights": parsed.get("insights", ["See tool data above."]),
-                "suggestions": parsed.get("suggestions", [
-                    "What is the current city AQI?",
-                    "Which station has the highest AQI?",
-                    "Show the 7-day forecast",
-                ]),
-            }
-    except Exception as exc:
-        logger.warning("LLM call failed: %s", exc)
+        return completion.choices[0].message.content or ""
 
-    return None
+    retries = 2 if (analysis.get("is_advice") or analysis.get("is_health_advice")) else 1
+    last_err = None
+    for attempt in range(retries):
+        try:
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_invoke)
+                raw_text = future.result(timeout=timeout)
+
+            cleaned = _strip_think_blocks(raw_text)
+            parsed = json.loads(cleaned)
+            if isinstance(parsed, dict) and parsed.get("text"):
+                ins = parsed.get("insights", [])
+                sug = parsed.get("suggestions", [])
+                return {
+                    "text": str(parsed.get("text", "")).strip(),
+                    "insights": [str(x).strip() for x in ins if str(x).strip()][:5],
+                    "suggestions": [str(x).strip() for x in sug if str(x).strip()][:3],
+                }, "llm", None
+        except concurrent.futures.TimeoutError:
+            last_err = f"timeout after {timeout}s"
+            logger.warning("LLM call timed out after %ss (attempt %d/%d)", timeout, attempt + 1, retries)
+        except Exception as exc:
+            err_str = str(exc)
+            last_err = f"error: {err_str[:80]}"
+            logger.warning("LLM call failed (attempt %d/%d): %s", attempt + 1, retries, exc)
+            if "429" in err_str or "rate_limit" in err_str or "tokens" in err_str or "404" in err_str:
+                break
+
+        if attempt < retries - 1:
+            time.sleep(1.0)
+
+    fallback_mode = "rule_based_playbook_fallback" if analysis.get("is_advice") else "rule_based_fallback"
+    return None, f"{fallback_mode} ({last_err})", last_err
 
 
 # ── Rule-Based Fallback ──
@@ -376,22 +534,15 @@ def _build_advice_chips(analysis: Dict, tool_outputs: Dict) -> List[str]:
     src = station_data if station_data.get("status") == "success" else city_data
     dom = src.get("dominant_pollutant", "PM10")
     station_name = analysis["stations_mentioned"][0] if analysis.get("stations_mentioned") else None
-    city_aqi = city_data.get("aqi")
-    st_aqi = station_data.get("aqi") if station_data.get("status") == "success" else None
-    is_stale = src.get("is_stale", False)
 
     # Chip 1: priority stations
     chips.append("Which stations need action first?")
 
-    # Chip 2: data-aware chip
-    if is_stale:
-        chips.append("How fresh is the current data?")
-    elif station_name and st_aqi is not None and city_aqi is not None and st_aqi <= city_aqi:
-        chips.append(f"Why is {station_name} lower than the city mean?")
-    elif station_name:
-        chips.append(f"Why is {station_name} higher?")
+    # Chip 2: station-specific or forecast
+    if station_name:
+        chips.append(f"Show 7-day forecast for {station_name}")
     else:
-        chips.append("Show station rankings")
+        chips.append("Show the 7-day forecast")
 
     # Chip 3: pollutant-specific
     chips.append(f"What measures help reduce {dom}?")
@@ -443,6 +594,56 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
             "suggestions": ["What is the current city AQI?", "How is AQI calculated?", "Show the 7-day forecast"],
         }
 
+    # Case 0c: Unmonitored area with nearest station mapping
+    if analysis.get("unmonitored_area"):
+        unmon = analysis["unmonitored_area"]
+        cand = unmon["area"]
+        near_st = unmon["nearest_station"]
+        dist = unmon["distance_km"]
+        st_data = tool_outputs.get("current_station", {})
+        src = st_data if st_data.get("status") == "success" else current
+        obs_aqi = src.get("aqi", city_aqi)
+        obs_cat = src.get("category", city_cat)
+        obs_dom = src.get("dominant_pollutant", city_dominant)
+        obs_stale = src.get("is_stale", is_stale)
+        obs_hours = src.get("data_age_hours", stale_hours)
+        obs_label = src.get("last_updated_label", last_updated_label)
+        obs_stale_str = f" (stale: {obs_hours}h old, {obs_label})" if obs_stale and obs_hours else ""
+
+        pb_items = tool_outputs.get("playbook_items", [])
+        imm_items = [it for it in pb_items if it.get("time_horizon") == "immediate"]
+        med_items = [it for it in pb_items if it.get("time_horizon") != "immediate"]
+        item1 = imm_items[0] if imm_items else (pb_items[0] if pb_items else None)
+        item2 = med_items[0] if med_items else (pb_items[1] if len(pb_items) > 1 else None)
+
+        if analysis.get("is_advice"):
+            action_parts = []
+            if item1:
+                action_parts.append(item1.get("action", "")[:45] + "...")
+            if item2:
+                action_parts.append(item2.get("action", "")[:45] + "...")
+            summary_str = " and ".join(action_parts) if action_parts else f"controlling {obs_dom} emissions"
+            text = f"Station '{cand}' is not monitored in the continuous CAAQMS network. Nearest monitored station is {near_st} (~{dist} km away), where observed AQI is {obs_aqi} ({obs_cat}), dominated by {obs_dom}{obs_stale_str}. Priority recommendations focus on {summary_str}."
+        else:
+            text = f"Station '{cand}' is not monitored in the continuous CAAQMS network. Nearest monitored station is {near_st} (~{dist} km away), where observed AQI is {obs_aqi} ({obs_cat}), dominated by {obs_dom}{obs_stale_str}."
+
+        insights = [
+            f"Location '{cand}' does not match any active CPCB/TSPCB monitoring station in Greater Hyderabad.",
+            f"Nearest continuous station: {near_st} is located approximately {dist} km away from {cand}.",
+            f"Observed reading at {near_st}: AQI {obs_aqi} ({obs_cat}), dominant pollutant: {obs_dom}.",
+        ]
+        if item1 and analysis.get("is_advice"):
+            insights.append(f"Immediate action [{item1['id']}]: {item1['action']} (who: {item1.get('who', 'municipal')}; source: {item1.get('source', 'CPCB/NCAP')}).")
+        if item2 and analysis.get("is_advice"):
+            insights.append(f"Medium-term municipal action [{item2['id']}]: {item2['action']} (who: {item2.get('who', 'municipal')}; source: {item2.get('source', 'CPCB/NCAP')}).")
+        insights.append("Because the monitoring network does not have source-apportionment telemetry, local emission sources must be verified on-site before deploying capital resources.")
+
+        return {
+            "text": text,
+            "insights": insights[:5],
+            "suggestions": _build_advice_chips(analysis, tool_outputs),
+        }
+
     # Case 1: Unknown station
     if analysis.get("unknown_station"):
         cand = analysis["unknown_station"]
@@ -453,7 +654,7 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
             "insights": [
                 f"Location '{cand}' does not match any active CPCB/TSPCB monitoring station in Greater Hyderabad.",
                 f"Monitored network includes 13 continuous stations: {', '.join(known[:5])} and others.",
-                "Missing data cannot be interpolated or estimated for unmonitored locations.",
+                "Missing data cannot be interpolated or estimated for unmonitored locations. Please specify an active monitoring station.",
             ],
             "suggestions": ["What is the current city AQI?", "Which station has the highest AQI?", "Show all monitored stations"],
         }
@@ -522,7 +723,20 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
         obs_stale_str = f" (stale: {obs_hours}h old, {obs_label})" if obs_stale and obs_hours else ""
 
         location = station_name or "Hyderabad"
-        text = f"Observed AQI at {location} is {obs_aqi} ({obs_cat}), dominated by {obs_dom}.{obs_stale_str}"
+        pb_items = tool_outputs.get("playbook_items", [])
+        imm_items = [it for it in pb_items if it.get("time_horizon") == "immediate"]
+        med_items = [it for it in pb_items if it.get("time_horizon") != "immediate"]
+        item1 = imm_items[0] if imm_items else (pb_items[0] if pb_items else None)
+        item2 = med_items[0] if med_items else (pb_items[1] if len(pb_items) > 1 else None)
+
+        action_summary = []
+        if item1:
+            action_summary.append(item1.get("action", "")[:45] + "...")
+        if item2:
+            action_summary.append(item2.get("action", "")[:45] + "...")
+        summary_str = " and ".join(action_summary) if action_summary else f"targeted {obs_dom} reduction protocols"
+
+        text = f"Observed AQI at {location} is {obs_aqi} ({obs_cat}), dominated by {obs_dom}{obs_stale_str}. Priority playbook recommendations focus on {summary_str}."
 
         # Insight 1: baseline data
         expl = tool_outputs.get(f"explain_{station_name}", {}) if station_name else {}
@@ -541,18 +755,23 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
         else:
             insights.append(f"Framing: AQI is {obs_cat}. Targeted interventions for {obs_dom} are recommended to improve air quality.")
 
-        # Insight 3-4: playbook recommendations (limit to 2 so framing & caveats fit within 5 bullets)
-        pb_items = tool_outputs.get("playbook_items", [])
-        rec_count = 0
-        for item in pb_items[:2]:
+        # Insight 3: Immediate action
+        if item1:
             insights.append(
-                f"Recommendation [{item.get('id')}]: {item.get('action')} "
-                f"(who: {item.get('who', 'municipal')}, horizon: {item.get('time_horizon', 'short-term')}; "
-                f"source: {item.get('source', 'CPCB/NCAP')}; confidence: {item.get('confidence_label', 'general guidance')})."
+                f"Immediate action [{item1.get('id')}]: {item1.get('action')} "
+                f"(who: {item1.get('who', 'municipal')}, horizon: {item1.get('time_horizon', 'immediate')}; "
+                f"source: {item1.get('source', 'CPCB/NCAP')}; confidence: {item1.get('confidence_label', 'general guidance')})."
             )
-            rec_count += 1
 
-        if rec_count == 0:
+        # Insight 4: Medium-term municipal action
+        if item2:
+            insights.append(
+                f"Medium-term municipal action [{item2.get('id')}]: {item2.get('action')} "
+                f"(who: {item2.get('who', 'municipal')}, horizon: {item2.get('time_horizon', 'medium_term')}; "
+                f"source: {item2.get('source', 'CPCB/NCAP')}; confidence: {item2.get('confidence_label', 'general guidance')})."
+            )
+
+        if not item1 and not item2:
             insights.append("General guidance: Follow CPCB/NCAP dust suppression and vehicular emission check protocols.")
 
         # Insight 5: source attribution caveat (mandatory)
@@ -616,6 +835,7 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
         c_days = ds.get("consecutive_live_days", 0)
         source = ds.get("forecast_input_source", "historical_archive")
         freshness_info = f"Current readings are stale ({stale_hours}h old, {last_updated_label})." if is_stale and stale_hours else "Current readings are within the 3-hour freshness threshold."
+        prov_name = current.get("provider_name") or "live CAAQMS telemetry"
         return {
             "text": f"Live data accumulation is active with {c_days} consecutive days recorded. {freshness_info}",
             "insights": [
@@ -623,7 +843,7 @@ def _rule_based_answer(question: str, analysis: Dict, tool_outputs: Dict) -> Dic
                 f"Current consecutive live days: {c_days} (forecast input source: {source}).",
                 "14-Day Switchover Rule: The forecasting pipeline requires exactly 14 consecutive days of live observations with zero gaps to switch from the historical archive.",
                 "Zero fabrication: Until 14 full consecutive days are logged, forecasts continue using the verified historical archive.",
-                f"Live observations are ingested via OpenAQLiveProvider from Telangana CPCB/TSPCB stations.",
+                f"Live observations are ingested via {prov_name} from Telangana stations.",
             ],
             "suggestions": ["What is the current city AQI?", "Show the 7-day forecast", "Check live data status"],
         }
@@ -839,12 +1059,20 @@ def _verify_answer(answer: Dict, tool_outputs: Dict, question: str) -> Tuple[boo
 
 # ── Audit Logging ──
 
-def _audit_log(question: str, answer: Dict, tool_outputs: Dict, verified: bool, issues: List[str], answer_path: str = "unknown"):
-    """Append to logs/pollution_answer_audit.jsonl with answer path."""
-    log_dir = Path(__file__).resolve().parent.parent / "logs"
-    log_dir.mkdir(exist_ok=True)
-    log_path = log_dir / "pollution_answer_audit.jsonl"
-
+def _audit_log(
+    question: str,
+    answer: Dict,
+    tool_outputs: Dict,
+    verified: bool,
+    issues: List[str],
+    answer_path: str = "unknown",
+    detected_intent: Optional[Dict[str, Any]] = None,
+    extracted_location: Optional[str] = None,
+    llm_called: bool = False,
+    llm_latency_ms: Optional[float] = None,
+    llm_error: Optional[str] = None,
+):
+    """Append to logs/pollution_answer_audit.jsonl (both agent and root repo dirs) with detailed execution metrics."""
     entry = {
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "question": question,
@@ -854,13 +1082,26 @@ def _audit_log(question: str, answer: Dict, tool_outputs: Dict, verified: bool, 
         "issues": issues,
         "tools_called": list(tool_outputs.keys()),
         "answer_path": answer_path,
+        "detected_intent": detected_intent or {},
+        "extracted_location": extracted_location,
+        "llm_called": llm_called,
+        "llm_latency_ms": llm_latency_ms,
+        "llm_error": llm_error,
     }
 
-    try:
-        with open(log_path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry, default=str) + "\n")
-    except Exception as exc:
-        logger.warning("Audit log write failed: %s", exc)
+    # Dual write to both agent directory and repository root logs directory
+    log_paths = [
+        Path(__file__).resolve().parent.parent / "logs" / "pollution_answer_audit.jsonl",
+        Path(__file__).resolve().parents[4] / "logs" / "pollution_answer_audit.jsonl",
+    ]
+
+    for p in log_paths:
+        try:
+            p.parent.mkdir(parents=True, exist_ok=True)
+            with open(p, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry, default=str) + "\n")
+        except Exception as exc:
+            logger.warning("Audit log write to %s failed: %s", p, exc)
 
 
 # ── Main Entry Point ──
@@ -871,12 +1112,18 @@ def handle_pollution_chat(question: str) -> Dict[str, Any]:
     Returns {"text": ..., "insights": [...], "suggestions": [...]}.
     """
     verify_enabled = os.getenv("POLLUTION_VERIFY", "").lower() in ("true", "1", "yes")
-    reasoning_enabled = os.getenv("POLLUTION_REASONING", "true").lower() in ("true", "1", "yes")
+
+    # Reasoning defaults to ON when an LLM provider is configured
+    val = os.getenv("POLLUTION_REASONING")
+    if val is not None:
+        reasoning_enabled = val.lower() not in ("false", "0", "no")
+    else:
+        reasoning_enabled = True
 
     # 1. Analyze the question
     analysis = _analyze_question(question)
 
-    # If POLLUTION_REASONING is off, suppress advice/health intents (backward compat)
+    # If POLLUTION_REASONING is explicitly off, suppress advice/health intents (backward compat)
     if not reasoning_enabled:
         analysis["is_advice"] = False
         analysis["is_health_advice"] = False
@@ -890,15 +1137,34 @@ def handle_pollution_chat(question: str) -> Dict[str, Any]:
     # 4. Try LLM (only if reasoning enabled)
     answer = None
     answer_path = "rule_based_fallback"
-    if reasoning_enabled:
-        answer = _call_llm(question, tool_outputs, fact_sheet)
-        if answer is not None:
-            answer_path = "llm"
+    llm_error = None
+    llm_latency_ms = None
+    llm_called = False
+
+    if reasoning_enabled and not (analysis.get("unknown_station") or (analysis.get("unmonitored_area") and not (analysis.get("is_advice") or analysis.get("is_health_advice")))):
+        llm_called = True
+        t0 = time.time()
+        timeout = 20.0 if (analysis.get("is_advice") or analysis.get("is_health_advice")) else 8.0
+        call_res = _call_llm(
+            question, analysis, tool_outputs, fact_sheet, timeout=timeout
+        )
+        llm_latency_ms = round((time.time() - t0) * 1000.0, 1)
+        if isinstance(call_res, tuple) and len(call_res) == 3:
+            answer, answer_path, llm_error = call_res
+        elif isinstance(call_res, dict):
+            answer, answer_path, llm_error = call_res, "llm", None
+        else:
+            answer, answer_path, llm_error = None, "rule_based_fallback", "llm_returned_none"
 
     # 5. Fallback to rule-based if LLM failed or reasoning disabled
     if answer is None:
         answer = _rule_based_answer(question, analysis, tool_outputs)
-        answer_path = "rule_based_fallback"
+        if not reasoning_enabled:
+            answer_path = "rule_based_fallback (reasoning_disabled)"
+        elif analysis.get("is_advice") or analysis.get("is_health_advice"):
+            answer_path = f"rule_based_playbook_fallback ({llm_error or 'llm_failed'})"
+        else:
+            answer_path = f"rule_based_fallback ({llm_error or 'llm_failed'})"
 
     # 6. Verify if enabled
     verified = True
@@ -907,12 +1173,14 @@ def handle_pollution_chat(question: str) -> Dict[str, Any]:
         verified, issues = _verify_answer(answer, tool_outputs, question)
         if not verified:
             logger.warning("Verification failed for question '%s': %s", question[:80], issues)
-            # Retry once with failure reasons in prompt
+            # Retry once with verifier feedback in prompt
             if reasoning_enabled:
-                retry_answer = _call_llm(
+                retry_answer, retry_path, _ = _call_llm(
                     question + f"\n\n[VERIFIER FEEDBACK — fix these issues: {'; '.join(issues)}]",
+                    analysis,
                     tool_outputs,
                     fact_sheet,
+                    timeout=20.0,
                 )
                 if retry_answer:
                     verified_retry, issues_retry = _verify_answer(retry_answer, tool_outputs, question)
@@ -922,30 +1190,69 @@ def handle_pollution_chat(question: str) -> Dict[str, Any]:
                         issues = []
                         answer_path = "llm_retry"
                     else:
-                        # Fall back to safe rule-based answer
                         answer = _rule_based_answer(question, analysis, tool_outputs)
                         verified = True
                         issues = ["Fell back to rule-based answer after verification failure"]
-                        answer_path = "rule_based_fallback"
+                        answer_path = "rule_based_playbook_fallback (verifier_retry_failed)" if analysis.get("is_advice") else "rule_based_fallback (verifier_retry_failed)"
                 else:
                     answer = _rule_based_answer(question, analysis, tool_outputs)
                     verified = True
                     issues = ["Fell back to rule-based answer after LLM retry failure"]
-                    answer_path = "rule_based_fallback"
-            else:
-                # No LLM available, already on rule-based
-                pass
+                    answer_path = "rule_based_playbook_fallback (verifier_retry_failed)" if analysis.get("is_advice") else "rule_based_fallback (verifier_retry_failed)"
 
-    # 7. Audit log with answer path
-    _audit_log(question, answer, tool_outputs, verified, issues, answer_path=answer_path)
+    # 7. Audit log with answer path and metrics
+    extracted_loc = None
+    if analysis.get("unmonitored_area"):
+        extracted_loc = analysis["unmonitored_area"]["area"]
+    elif analysis.get("stations_mentioned"):
+        extracted_loc = analysis["stations_mentioned"][0]
+    elif analysis.get("unknown_station"):
+        extracted_loc = analysis["unknown_station"]
 
-    # 8. Ensure proper format
-    return {
-        "text": answer.get("text", "Air quality information is currently unavailable."),
-        "insights": answer.get("insights", [])[:5],
-        "suggestions": answer.get("suggestions", [
+    _audit_log(
+        question=question,
+        answer=answer,
+        tool_outputs=tool_outputs,
+        verified=verified,
+        issues=issues,
+        answer_path=answer_path,
+        detected_intent={k: v for k, v in analysis.items() if v},
+        extracted_location=extracted_loc,
+        llm_called=llm_called,
+        llm_latency_ms=llm_latency_ms,
+        llm_error=llm_error,
+    )
+
+    # 8. Ensure proper format (guaranteed non-empty response shape)
+    raw_text = (answer.get("text") or "").strip()
+    if not raw_text:
+        raw_text = "Air quality information is currently unavailable."
+
+    raw_insights = answer.get("insights")
+    if not isinstance(raw_insights, list) or not raw_insights:
+        city_aqi_val = tool_outputs.get("current_city", {}).get("aqi")
+        city_cat_val = tool_outputs.get("current_city", {}).get("category", "Telemetry Monitored")
+        raw_insights = [
+            f"City AQI: {city_aqi_val} ({city_cat_val})." if city_aqi_val is not None else "Active monitoring across Hyderabad network.",
+            "All readings evaluated through official CPCB computation protocols.",
+        ]
+    insights_clean = [str(x).strip() for x in raw_insights if str(x).strip()][:5]
+    if not insights_clean:
+        insights_clean = ["Current observations recorded across Hyderabad monitoring stations."]
+
+    raw_sug = answer.get("suggestions")
+    if not isinstance(raw_sug, list) or not raw_sug:
+        raw_sug = [
             "What is the current city AQI?",
             "Which station has the highest AQI?",
             "Show the 7-day forecast",
-        ])[:3],
+        ]
+    sug_clean = [str(x).strip() for x in raw_sug if str(x).strip()][:3]
+    if not sug_clean:
+        sug_clean = ["What is the current AQI?", "Show station rankings", "Show 7-day forecast"]
+
+    return {
+        "text": raw_text,
+        "insights": insights_clean,
+        "suggestions": sug_clean,
     }

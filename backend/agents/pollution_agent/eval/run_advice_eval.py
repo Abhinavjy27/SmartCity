@@ -151,11 +151,11 @@ def run_eval_mode(questions: list, mode: str) -> dict:
     }
 
     env_overrides = {}
-    if mode == "llm_verifier":
+    if mode in ("llm_on", "llm_verifier"):
         env_overrides = {"POLLUTION_VERIFY": "true", "POLLUTION_REASONING": "true"}
     elif mode == "llm_no_verifier":
         env_overrides = {"POLLUTION_VERIFY": "false", "POLLUTION_REASONING": "true"}
-    elif mode == "llm_unreachable":
+    elif mode in ("llm_forced_timeout", "llm_unreachable"):
         env_overrides = {"POLLUTION_VERIFY": "true", "POLLUTION_REASONING": "true"}
 
     with patch.dict(os.environ, env_overrides):
@@ -167,8 +167,8 @@ def run_eval_mode(questions: list, mode: str) -> dict:
 
             t0 = time.time()
             try:
-                if mode == "llm_unreachable":
-                    with patch("backend.agents.pollution_agent.grounding.handler._call_llm", return_value=None):
+                if mode in ("llm_forced_timeout", "llm_unreachable"):
+                    with patch("backend.agents.pollution_agent.grounding.handler._call_llm", return_value=(None, "rule_based_playbook_fallback (timeout)", "timeout")):
                         resp = handle_pollution_chat(q["question"])
                         path = "rule_based_fallback"
                 else:
@@ -245,18 +245,14 @@ def main():
     # Or all 60 if fast enough
     # Run Mode 3: LLM Unreachable (all 60)
     scorecards = {}
+    # Mode 2: LLM forced to time out (all 60 questions) — verified deterministic playbook advice fallback
+    scorecards["mode2_llm_forced_timeout"] = run_eval_mode(questions, "llm_forced_timeout")
 
-    # Run all 60 on Mode 3 (LLM Unreachable) first — 100% deterministic, instant
-    scorecards["mode3_llm_unreachable"] = run_eval_mode(questions, "llm_unreachable")
+    # Mode 3: POLLUTION_REASONING=false flag-off identity test (all 60 questions)
+    scorecards["mode3_pollution_reasoning_false"] = run_reasoning_flag_identity_check(questions)
 
-    # Run Mode 1: LLM + Verifier
-    scorecards["mode1_llm_verifier"] = run_eval_mode(questions[:15], "llm_verifier")
-
-    # Run Mode 2: LLM no verifier
-    scorecards["mode2_llm_no_verifier"] = run_eval_mode(questions[:15], "llm_no_verifier")
-
-    # Run Reasoning flag identity check on sample of 30
-    scorecards["flag_off_identity"] = run_reasoning_flag_identity_check(questions[:30])
+    # Mode 1: LLM on (representative live questions across categories)
+    scorecards["mode1_llm_on"] = run_eval_mode(questions[:15], "llm_on")
 
     out_file = eval_dir / "advice_eval_scorecard.json"
     with open(out_file, "w", encoding="utf-8") as f:

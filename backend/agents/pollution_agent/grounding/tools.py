@@ -221,9 +221,10 @@ def get_current(station: Optional[str] = None) -> Dict[str, Any]:
                     "dominant_pollutant": h.get("dominant_pollutant"),
                     "is_stale": current_data.get("is_stale", False),
                     "data_age_hours": current_data.get("data_age_hours"),
-                    "last_updated_label": current_data.get("last_updated_label"),
                     "data_mode": current_data.get("data_mode"),
                     "is_live": current_data.get("is_live"),
+                    "provider_name": current_data.get("provider_name"),
+                    "data_source": current_data.get("provider_name") or ("OpenAQ Live Telemetry" if current_data.get("is_live") else "TSPCB Historical Archive"),
                 }
 
         # Fallback using city data if station not individually listed
@@ -238,6 +239,10 @@ def get_current(station: Optional[str] = None) -> Dict[str, Any]:
                 "is_stale": current_data.get("is_stale", False),
                 "data_age_hours": current_data.get("data_age_hours"),
                 "last_updated_label": current_data.get("last_updated_label"),
+                "data_mode": current_data.get("data_mode"),
+                "is_live": current_data.get("is_live"),
+                "provider_name": current_data.get("provider_name"),
+                "data_source": current_data.get("provider_name") or ("OpenAQ Live Telemetry" if current_data.get("is_live") else "TSPCB Historical Archive"),
             }
 
         return {"status": "unavailable", "reason": f"Station '{station_name}' data not found in current readings"}
@@ -257,6 +262,7 @@ def get_current(station: Optional[str] = None) -> Dict[str, Any]:
         "data_mode": data.get("data_mode"),
         "is_live": data.get("is_live"),
         "provider_name": data.get("provider_name"),
+        "data_source": data.get("provider_name") or ("OpenAQ Live Telemetry" if data.get("is_live") else "TSPCB Historical Archive"),
         "station_count": data.get("station_count"),
         "active_stations": data.get("active_stations"),
         "coverage_percent": data.get("coverage_percent"),
@@ -552,3 +558,4 @@ TOOLS = {
     "get_mitigation_playbook": get_mitigation_playbook,
     "get_health_advisory": get_health_advisory,
 }
+

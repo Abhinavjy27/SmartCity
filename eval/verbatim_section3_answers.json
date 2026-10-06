@@ -1,0 +1,70 @@
+{
+  "what's the weather in Hyderabad now": {
+    "text": "Based on current multi-domain telemetry for weather, the AI simulation projects high confidence in adaptive interventions.",
+    "insights": [
+      "Corridor flow efficiency can improve by ~22% with synchronized signal timing.",
+      "Alternative routes can absorb up to 1,200 vehicles/hour.",
+      "Real-time commuter rerouting reduces bottleneck queue duration by ~35 minutes."
+    ],
+    "suggestions": [
+      "Simulate 30-min signal phase change",
+      "Check public transit backup capacity",
+      "Export operational action plan"
+    ]
+  },
+  "will it rain tomorrow": {
+    "text": "Based on current multi-domain telemetry for weather, the AI simulation projects high confidence in adaptive interventions.",
+    "insights": [
+      "Corridor flow efficiency can improve by ~22% with synchronized signal timing.",
+      "Alternative routes can absorb up to 1,200 vehicles/hour.",
+      "Real-time commuter rerouting reduces bottleneck queue duration by ~35 minutes."
+    ],
+    "suggestions": [
+      "Simulate 30-min signal phase change",
+      "Check public transit backup capacity",
+      "Export operational action plan"
+    ]
+  },
+  "why is AQI high in Nacharam": {
+    "text": "The observed AQI at Nacharam TSIIC is 75 (Satisfactory), which is equal to the city mean, not higher.",
+    "insights": [
+      "Observed AQI at Nacharam TSIIC is 75 (Satisfactory), with PM2.5 as the dominant pollutant (sub-index 75), per live reading from OpenAQ (CPCB/TSPCB Network).",
+      "Note: This reading is stale (77.7 hours old, last updated 2026-10-02 08:30 UTC).",
+      "Nacharam TSIIC's AQI of 75 is exactly equal to the city mean AQI of 75 (diff_vs_city_mean: 0), so it is not higher than the city average.",
+      "The system has no source-attribution sensors or cross-domain weather telemetry to assert real-world causes for any observed pollutant levels.",
+      "Per CPCB AQI health descriptors, Satisfactory (51-100) indicates minor breathing discomfort to sensitive people. Note: General guidance based on CPCB AQI health descriptors, not personal medical advice."
+    ],
+    "suggestions": [
+      "What is the current AQI in other Hyderabad stations?",
+      "How does Nacharam's AQI compare to its own historical average?",
+      "What are the recommended mitigation actions for Satisfactory AQI levels?"
+    ]
+  },
+  "is the weather making AQI worse": {
+    "text": "The system cannot confirm whether weather is worsening AQI because it lacks cross-domain weather telemetry and source-attribution sensors.",
+    "insights": [
+      "Current observed city AQI is 75 (Satisfactory) with PM2.5 as the dominant pollutant (44.73 \u00b5g/m\u00b3), but this reading is stale (77.7 hours old, last updated 2026-10-02 08:30 UTC).",
+      "The deployed forecasting model does not ingest boundary layer height or dynamic vertical mixing telemetry, limiting its ability to predict weather-driven peaks like winter inversions.",
+      "Because the monitoring network does not have source-apportionment telemetry or weather data integration, local emission sources and meteorological impacts must be verified on-site before deploying capital resources.",
+      "Note: General guidance based on CPCB AQI health descriptors, not personal medical advice."
+    ],
+    "suggestions": [
+      "What is the current AQI at Nacharam TSIIC?",
+      "How does the current AQI compare to the city daily average?",
+      "What are the health impacts of Satisfactory AQI?"
+    ]
+  },
+  "how to reduce traffic along Begumpet": {
+    "text": "Station 'Begumpet' is not monitored in the continuous CAAQMS network.",
+    "insights": [
+      "Location 'Begumpet' does not match any active CPCB/TSPCB monitoring station in Greater Hyderabad.",
+      "Monitored network includes 13 continuous stations: Bollaram Industrial, Central University, ECIL Kapra, ICRISAT Patancheru, IDA Pashamylaram and others.",
+      "Missing data cannot be interpolated or estimated for unmonitored locations."
+    ],
+    "suggestions": [
+      "What is the current city AQI?",
+      "Which station has the highest AQI?",
+      "Show all monitored stations"
+    ]
+  }
+}

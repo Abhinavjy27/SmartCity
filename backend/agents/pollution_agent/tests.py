@@ -420,7 +420,7 @@ class TestAPIEndpoints:
         assert data["features"] == 18
 
     def test_current_endpoint_transparency(self):
-        res = client.get("/api/pollution/current")
+        res = client.get("/api/pollution/current?force_historical=true")
         assert res.status_code == 200
         data = res.json()
         if data["status"] == "success":
@@ -441,7 +441,7 @@ class TestAPIEndpoints:
 
     def test_provider_abstraction_pluggability(self):
         from backend.agents.pollution_agent.data_provider import get_data_provider, set_data_provider, reset_data_provider, BasePollutionDataProvider
-        p = get_data_provider()
+        p = get_data_provider(force_historical=True)
         assert isinstance(p, BasePollutionDataProvider)
         assert p.data_mode == "historical"
         assert p.is_live is False
@@ -566,7 +566,7 @@ class TestVerifiedDailyAggregationSuite:
             reset_data_provider,
             get_data_provider,
         )
-        base_provider = get_data_provider()
+        base_provider = HistoricalTSPCBProvider()
 
         class TruncatedTSPCBProvider(HistoricalTSPCBProvider):
             """Real HistoricalTSPCBProvider with truncated observation history (less than 7 days)."""
@@ -621,7 +621,8 @@ class TestVerifiedDailyAggregationSuite:
 
     # J. Multi-station completeness denominator verification
     def test_multi_station_city_aggregation_denominator(self):
-        provider = get_data_provider()
+        from backend.agents.pollution_agent.data_provider import HistoricalTSPCBProvider
+        provider = HistoricalTSPCBProvider()
         city_daily = provider.get_city_daily_aggregates(n_days=7)
         if not city_daily.empty:
             for _, row in city_daily.iterrows():
@@ -645,7 +646,7 @@ class TestVerifiedDailyAggregationSuite:
             reset_data_provider,
             get_data_provider,
         )
-        base_provider = get_data_provider()
+        base_provider = HistoricalTSPCBProvider()
         target_test_date = date(2025, 12, 28)
 
         class BlankedPollutantTSPCBProvider(HistoricalTSPCBProvider):
@@ -738,7 +739,7 @@ class TestResearchGradePipelineSuite:
     # 1. Historical timestamp preservation
     def test_historical_timestamp_preservation(self):
         client = TestClient(app)
-        res = client.get("/api/pollution/current").json()
+        res = client.get("/api/pollution/current?force_historical=true").json()
         assert res["status"] == "success"
         obs_ts = res["observation_timestamp"]
         server_ts = res["server_time"]
@@ -761,30 +762,29 @@ class TestResearchGradePipelineSuite:
 
     # 3. Provider switching via set_data_provider()
     def test_provider_switching(self):
-        from .data_provider import set_data_provider, reset_data_provider, PlaceholderLivePollutionProvider
+        from .data_provider import set_data_provider, reset_data_provider, PlaceholderLivePollutionProvider, HistoricalTSPCBProvider
         client = TestClient(app)
 
-        # Baseline: default historical
-        h1 = client.get("/health").json()
-        assert h1["data_mode"] == "historical"
-        assert h1["is_live"] is False
+        try:
+            # Baseline: explicit historical
+            set_data_provider(HistoricalTSPCBProvider())
+            h1 = client.get("/health").json()
+            assert h1["data_mode"] == "historical"
+            assert h1["is_live"] is False
 
-        # Switch to live placeholder
-        set_data_provider(PlaceholderLivePollutionProvider())
-        h2 = client.get("/health").json()
-        assert h2["data_mode"] == "live"
-        assert h2["is_live"] is True
-
-        # Reset to default
-        reset_data_provider()
-        h3 = client.get("/health").json()
-        assert h3["data_mode"] == "historical"
-        assert h3["is_live"] is False
+            # Switch to live placeholder
+            set_data_provider(PlaceholderLivePollutionProvider())
+            h2 = client.get("/health").json()
+            assert h2["data_mode"] == "live"
+            assert h2["is_live"] is True
+        finally:
+            # Reset to default
+            reset_data_provider()
 
     # 4. Freshness calculation
     def test_freshness_calculation(self):
         client = TestClient(app)
-        res = client.get("/api/pollution/current").json()
+        res = client.get("/api/pollution/current?force_historical=true").json()
         assert "data_age_seconds" in res
         assert isinstance(res["data_age_seconds"], (int, float))
         # Telemetry ended in Dec 2025, so age must be > 10,000,000 seconds
@@ -1128,7 +1128,7 @@ class TestResearchGradePipelineSuite:
     # 11. Zero hardcoded production measurements
     def test_zero_hardcoded_production_measurements(self):
         from .data_provider import get_data_provider
-        p = get_data_provider()
+        p = get_data_provider(force_historical=True)
         readings = p.get_latest_readings()
         # Ensure measurements originate from DataFrame rows, not fixed constants
         assert len(readings) > 0
@@ -1140,7 +1140,7 @@ class TestResearchGradePipelineSuite:
     def test_phase25_regression_test_for_original_bug(self):
         client = TestClient(app)
 
-        curr = client.get("/api/pollution/current").json()
+        curr = client.get("/api/pollution/current?force_historical=true").json()
         assert curr["status"] == "success"
 
         # Check 1: Observation timestamp is strictly from dataset (2025-12-31), NOT current server year
@@ -1160,7 +1160,7 @@ class TestResearchGradePipelineSuite:
         assert "averaging_windows" in curr
 
         # Check 5: Reconciliation report traces divergence cleanly
-        rec = client.get("/api/pollution/reconciliation").json()
+        rec = client.get("/api/pollution/reconciliation?force_historical=true").json()
         assert rec["status"] == "success"
         assert rec["cpcb_reference_aqi"] == 50
         assert rec["our_observed_aqi"] == curr["observed_aqi"]

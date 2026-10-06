@@ -1,6 +1,6 @@
 {
-  "mode3_llm_unreachable": {
-    "mode": "llm_unreachable",
+  "mode2_llm_forced_timeout": {
+    "mode": "llm_forced_timeout",
     "total": 60,
     "passed": 60,
     "failed": 0,
@@ -67,55 +67,32 @@
       "rule_based_fallback": 60
     }
   },
-  "mode1_llm_verifier": {
-    "mode": "llm_verifier",
-    "total": 15,
-    "passed": 15,
-    "failed": 0,
-    "categories": {
-      "station_mitigation": {
-        "total": 10,
-        "passed": 10,
-        "failed": 0
-      },
-      "city_mitigation": {
-        "total": 5,
-        "passed": 5,
-        "failed": 0
-      }
-    },
-    "failures": [],
-    "paths": {
-      "llm": 15,
-      "rule_based_fallback": 0
-    }
-  },
-  "mode2_llm_no_verifier": {
-    "mode": "llm_no_verifier",
-    "total": 15,
-    "passed": 15,
-    "failed": 0,
-    "categories": {
-      "station_mitigation": {
-        "total": 10,
-        "passed": 10,
-        "failed": 0
-      },
-      "city_mitigation": {
-        "total": 5,
-        "passed": 5,
-        "failed": 0
-      }
-    },
-    "failures": [],
-    "paths": {
-      "llm": 15,
-      "rule_based_fallback": 0
-    }
-  },
-  "flag_off_identity": {
-    "total": 30,
-    "identical_to_baseline": 30,
+  "mode3_pollution_reasoning_false": {
+    "total": 60,
+    "identical_to_baseline": 60,
     "mismatches": []
+  },
+  "mode1_llm_on": {
+    "mode": "llm_on",
+    "total": 15,
+    "passed": 15,
+    "failed": 0,
+    "categories": {
+      "station_mitigation": {
+        "total": 10,
+        "passed": 10,
+        "failed": 0
+      },
+      "city_mitigation": {
+        "total": 5,
+        "passed": 5,
+        "failed": 0
+      }
+    },
+    "failures": [],
+    "paths": {
+      "llm": 15,
+      "rule_based_fallback": 0
+    }
   }
 }

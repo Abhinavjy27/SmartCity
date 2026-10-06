@@ -611,10 +611,18 @@ def get_data_provider(force_historical: bool = False) -> BasePollutionDataProvid
             _historical_provider = HistoricalTSPCBProvider()
         return _historical_provider
 
-    from .config import POLLUTION_LIVE_MODE
+    from .config import POLLUTION_LIVE_MODE, WEATHERAPI_KEY, OPENAQ_API_KEY
     if POLLUTION_LIVE_MODE:
-        from .live_provider import OpenAQLiveProvider
-        _provider = OpenAQLiveProvider()
+        if WEATHERAPI_KEY:
+            from .weatherapi_provider import WeatherAPILiveProvider
+            _provider = WeatherAPILiveProvider()
+        elif OPENAQ_API_KEY:
+            from .live_provider import OpenAQLiveProvider
+            _provider = OpenAQLiveProvider()
+        else:
+            if _historical_provider is None:
+                _historical_provider = HistoricalTSPCBProvider()
+            _provider = _historical_provider
     else:
         if _historical_provider is None:
             _historical_provider = HistoricalTSPCBProvider()

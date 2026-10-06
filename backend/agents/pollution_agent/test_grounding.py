@@ -381,4 +381,39 @@ class TestReasoningAndMitigation:
             assert any(term in full_resp for term in ["MIT-", "playbook", "sweepers", "dust", "maintenance", "Satisfactory"])
             assert any(caveat in full_resp.lower() for caveat in ["source-apportionment", "on-site", "cannot attribute"])
 
+    def test_causal_intent_routing(self):
+        for q in [
+            "why is the air quality bad in kapra",
+            "what causes high pollution in hyderabad",
+            "which pollutant is dominant in kapra and how do we lower it",
+            "how to cut pollution in ecil",
+            "what can the city do to bring down aqi in hyderabad",
+        ]:
+            analysis = _analyze_question(q)
+            assert analysis["is_advice"] is True, f"Failed for {q}"
+
+    def test_location_extraction_unmonitored_and_monitored(self):
+        # Monitored: Kapra -> ECIL Kapra
+        a_kapra = _analyze_question("how to reduce aqi in kapra")
+        assert "ECIL Kapra" in a_kapra["stations_mentioned"]
+
+        # Unmonitored area: Begumpet -> Somajiguda
+        a_beg = _analyze_question("what is the aqi in begumpet")
+        assert a_beg["unmonitored_area"] is not None
+        assert a_beg["unmonitored_area"]["area"] == "Begumpet"
+        assert a_beg["unmonitored_area"]["nearest_station"] == "Somajiguda"
+
+    def test_llm_timeout_fallback_advises(self):
+        with patch("backend.agents.pollution_agent.grounding.handler._call_llm", return_value=(None, "rule_based_playbook_fallback (timeout)", "timeout")):
+            res = handle_pollution_chat("how to reduce aqi in kapra")
+            assert "text" in res
+            assert len(res["insights"]) >= 3
+            full = res["text"] + " " + " ".join(res["insights"])
+            assert any(t in full for t in ["MIT-", "playbook", "action", "sweepers", "dust", "mitigation"])
+
+    def test_unknown_location_response_asks_for_station(self):
+        res = handle_pollution_chat("What is the AQI at Wakanda?")
+        t = res["text"].lower()
+        assert any(w in t for w in ["not monitored", "unknown", "does not match", "station"])
+
 

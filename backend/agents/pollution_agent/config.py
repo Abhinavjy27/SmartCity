@@ -43,32 +43,39 @@ CITY_NAME = os.getenv("POLLUTION_CITY", "Hyderabad")
 POLLUTION_PROXY_MODE = os.getenv("POLLUTION_PROXY_MODE", "").lower() in ("true", "1", "yes")
 POLLUTION_PROXY_URL = os.getenv("POLLUTION_PROXY_URL", "http://127.0.0.1:8002").rstrip("/")
 
-# ── OpenAQ Live Data Configuration ──
-# Try loading from .env if OPENAQ_API_KEY not already in os.environ
-if not os.getenv("OPENAQ_API_KEY"):
-    env_file = PROJECT_ROOT / ".env"
-    if env_file.exists():
-        try:
-            with open(env_file, "r", encoding="utf-8") as _f:
-                for _line in _f:
-                    _line = _line.strip()
-                    if not _line or _line.startswith("#"):
-                        continue
-                    if _line.startswith("OPENAQ_API_KEY"):
-                        _sep = "=" if "=" in _line else (":" if ":" in _line else None)
-                        if _sep:
-                            _, _val = _line.split(_sep, 1)
-                            os.environ["OPENAQ_API_KEY"] = _val.strip().strip("'\"")
-                            break
-        except Exception:
-            pass
+# ── Live Telemetry Configuration (WeatherAPI & OpenAQ) ──
+# Try loading from .env if keys not already in os.environ
+env_file = PROJECT_ROOT / ".env"
+if env_file.exists():
+    try:
+        with open(env_file, "r", encoding="utf-8") as _f:
+            for _line in _f:
+                _line = _line.strip()
+                if not _line or _line.startswith("#"):
+                    continue
+                _sep = "=" if "=" in _line else (":" if ":" in _line else None)
+                if _sep:
+                    _k, _val = _line.split(_sep, 1)
+                    _k = _k.strip()
+                    _val = _val.strip().strip("'\"")
+                    if _k == "WEATHERAPI_KEY" and not os.getenv("WEATHERAPI_KEY"):
+                        os.environ["WEATHERAPI_KEY"] = _val
+                    elif _k == "OPENAQ_API_KEY" and not os.getenv("OPENAQ_API_KEY"):
+                        os.environ["OPENAQ_API_KEY"] = _val
+    except Exception:
+        pass
 
-# API key via env var ONLY — never hardcode.
+# API keys via env var ONLY — never hardcode.
+WEATHERAPI_KEY: str = os.getenv("WEATHERAPI_KEY", "")
 OPENAQ_API_KEY: str = os.getenv("OPENAQ_API_KEY", "")
 
-# When POLLUTION_LIVE_MODE=true, the /api/pollution/current endpoint switches to
-# OpenAQLiveProvider for the OBSERVED card. Historical archive stays accessible.
-POLLUTION_LIVE_MODE: bool = os.getenv("POLLUTION_LIVE_MODE", "").lower() in ("true", "1", "yes")
+# When POLLUTION_LIVE_MODE=true (or when WEATHERAPI_KEY or OPENAQ_API_KEY is available and not explicitly disabled),
+# the /api/pollution/current endpoint switches to live telemetry provider.
+_live_mode_env = os.getenv("POLLUTION_LIVE_MODE")
+if _live_mode_env is not None and _live_mode_env.strip() != "":
+    POLLUTION_LIVE_MODE: bool = _live_mode_env.lower() in ("true", "1", "yes")
+else:
+    POLLUTION_LIVE_MODE: bool = bool(WEATHERAPI_KEY or OPENAQ_API_KEY)
 
 # Live accumulation store — dated JSON files, one per calendar day.
 # This path is relative to the pollution_agent package; created on first write.

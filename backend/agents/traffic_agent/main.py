@@ -1,115 +1,133 @@
 """
-SUPADSP Specialist Agent — Traffic Intelligence
-Handles sensor data ingestion, congestion analysis, GNN speed prediction, and signal timing recommendations.
+SUPADSP Specialist Agent — Traffic Intelligence (Eclipse SUMO Microsimulation Boundary).
+Executes reproducible synthetic traffic demand simulations on the Narayanguda road network
+and returns structured evidence metrics to the LLM Planner without Orchestrator mediation.
 """
 
-from fastapi import FastAPI, APIRouter
-from pydantic import BaseModel
-from typing import List, Dict, Any, Optional
-import datetime
+from __future__ import annotations
 
-app = FastAPI(title="SUPADSP Traffic Agent", version="2.0.0")
+import datetime
+from typing import Any, Dict, Optional
+
+from fastapi import APIRouter, FastAPI, HTTPException, Query, status
+
+from backend.agents.traffic_agent.schemas import (
+    SignalOptimizationRequest,
+    SignalOptimizationResponse,
+    TrafficAnalyzeRequest,
+    TrafficEvidenceResponse,
+)
+from backend.agents.traffic_agent.service import TrafficService, get_traffic_service
+from backend.agents.traffic_agent.sumo_runner import SumoExecutionError
+
+app = FastAPI(
+    title="SUPADSP Traffic Agent (Eclipse SUMO)",
+    version="2.0.0",
+    description="Specialist Simulation Agent running Eclipse SUMO 1.27.1 on Narayanguda, Hyderabad.",
+)
 router = APIRouter()
 
-class SignalOptimizationRequest(BaseModel):
-    intersection_id: str
-    current_cycle_sec: int = 120
-
-class TrafficAnalyzeRequest(BaseModel):
-    location: Optional[str] = "Gachibowli Flyover"
-    scenario: Optional[str] = "live_telemetry"
-    inputs: Optional[Dict[str, Any]] = None
 
 @app.get("/health")
 def health():
-    return {"agent": "Traffic Agent", "status": "ONLINE"}
-
-@router.get("/api/v1/traffic/kpis")
-def get_traffic_kpis():
-    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+    svc = get_traffic_service()
     return {
-        "source": "Live Traffic Agent API",
-        "timestamp": now_utc,
-        "active_vehicles": 2342,
-        "average_speed_kmh": 23.67,
-        "congestion_index": 68.2,
-        "active_sensors": 15,
-        "average_delay_sec": 87.64,
-        "signal_optimizations": 106,
-        "corridors": [
-            {"id": "COR_01", "name": "IT Corridor", "avg_speed": 18.4, "status": "HEAVY", "value": 88, "color": "#f43f5e"},
-            {"id": "COR_02", "name": "Old City", "avg_speed": 14.2, "status": "HEAVY", "value": 92, "color": "#f43f5e"},
-            {"id": "COR_03", "name": "Secunderabad", "avg_speed": 28.1, "status": "MODERATE", "value": 58, "color": "#f59e0b"},
-            {"id": "COR_04", "name": "Kukatpally", "avg_speed": 24.7, "status": "MODERATE", "value": 72, "color": "#f59e0b"},
-            {"id": "COR_05", "name": "LB Nagar", "avg_speed": 42.5, "status": "SMOOTH", "value": 45, "color": "#10b981"},
-            {"id": "COR_06", "name": "Miyapur", "avg_speed": 38.1, "status": "SMOOTH", "value": 38, "color": "#10b981"},
-        ],
-        "hourly_data": [
-            {"h": "00:00", "speed": 48.2, "volume": 950},
-            {"h": "01:00", "speed": 51.5, "volume": 820},
-            {"h": "02:00", "speed": 53.0, "volume": 760},
-            {"h": "03:00", "speed": 54.1, "volume": 710},
-            {"h": "04:00", "speed": 52.8, "volume": 790},
-            {"h": "05:00", "speed": 49.6, "volume": 1100},
-            {"h": "06:00", "speed": 44.2, "volume": 1650},
-            {"h": "07:00", "speed": 36.8, "volume": 2400},
-            {"h": "08:00", "speed": 24.5, "volume": 3450},
-            {"h": "09:00", "speed": 18.2, "volume": 3980},
-            {"h": "10:00", "speed": 22.4, "volume": 3620},
-            {"h": "11:00", "speed": 27.9, "volume": 3100},
-            {"h": "12:00", "speed": 29.5, "volume": 2950},
-            {"h": "13:00", "speed": 31.0, "volume": 2840},
-            {"h": "14:00", "speed": 28.7, "volume": 3020},
-            {"h": "15:00", "speed": 26.3, "volume": 3210},
-            {"h": "16:00", "speed": 23.1, "volume": 3580},
-            {"h": "17:00", "speed": 17.5, "volume": 4120},
-            {"h": "18:00", "speed": 14.8, "volume": 4350},
-            {"h": "19:00", "speed": 19.4, "volume": 3950},
-            {"h": "20:00", "speed": 25.6, "volume": 3410},
-            {"h": "21:00", "speed": 33.2, "volume": 2780},
-            {"h": "22:00", "speed": 40.5, "volume": 2100},
-            {"h": "23:00", "speed": 45.1, "volume": 1450},
-        ],
-        "sensors": [
-            {"id": "SENSOR_01", "name": "Gachibowli Flyover", "speed": 18.5, "volume": 3420, "occ": 87.2, "congestion": "HEAVY"},
-            {"id": "SENSOR_02", "name": "HITECH City Mindspace", "speed": 15.2, "volume": 3890, "occ": 91.3, "congestion": "HEAVY"},
-            {"id": "SENSOR_03", "name": "Jubilee Hills Checkpost", "speed": 22.1, "volume": 3100, "occ": 72.4, "congestion": "MODERATE"},
-            {"id": "SENSOR_04", "name": "Punjagutta Junction", "speed": 12.8, "volume": 4180, "occ": 94.1, "congestion": "HEAVY"},
-            {"id": "SENSOR_05", "name": "Begumpet Airport Flyover", "speed": 28.3, "volume": 2890, "occ": 65.8, "congestion": "MODERATE"},
-            {"id": "SENSOR_06", "name": "Secunderabad Paradise", "speed": 31.2, "volume": 2450, "occ": 58.2, "congestion": "MODERATE"},
-            {"id": "SENSOR_07", "name": "Koti Women's College", "speed": 14.6, "volume": 3050, "occ": 88.7, "congestion": "HEAVY"},
-            {"id": "SENSOR_08", "name": "Charminar Madina", "speed": 9.8, "volume": 2780, "occ": 96.2, "congestion": "HEAVY"},
-            {"id": "SENSOR_09", "name": "LB Nagar Ring Road", "speed": 42.5, "volume": 3200, "occ": 48.3, "congestion": "SMOOTH"},
-            {"id": "SENSOR_10", "name": "Kukatpally Y Junction", "speed": 24.7, "volume": 3650, "occ": 76.1, "congestion": "MODERATE"},
-            {"id": "SENSOR_11", "name": "Miyapur Metro Station", "speed": 38.1, "volume": 2700, "occ": 52.4, "congestion": "SMOOTH"},
-            {"id": "SENSOR_12", "name": "Mehdipatnam Bus Station", "speed": 16.3, "volume": 3480, "occ": 85.3, "congestion": "HEAVY"},
-            {"id": "SENSOR_13", "name": "Ameerpet Metro", "speed": 13.5, "volume": 3920, "occ": 92.8, "congestion": "HEAVY"},
-            {"id": "SENSOR_14", "name": "Banjara Hills Road No 1", "speed": 26.8, "volume": 2950, "occ": 68.9, "congestion": "MODERATE"},
-            {"id": "SENSOR_15", "name": "Toli Chowki Flyover", "speed": 33.4, "volume": 2680, "occ": 55.1, "congestion": "SMOOTH"},
-        ],
+        "agent": "Traffic Agent",
+        "status": "ONLINE",
+        "sumo_available": True,
+        "sumo_version": "1.27.1",
+        "network": "narayanguda_network.net.xml",
+        "supported_scenarios": svc.get_supported_scenarios(),
     }
 
-@router.post("/api/v1/traffic/optimize-signal")
-def optimize_signal(req: SignalOptimizationRequest):
-    return {
-        "intersection_id": req.intersection_id,
-        "original_cycle_sec": req.current_cycle_sec,
-        "recommended_cycle_sec": 135,
-        "phase_allocations": {"north_south": 60, "east_west": 45, "pedestrian": 30},
-        "predicted_queue_reduction_pct": 24.5,
-        "timestamp": datetime.datetime.utcnow().isoformat()
-    }
 
-@router.post("/api/v1/traffic/analyze")
-def analyze_traffic(req: Optional[TrafficAnalyzeRequest] = None):
-    return {
-        "status": "COMPLETED",
-        "domain": "traffic",
-        "location": req.location if req else "Gachibowli Flyover",
-        "predicted_speed_kmh": 31.0,
-        "congestion_level": "MODERATE",
-        "delay_reduction_sec": 45,
-        "confidence": 0.92
-    }
+@router.get(
+    "/api/v1/traffic/kpis",
+    summary="Get baseline traffic KPIs from Eclipse SUMO simulation",
+    response_model=TrafficEvidenceResponse,
+)
+def get_traffic_kpis(
+    location: str = Query("Narayanguda, Hyderabad", description="Target locality"),
+    scenario: str = Query("synthetic_normal", description="Synthetic demand scenario name"),
+    duration_seconds: int = Query(120, description="Simulation duration in seconds"),
+    seed: int = Query(42, description="Random seed for deterministic demand generation"),
+    purpose: Optional[str] = Query("baseline_traffic_analysis", description="Planner objective context"),
+    force_fresh: bool = Query(False, description="Bypass cache and execute simulation afresh"),
+) -> Dict[str, Any]:
+    svc = get_traffic_service()
+    try:
+        evidence = svc.run_baseline_simulation(
+            location=location,
+            scenario=scenario,
+            duration_seconds=duration_seconds,
+            seed=seed,
+            purpose=purpose or "baseline_traffic_analysis",
+            force_fresh=force_fresh,
+        )
+        return evidence.model_dump()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "INVALID_SCENARIO", "message": str(exc)},
+        )
+    except SumoExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "SUMO_SIMULATION_ERROR", "message": str(exc), "details": exc.details},
+        )
+
+
+@router.post(
+    "/api/v1/traffic/analyze",
+    summary="Analyze traffic for a scenario via Eclipse SUMO baseline simulation",
+    response_model=TrafficEvidenceResponse,
+)
+def analyze_traffic(req: Optional[TrafficAnalyzeRequest] = None) -> Dict[str, Any]:
+    svc = get_traffic_service()
+    req = req or TrafficAnalyzeRequest()
+    try:
+        evidence = svc.run_baseline_simulation(
+            location=req.location or "Narayanguda, Hyderabad",
+            scenario=req.scenario or "synthetic_normal",
+            duration_seconds=req.duration_seconds or 120,
+            seed=req.seed if req.seed is not None else 42,
+            purpose=req.purpose or "baseline_traffic_analysis",
+            force_fresh=req.force_fresh or False,
+        )
+        return evidence.model_dump()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "INVALID_SCENARIO", "message": str(exc)},
+        )
+    except SumoExecutionError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail={"error": "SUMO_SIMULATION_ERROR", "message": str(exc), "details": exc.details},
+        )
+
+
+@router.post(
+    "/api/v1/traffic/optimize-signal",
+    summary="Generate and validate signal optimization candidate parameters",
+    response_model=SignalOptimizationResponse,
+)
+def optimize_signal(req: Optional[SignalOptimizationRequest] = None) -> Dict[str, Any]:
+    svc = get_traffic_service()
+    req = req or SignalOptimizationRequest()
+    try:
+        resp = svc.validate_signal_timing(
+            intersection_id=req.intersection_id,
+            target_corridor=req.target_corridor,
+            green_adjustment=req.green_time_adjustment_sec if req.green_time_adjustment_sec is not None else 15.0,
+            cycle_sec=req.current_cycle_sec if req.current_cycle_sec is not None else 120,
+        )
+        return resp.model_dump()
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail={"error": "INVALID_SIGNAL_PARAMETERS", "message": str(exc)},
+        )
+
 
 app.include_router(router)

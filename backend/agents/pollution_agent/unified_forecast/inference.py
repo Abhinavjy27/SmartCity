@@ -358,6 +358,8 @@ class UnifiedForecaster:
                 "predicted_concentrations": d1["concentrations"],
                 "confidence": "High (Unified CPCB Spatial-Temporal Model)",
                 "methodology": "Unified Spatial-Temporal Deep Learning with CPCB Engine",
+                "forecast_input_source": "historical_archive" if not use_live else "live_accumulation",
+                "forecast_basis": "archive-based, origin 2025-12-31" if not use_live else f"live-accumulation-window, origin {origin_ts}",
             }
 
             metrics_path = Path(__file__).resolve().parent.parent / "knowledge" / "forecast_metrics.json"
@@ -374,6 +376,8 @@ class UnifiedForecaster:
                 "architecture": self.model_name,
                 "forecast_origin_date": origin_date,
                 "origin_timestamp": origin_ts,
+                "forecast_input_source": "historical_archive" if not use_live else "live_accumulation",
+                "forecast_basis": "archive-based, origin 2025-12-31" if not use_live else f"live-accumulation-window, origin {origin_ts}",
                 "forecast": extended_days,
                 "metrics": forecast_metrics,
             }
@@ -381,6 +385,8 @@ class UnifiedForecaster:
             result = {
                 "status": "success",
                 "origin_timestamp": origin_ts,
+                "forecast_input_source": "historical_archive" if not use_live else "live_accumulation",
+                "forecast_basis": "archive-based, origin 2025-12-31" if not use_live else f"live-accumulation-window, origin {origin_ts}",
                 "daily": daily_forecast,
                 "extended": extended_forecast,
             }

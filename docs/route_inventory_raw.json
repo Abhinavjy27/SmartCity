@@ -1,0 +1,498 @@
+{
+  "total": 69,
+  "duplicates": [
+    {
+      "method": "GET",
+      "path": "/health",
+      "current_name": "health",
+      "current_loc": "backend/agents/pollution_agent/main.py:531",
+      "previous_name": "health",
+      "previous_loc": "backend/supervisor/main.py:588"
+    }
+  ],
+  "routes": [
+    {
+      "method": "GET",
+      "path": "/openapi.json",
+      "name": "openapi",
+      "location": "C:\\Users\\lenovo\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\fastapi\\applications.py:1108",
+      "owner": "Supervisor"
+    },
+    {
+      "method": "GET",
+      "path": "/docs",
+      "name": "swagger_ui_html",
+      "location": "C:\\Users\\lenovo\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\fastapi\\applications.py:1123",
+      "owner": "Supervisor"
+    },
+    {
+      "method": "GET",
+      "path": "/docs/oauth2-redirect",
+      "name": "swagger_ui_redirect",
+      "location": "C:\\Users\\lenovo\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\fastapi\\applications.py:1141",
+      "owner": "Supervisor"
+    },
+    {
+      "method": "GET",
+      "path": "/redoc",
+      "name": "redoc_html",
+      "location": "C:\\Users\\lenovo\\AppData\\Local\\Python\\pythoncore-3.14-64\\Lib\\site-packages\\fastapi\\applications.py:1151",
+      "owner": "Supervisor"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "name": "health",
+      "location": "backend/supervisor/main.py:588",
+      "owner": "System"
+    },
+    {
+      "method": "POST",
+      "path": "/planning/requests",
+      "name": "create_planning_request",
+      "location": "backend/supervisor/main.py:593",
+      "owner": "Public API - Planning"
+    },
+    {
+      "method": "GET",
+      "path": "/planning/requests/{request_id}",
+      "name": "get_planning_request",
+      "location": "backend/supervisor/main.py:619",
+      "owner": "Public API - Planning"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/planner/plan",
+      "name": "planner_plan",
+      "location": "backend/supervisor/main.py:651",
+      "owner": "Internal API - Planner"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/planner/feedback",
+      "name": "planner_feedback",
+      "location": "backend/supervisor/main.py:720",
+      "owner": "Internal API - Planner"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/planner/execute",
+      "name": "planner_execute",
+      "location": "backend/supervisor/main.py:1022",
+      "owner": "Internal API - Planner"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/knowledge/search",
+      "name": "knowledge_search",
+      "location": "backend/supervisor/main.py:1611",
+      "owner": "Internal API - Knowledge"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/data-discovery/discover",
+      "name": "data_discovery",
+      "location": "backend/supervisor/main.py:1632",
+      "owner": "Internal API - Data"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/data-retrieval/retrieve",
+      "name": "data_retrieval",
+      "location": "backend/supervisor/main.py:1654",
+      "owner": "Internal API - Data"
+    },
+    {
+      "method": "POST",
+      "path": "/models/traffic/analyze",
+      "name": "traffic_model",
+      "location": "backend/supervisor/main.py:1685",
+      "owner": "Internal API - Domain Models"
+    },
+    {
+      "method": "POST",
+      "path": "/models/flood/analyze",
+      "name": "flood_model",
+      "location": "backend/supervisor/main.py:1695",
+      "owner": "Internal API - Domain Models"
+    },
+    {
+      "method": "POST",
+      "path": "/models/energy/analyze",
+      "name": "energy_model",
+      "location": "backend/supervisor/main.py:1705",
+      "owner": "Internal API - Domain Models"
+    },
+    {
+      "method": "POST",
+      "path": "/models/weather/analyze",
+      "name": "weather_model",
+      "location": "backend/supervisor/main.py:1715",
+      "owner": "Internal API - Domain Models"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/status",
+      "name": "monitoring_status",
+      "location": "backend/supervisor/main.py:1725",
+      "owner": "Public API - Monitoring"
+    },
+    {
+      "method": "GET",
+      "path": "/monitoring/events",
+      "name": "monitoring_events",
+      "location": "backend/supervisor/main.py:1745",
+      "owner": "Public API - Monitoring"
+    },
+    {
+      "method": "GET",
+      "path": "/alerts",
+      "name": "list_alerts",
+      "location": "backend/supervisor/main.py:1773",
+      "owner": "Public API - Alerts"
+    },
+    {
+      "method": "GET",
+      "path": "/alerts/{alert_id}",
+      "name": "get_alert",
+      "location": "backend/supervisor/main.py:1786",
+      "owner": "Public API - Alerts"
+    },
+    {
+      "method": "POST",
+      "path": "/alerts/{alert_id}/acknowledge",
+      "name": "acknowledge_alert",
+      "location": "backend/supervisor/main.py:1800",
+      "owner": "Public API - Alerts"
+    },
+    {
+      "method": "POST",
+      "path": "/alerts/{alert_id}/dismiss",
+      "name": "dismiss_alert",
+      "location": "backend/supervisor/main.py:1817",
+      "owner": "Public API - Alerts"
+    },
+    {
+      "method": "POST",
+      "path": "/simulations",
+      "name": "create_simulation",
+      "location": "backend/supervisor/main.py:1834",
+      "owner": "Public API - Simulations"
+    },
+    {
+      "method": "GET",
+      "path": "/simulations/{simulation_id}",
+      "name": "get_simulation",
+      "location": "backend/supervisor/main.py:1853",
+      "owner": "Public API - Simulations"
+    },
+    {
+      "method": "GET",
+      "path": "/simulations/{simulation_id}/results",
+      "name": "get_simulation_results",
+      "location": "backend/supervisor/main.py:1867",
+      "owner": "Public API - Simulations"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/verification/verify",
+      "name": "verify_recommendation",
+      "location": "backend/supervisor/main.py:1895",
+      "owner": "Internal API - Verification"
+    },
+    {
+      "method": "POST",
+      "path": "/agents/fail-safe/check",
+      "name": "fail_safe_check",
+      "location": "backend/supervisor/main.py:1911",
+      "owner": "Internal API - Fail-Safe"
+    },
+    {
+      "method": "GET",
+      "path": "/recommendations/{recommendation_id}",
+      "name": "get_recommendation",
+      "location": "backend/supervisor/main.py:1929",
+      "owner": "Public API - Recommendations"
+    },
+    {
+      "method": "POST",
+      "path": "/recommendations/{recommendation_id}/approve",
+      "name": "approve_recommendation",
+      "location": "backend/supervisor/main.py:1967",
+      "owner": "Public API - Recommendations"
+    },
+    {
+      "method": "POST",
+      "path": "/recommendations/{recommendation_id}/reject",
+      "name": "reject_recommendation",
+      "location": "backend/supervisor/main.py:1985",
+      "owner": "Public API - Recommendations"
+    },
+    {
+      "method": "POST",
+      "path": "/recommendations/{recommendation_id}/modify",
+      "name": "modify_recommendation",
+      "location": "backend/supervisor/main.py:2003",
+      "owner": "Public API - Recommendations"
+    },
+    {
+      "method": "GET",
+      "path": "/digital-twin/state",
+      "name": "digital_twin_state",
+      "location": "backend/supervisor/main.py:2021",
+      "owner": "Public API - Digital Twin"
+    },
+    {
+      "method": "GET",
+      "path": "/digital-twin/state/{location}",
+      "name": "digital_twin_location_state",
+      "location": "backend/supervisor/main.py:2042",
+      "owner": "Public API - Digital Twin"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/traffic/kpis",
+      "name": "get_traffic_kpis",
+      "location": "backend/agents/traffic_agent/main.py:44",
+      "owner": "Specialist Agent - Traffic"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/traffic/analyze",
+      "name": "analyze_traffic",
+      "location": "backend/agents/traffic_agent/main.py:80",
+      "owner": "Specialist Agent - Traffic"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/traffic/optimize-signal",
+      "name": "optimize_signal",
+      "location": "backend/agents/traffic_agent/main.py:110",
+      "owner": "Specialist Agent - Traffic"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/weather/current",
+      "name": "get_current_weather",
+      "location": "backend/agents/weather_agent/main.py:17",
+      "owner": "Specialist Agent - Weather"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/pollution/aqi-summary",
+      "name": "get_aqi_summary",
+      "location": "backend/agents/pollution_agent/main.py:383",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/pollution/current",
+      "name": "get_current_v1",
+      "location": "backend/agents/pollution_agent/main.py:421",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/pollution/analyze",
+      "name": "analyze_pollution",
+      "location": "backend/agents/pollution_agent/main.py:468",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "name": "health",
+      "location": "backend/agents/pollution_agent/main.py:531",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/current",
+      "name": "get_current",
+      "location": "backend/agents/pollution_agent/main.py:550",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/pollutants",
+      "name": "get_pollutants",
+      "location": "backend/agents/pollution_agent/main.py:654",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/trend",
+      "name": "get_trend",
+      "location": "backend/agents/pollution_agent/main.py:700",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/hotspots",
+      "name": "get_hotspots",
+      "location": "backend/agents/pollution_agent/main.py:724",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/distribution",
+      "name": "get_distribution",
+      "location": "backend/agents/pollution_agent/main.py:738",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/areas/trend",
+      "name": "get_area_trends",
+      "location": "backend/agents/pollution_agent/main.py:757",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/forecast/daily",
+      "name": "get_daily_forecast",
+      "location": "backend/agents/pollution_agent/main.py:768",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/forecast/7day",
+      "name": "get_7day_forecast",
+      "location": "backend/agents/pollution_agent/main.py:783",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/forecast/hourly",
+      "name": "get_hourly_forecast",
+      "location": "backend/agents/pollution_agent/main.py:795",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/alerts",
+      "name": "get_alerts",
+      "location": "backend/agents/pollution_agent/main.py:805",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/summary",
+      "name": "get_summary",
+      "location": "backend/agents/pollution_agent/main.py:821",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/historical/latest",
+      "name": "get_historical_latest",
+      "location": "backend/agents/pollution_agent/main.py:937",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/reconciliation",
+      "name": "get_reconciliation",
+      "location": "backend/agents/pollution_agent/main.py:947",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "POST",
+      "path": "/api/pollution/predict",
+      "name": "predict",
+      "location": "backend/agents/pollution_agent/main.py:958",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/info",
+      "name": "get_info",
+      "location": "backend/agents/pollution_agent/main.py:977",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/metrics",
+      "name": "get_metrics",
+      "location": "backend/agents/pollution_agent/main.py:1011",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/pollution/live-data-status",
+      "name": "get_live_data_status",
+      "location": "backend/agents/pollution_agent/main.py:1024",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "POST",
+      "path": "/api/pollution/chat",
+      "name": "pollution_chat",
+      "location": "backend/agents/pollution_agent/main.py:1057",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "POST",
+      "path": "/api/planning/chat",
+      "name": "pollution_chat",
+      "location": "backend/agents/pollution_agent/main.py:1057",
+      "owner": "Specialist Agent - Pollution"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/energy/grid-status",
+      "name": "get_grid_status",
+      "location": "backend/agents/energy_agent/main.py:40",
+      "owner": "Grid Telemetry"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/energy/analyze",
+      "name": "analyze_energy",
+      "location": "backend/agents/energy_agent/main.py:93",
+      "owner": "Analysis"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/energy/peak-shave",
+      "name": "peak_shave",
+      "location": "backend/agents/energy_agent/main.py:143",
+      "owner": "Optimization"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/energy/substations",
+      "name": "get_substations",
+      "location": "backend/agents/energy_agent/main.py:157",
+      "owner": "Grid Telemetry"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/energy/zones",
+      "name": "get_zones",
+      "location": "backend/agents/energy_agent/main.py:181",
+      "owner": "Grid Telemetry"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulation/status",
+      "name": "get_simulation_status",
+      "location": "backend/agents/simulation_agent/main.py:29",
+      "owner": "Specialist Agent - Simulation"
+    },
+    {
+      "method": "GET",
+      "path": "/api/v1/simulation/results",
+      "name": "get_simulation_results",
+      "location": "backend/agents/simulation_agent/main.py:44",
+      "owner": "Specialist Agent - Simulation"
+    },
+    {
+      "method": "POST",
+      "path": "/api/v1/simulation/run",
+      "name": "run_simulation",
+      "location": "backend/agents/simulation_agent/main.py:63",
+      "owner": "Specialist Agent - Simulation"
+    }
+  ]
+}
