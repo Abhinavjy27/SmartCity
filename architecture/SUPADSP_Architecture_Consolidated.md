@@ -4,7 +4,7 @@
 
 **Document ID:** SUPADSP-ARCH-V2-CONSOLIDATED  
 **Version:** 2.0.0 | **Date:** August 2026  
-**Classification:** Government Restricted — Internal Use Only  
+**Classification:** MIT License (Open Source)  
 **Prepared For:** Government of Telangana, GHMC, HMDA  
 
 ---
@@ -36,7 +36,7 @@
 
 ## 1.1 Purpose
 
-The **Smart Urban Planning & AI Decision Support Platform (SUPADSP)** is a production-grade, government-internal decision support system for municipal authorities in Hyderabad. It enables data-driven urban planning decisions across three core intelligence domains — **Traffic**, **Pollution**, and **Energy Consumption** — through predictive forecasting, multi-objective optimization, scenario simulation, and explainable AI-assisted policy recommendations.
+The **Smart Urban Planning & AI Decision Support Platform (SUPADSP)** is a production-grade, decision support system for municipal authorities in Hyderabad. It enables data-driven urban planning decisions across four core intelligence domains — **Traffic**, **Pollution**, **Weather**, and **Energy Consumption** — through predictive forecasting, multi-objective optimization, scenario simulation, and explainable AI-assisted policy recommendations.
 
 The platform is **not** a citizen-facing application, complaint management system, IoT device manager, or emergency call center. It is an **internal enterprise tool** exclusively for government decision makers.
 

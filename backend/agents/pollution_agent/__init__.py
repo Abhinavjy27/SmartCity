@@ -1,1 +1,1 @@
-# pollution_agent package
+# Pollution Intelligence Agent

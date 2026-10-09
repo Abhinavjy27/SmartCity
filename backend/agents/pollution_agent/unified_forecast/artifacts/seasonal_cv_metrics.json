@@ -1,0 +1,314 @@
+{
+  "TemporalOnlyGRU": {
+    "MAE_mean": 10.98,
+    "MAE_std": 3.5,
+    "RMSE_mean": 14.37,
+    "RMSE_std": 2.04,
+    "pct_within_2_mean": 17.4,
+    "pct_within_5_mean": 33.1,
+    "category_accuracy_mean": 65.8,
+    "category_accuracy_std": 25.6,
+    "latency_ms_mean": 0.6,
+    "per_fold": [
+      {
+        "AQI_MAE": 9.64,
+        "AQI_RMSE": 13.24,
+        "pct_within_2": 19.6,
+        "pct_within_5": 37.87,
+        "pct_within_10": 67.77,
+        "category_accuracy_pct": 64.78,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 2.81,
+        "macro_pollutant_RMSE": 4.04,
+        "latency_ms_per_sample": 0.508
+      },
+      {
+        "AQI_MAE": 15.78,
+        "AQI_RMSE": 17.24,
+        "pct_within_2": 5.65,
+        "pct_within_5": 12.96,
+        "pct_within_10": 21.1,
+        "category_accuracy_pct": 35.05,
+        "spike_mae": 19.13,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 6.26,
+        "macro_pollutant_RMSE": 7.26,
+        "latency_ms_per_sample": 0.412
+      },
+      {
+        "AQI_MAE": 7.53,
+        "AQI_RMSE": 12.64,
+        "pct_within_2": 26.89,
+        "pct_within_5": 48.4,
+        "pct_within_10": 78.82,
+        "category_accuracy_pct": 97.65,
+        "spike_mae": 44.33,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 2.96,
+        "macro_pollutant_RMSE": 4.04,
+        "latency_ms_per_sample": 1.025
+      }
+    ]
+  },
+  "SpatialTemporalGATGRU_Weighted": {
+    "MAE_mean": 11.79,
+    "MAE_std": 4.31,
+    "RMSE_mean": 15.13,
+    "RMSE_std": 2.95,
+    "pct_within_2_mean": 15.1,
+    "pct_within_5_mean": 31.8,
+    "category_accuracy_mean": 67.5,
+    "category_accuracy_std": 25.6,
+    "latency_ms_mean": 0.7,
+    "per_fold": [
+      {
+        "AQI_MAE": 9.69,
+        "AQI_RMSE": 13.39,
+        "pct_within_2": 20.76,
+        "pct_within_5": 41.03,
+        "pct_within_10": 66.11,
+        "category_accuracy_pct": 69.77,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 2.96,
+        "macro_pollutant_RMSE": 4.19,
+        "latency_ms_per_sample": 0.756
+      },
+      {
+        "AQI_MAE": 17.8,
+        "AQI_RMSE": 19.28,
+        "pct_within_2": 3.16,
+        "pct_within_5": 8.14,
+        "pct_within_10": 19.6,
+        "category_accuracy_pct": 35.05,
+        "spike_mae": 21.81,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 6.91,
+        "macro_pollutant_RMSE": 7.95,
+        "latency_ms_per_sample": 0.54
+      },
+      {
+        "AQI_MAE": 7.88,
+        "AQI_RMSE": 12.71,
+        "pct_within_2": 21.51,
+        "pct_within_5": 46.22,
+        "pct_within_10": 75.8,
+        "category_accuracy_pct": 97.65,
+        "spike_mae": 45.19,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 3.04,
+        "macro_pollutant_RMSE": 4.07,
+        "latency_ms_per_sample": 0.773
+      }
+    ]
+  },
+  "TemporalGRU_KNNCovariate": {
+    "MAE_mean": 10.79,
+    "MAE_std": 3.74,
+    "RMSE_mean": 14.09,
+    "RMSE_std": 2.46,
+    "pct_within_2_mean": 18.2,
+    "pct_within_5_mean": 35.1,
+    "category_accuracy_mean": 69.4,
+    "category_accuracy_std": 25.9,
+    "latency_ms_mean": 0.5,
+    "per_fold": [
+      {
+        "AQI_MAE": 8.82,
+        "AQI_RMSE": 12.17,
+        "pct_within_2": 22.59,
+        "pct_within_5": 42.03,
+        "pct_within_10": 69.77,
+        "category_accuracy_pct": 75.58,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 2.86,
+        "macro_pollutant_RMSE": 4.02,
+        "latency_ms_per_sample": 0.608
+      },
+      {
+        "AQI_MAE": 16.02,
+        "AQI_RMSE": 17.57,
+        "pct_within_2": 6.48,
+        "pct_within_5": 12.62,
+        "pct_within_10": 21.43,
+        "category_accuracy_pct": 35.05,
+        "spike_mae": 19.3,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 6.65,
+        "macro_pollutant_RMSE": 7.73,
+        "latency_ms_per_sample": 0.42
+      },
+      {
+        "AQI_MAE": 7.53,
+        "AQI_RMSE": 12.54,
+        "pct_within_2": 25.38,
+        "pct_within_5": 50.76,
+        "pct_within_10": 80.0,
+        "category_accuracy_pct": 97.65,
+        "spike_mae": 44.38,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 3.13,
+        "macro_pollutant_RMSE": 4.15,
+        "latency_ms_per_sample": 0.489
+      }
+    ]
+  },
+  "Chronos2_Covariates": {
+    "MAE_mean": 8.87,
+    "MAE_std": 0.23,
+    "RMSE_mean": 14.06,
+    "RMSE_std": 2.29,
+    "pct_within_2_mean": 24.3,
+    "pct_within_5_mean": 48.3,
+    "category_accuracy_mean": 79.9,
+    "category_accuracy_std": 12.8,
+    "latency_ms_mean": 58.4,
+    "per_fold": [
+      {
+        "AQI_MAE": 8.55,
+        "AQI_RMSE": 12.04,
+        "pct_within_2": 24.42,
+        "pct_within_5": 44.68,
+        "pct_within_10": 69.93,
+        "category_accuracy_pct": 77.57,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 2.61,
+        "macro_pollutant_RMSE": 3.78,
+        "latency_ms_per_sample": 58.14
+      },
+      {
+        "AQI_MAE": 9.08,
+        "AQI_RMSE": 12.87,
+        "pct_within_2": 25.42,
+        "pct_within_5": 50.17,
+        "pct_within_10": 67.77,
+        "category_accuracy_pct": 65.61,
+        "spike_mae": 6.35,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 4.36,
+        "macro_pollutant_RMSE": 5.8,
+        "latency_ms_per_sample": 58.14
+      },
+      {
+        "AQI_MAE": 8.97,
+        "AQI_RMSE": 17.26,
+        "pct_within_2": 23.03,
+        "pct_within_5": 50.08,
+        "pct_within_10": 75.29,
+        "category_accuracy_pct": 96.64,
+        "spike_mae": 44.57,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 3.03,
+        "macro_pollutant_RMSE": 4.38,
+        "latency_ms_per_sample": 58.824
+      }
+    ]
+  },
+  "Persistence_Baseline": {
+    "MAE_mean": 9.74,
+    "MAE_std": 0.3,
+    "RMSE_mean": 15.08,
+    "RMSE_std": 1.51,
+    "pct_within_2_mean": 25.2,
+    "pct_within_5_mean": 46.9,
+    "category_accuracy_mean": 80.7,
+    "category_accuracy_std": 11.5,
+    "latency_ms_mean": 0.0,
+    "per_fold": [
+      {
+        "AQI_MAE": 9.45,
+        "AQI_RMSE": 13.55,
+        "pct_within_2": 23.59,
+        "pct_within_5": 44.85,
+        "pct_within_10": 67.94,
+        "category_accuracy_pct": 79.57,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 2.78,
+        "macro_pollutant_RMSE": 4.15,
+        "latency_ms_per_sample": 0.003
+      },
+      {
+        "AQI_MAE": 10.15,
+        "AQI_RMSE": 14.55,
+        "pct_within_2": 26.41,
+        "pct_within_5": 46.18,
+        "pct_within_10": 63.62,
+        "category_accuracy_pct": 67.11,
+        "spike_mae": 7.31,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 4.89,
+        "macro_pollutant_RMSE": 6.64,
+        "latency_ms_per_sample": 0.002
+      },
+      {
+        "AQI_MAE": 9.61,
+        "AQI_RMSE": 17.13,
+        "pct_within_2": 25.71,
+        "pct_within_5": 49.75,
+        "pct_within_10": 72.44,
+        "category_accuracy_pct": 95.29,
+        "spike_mae": 43.38,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 3.39,
+        "macro_pollutant_RMSE": 4.86,
+        "latency_ms_per_sample": 0.001
+      }
+    ]
+  },
+  "SeasonalNaive_Baseline": {
+    "MAE_mean": 12.07,
+    "MAE_std": 1.01,
+    "RMSE_mean": 17.34,
+    "RMSE_std": 1.18,
+    "pct_within_2_mean": 17.9,
+    "pct_within_5_mean": 38.4,
+    "category_accuracy_mean": 73.5,
+    "category_accuracy_std": 16.7,
+    "latency_ms_mean": 0.0,
+    "per_fold": [
+      {
+        "AQI_MAE": 11.71,
+        "AQI_RMSE": 15.68,
+        "pct_within_2": 15.95,
+        "pct_within_5": 33.72,
+        "pct_within_10": 56.31,
+        "category_accuracy_pct": 73.59,
+        "spike_mae": null,
+        "spike_count": 0,
+        "macro_pollutant_MAE": 3.34,
+        "macro_pollutant_RMSE": 4.76,
+        "latency_ms_per_sample": 0.004
+      },
+      {
+        "AQI_MAE": 13.45,
+        "AQI_RMSE": 18.24,
+        "pct_within_2": 18.11,
+        "pct_within_5": 38.54,
+        "pct_within_10": 51.0,
+        "category_accuracy_pct": 52.99,
+        "spike_mae": 9.99,
+        "spike_count": 405,
+        "macro_pollutant_MAE": 6.29,
+        "macro_pollutant_RMSE": 8.24,
+        "latency_ms_per_sample": 0.003
+      },
+      {
+        "AQI_MAE": 11.05,
+        "AQI_RMSE": 18.1,
+        "pct_within_2": 19.66,
+        "pct_within_5": 43.03,
+        "pct_within_10": 62.52,
+        "category_accuracy_pct": 93.78,
+        "spike_mae": 45.0,
+        "spike_count": 21,
+        "macro_pollutant_MAE": 4.02,
+        "macro_pollutant_RMSE": 5.51,
+        "latency_ms_per_sample": 0.004
+      }
+    ]
+  }
+}

@@ -1,0 +1,313 @@
+{
+  "_meta": {
+    "title": "SUPADSP Hyderabad Air Quality Mitigation & Intervention Playbook",
+    "status": "REVIEW BEFORE RELEASE",
+    "version": "1.0.0",
+    "jurisdiction": "Greater Hyderabad Municipal Corporation (GHMC) / TSPCB",
+    "statutory_framework": "National Clean Air Programme (NCAP) / CPCB Comprehensive Action Plan (CAP) / Graded Response Action Plan (GRAP) guidelines",
+    "disclaimer": "General guidance based on standard CPCB/NCAP protocols. Interventions must be verified through local site inspection and source apportionment surveys before capital expenditure."
+  },
+  "health_advisories": {
+    "Good": {
+      "aqi_range": "0-50",
+      "general_public": "Air quality is good. Enjoy outdoor activities normally.",
+      "sensitive_groups": "No special precautions needed.",
+      "mask_guidance": "Mask not required for ambient air quality.",
+      "outdoor_exercise": "Ideal conditions for outdoor exercise, jogging, and sports.",
+      "cpcb_descriptor": "Minimal health impact."
+    },
+    "Satisfactory": {
+      "aqi_range": "51-100",
+      "general_public": "Air quality is acceptable. Outdoor activities are safe for the general population.",
+      "sensitive_groups": "Individuals with severe respiratory sensitivities should monitor for mild breathing discomfort.",
+      "mask_guidance": "Not necessary for healthy individuals; optional for highly asthmatic or sensitive individuals during heavy exertion.",
+      "outdoor_exercise": "Safe for jogging, cycling, and outdoor recreation.",
+      "cpcb_descriptor": "Minor breathing discomfort to sensitive people."
+    },
+    "Moderate": {
+      "aqi_range": "101-200",
+      "general_public": "Air quality is moderate. Most people can engage in outdoor activities, but prolonged exertion may cause throat irritation.",
+      "sensitive_groups": "People with lung disease, asthma, heart conditions, children, and elderly should limit prolonged heavy outdoor exertion.",
+      "mask_guidance": "N95/pollution masks recommended for sensitive groups and traffic-exposed commuters.",
+      "outdoor_exercise": "Reduce intensity of vigorous outdoor workouts; shift intense cardio to early morning or indoor spaces.",
+      "cpcb_descriptor": "Breathing discomfort to people with lungs, asthma, and heart diseases."
+    },
+    "Poor": {
+      "aqi_range": "201-300",
+      "general_public": "Air quality is poor. Prolonged outdoor exposure can cause breathing discomfort, eye irritation, and fatigue.",
+      "sensitive_groups": "People with respiratory or cardiac ailments, elderly, and children should avoid prolonged outdoor exertion.",
+      "mask_guidance": "N95/FFP2 masks strongly advised for anyone spending extended time outdoors or in traffic corridors.",
+      "outdoor_exercise": "Avoid outdoor running, jogging, or strenuous exercise during peak traffic hours; exercise indoors.",
+      "cpcb_descriptor": "Breathing discomfort to most people on prolonged exposure."
+    },
+    "Very Poor": {
+      "aqi_range": "301-400",
+      "general_public": "Air quality is very poor. Significant respiratory irritation can occur even in healthy individuals on prolonged exposure.",
+      "sensitive_groups": "Vulnerable groups should remain indoors and keep physical activity minimal.",
+      "mask_guidance": "Well-fitted N95 masks mandatory for any essential outdoor transit.",
+      "outdoor_exercise": "Suspend outdoor jogging, morning walks, and athletic events; use indoor air-filtered spaces.",
+      "cpcb_descriptor": "Respiratory illness on prolonged exposure."
+    },
+    "Severe": {
+      "aqi_range": "401-500",
+      "general_public": "Air quality emergency. Healthy people experience respiratory distress; severe impacts on pre-existing conditions.",
+      "sensitive_groups": "Complete restriction of outdoor exposure. Stay indoors with windows closed and air purification if available.",
+      "mask_guidance": "Strict N95/P100 mask usage for any emergency outdoor transit.",
+      "outdoor_exercise": "Strictly avoid all outdoor exercise and non-essential exposure.",
+      "cpcb_descriptor": "Affects healthy people and seriously impacts those with existing diseases."
+    }
+  },
+  "interventions": [
+    {
+      "id": "MIT-PM10-01",
+      "action": "Deploy mechanical street sweepers and intensive water misting along major arterial corridors",
+      "who": "GHMC Sanitation & Public Works Wing",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["PM10"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Suppresses coarse mechanical silt and resuspended roadway dust, which accounts for a major fraction of urban PM10.",
+      "source": "CPCB Comprehensive Action Plan (CAP) for Air Pollution in Non-Attainment Cities (2020), §4.1 Road Dust Resuspension Control",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM10-02",
+      "action": "Enforce strict dust management at construction & demolition sites: mandatory perimeter windbreak netting, continuous water sprinkling, and wheel-washing bays for egress trucks",
+      "who": "GHMC Town Planning & Enforcement Wing / Builders",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["PM10"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Prevents fugitive construction dust drift into surrounding residential and commercial zones.",
+      "source": "MoEFCC Construction and Demolition (C&D) Waste Management Rules (2016) & CPCB Dust Control Guidelines",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM10-03",
+      "action": "Pave or green unpaved road shoulders and unpaved central medians with turf or native shrubs",
+      "who": "GHMC Engineering & Urban Forestry Wing",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["PM10"],
+        "categories": ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Eliminates raw exposed topsoil adjacent to vehicle tires, permanently reducing silt resuspension by high-speed vehicular vortexes.",
+      "source": "NCAP City Clean Air Plan for Hyderabad (2019), Action Point 2.3 Paving of Unpaved Shoulders",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM10-04",
+      "action": "Enforce mandatory tarping and moisture retention for all commercial open-bed dump trucks hauling sand, gravel, soil, and debris",
+      "who": "Hyderabad Traffic Police & Transport Department",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["PM10"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Eliminates spillage and dry particulate blowout from commercial heavy transit along transit corridors.",
+      "source": "CPCB Standard Operating Procedures for Transporters of Bulk Construction Materials (2019)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM25-01",
+      "action": "Zero-tolerance patrol and night surveillance against open burning of municipal solid waste, leaf litter, and plastic scrap",
+      "who": "GHMC Sanitation Enforcement & Local Police Station Patrols",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["PM2.5", "CO"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Open waste combustion produces fine toxic particulates (PM2.5), black carbon, and carbon monoxide due to low-temperature incomplete combustion.",
+      "source": "Solid Waste Management Rules (2016), Rule 15(g) & National Green Tribunal (NGT) Principal Bench Orders on Biomass Burning",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM25-02",
+      "action": "Divert heavy commercial freight transit (BS-IV and older) to Outer Ring Road (ORR) during nighttime and morning thermal inversion windows",
+      "who": "Hyderabad Traffic Police & Cyberabad Traffic Police",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["PM2.5", "NO2"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Heavy diesel commercial vehicles emit elevated levels of primary fine carbonaceous particulates and nitrogen oxides, which trap under nocturnal inversions.",
+      "source": "CPCB Graded Response Action Plan (GRAP) Guidelines for Severe/Very Poor Air Quality Scenarios",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM25-03",
+      "action": "Accelerate public transit and municipal fleet electrification, shifting TSRTC bus routes to electric buses and promoting EV adoption in commercial delivery fleets",
+      "who": "TSRTC & Department of Transport, Telangana",
+      "time_horizon": "long_term",
+      "applies_to": {
+        "pollutants": ["PM2.5", "NO2", "CO"],
+        "categories": ["Good", "Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Substitutes combustion exhaust with zero tailpipe emissions, mitigating fine particulate matter and precursor gases across high-density commuter corridors.",
+      "source": "Telangana Electric Vehicle & Energy Storage Policy (2020-2030) & NCAP Sectoral Roadmaps",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-PM25-04",
+      "action": "Ensure 100% LPG / clean cooking gas coverage in roadside eateries, commercial dhabas, and informal settlements to displace firewood and coal chulhas",
+      "who": "Civil Supplies Department & GHMC Health Wing",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["PM2.5", "CO"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Eliminates low-level domestic and commercial biomass emissions that concentrate in urban boundary layers.",
+      "source": "NCAP Source Apportionment Studies & Pradhan Mantri Ujjwala Yojana Urban Extension Guidance",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-NO2-01",
+      "action": "Optimize traffic signal cycle lengths and coordinate green corridors to eliminate stop-and-go vehicular idling at bottleneck intersections",
+      "who": "Hyderabad Traffic Police & Integrated Command and Control Centre (ICCC)",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["NO2", "CO"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Stop-and-go acceleration cycles multiply vehicle NOx emissions compared to steady cruise flow.",
+      "source": "CPCB Guidance on Urban Traffic Management for Air Quality Improvement (2021)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-NO2-02",
+      "action": "Conduct rigorous on-road mobile Pollution Under Control (PUC) emission testing and crack down on visibly smoking diesel vehicles",
+      "who": "Transport Department & Traffic Police Enforcement Units",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["NO2", "PM2.5"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Identifies poorly tuned and malfunctioning diesel engines contributing disproportionate NOx and particulate loads.",
+      "source": "Central Motor Vehicles Rules (CMVR) 1989, Rule 115 & Supreme Court Committee on Road Safety Directives",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-NO2-03",
+      "action": "Deploy low-NOx burners and Selective Non-Catalytic Reduction (SNCR) in industrial boilers and thermal furnaces in surrounding industrial estates",
+      "who": "TSPCB Industrial Inspections Wing & Factory Managements",
+      "time_horizon": "long_term",
+      "applies_to": {
+        "pollutants": ["NO2"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Reduces thermal NOx formation at industrial stationary combustion facilities.",
+      "source": "MoEFCC Industrial Emission Standards for Boilers and Furnaces (Environment Protection Act, 1986)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-SO2-01",
+      "action": "Audit fuel compliance across industrial industrial estates (e.g., Nacharam, Bollaram, Jeedimetla), enforcing fuel transition to piped natural gas (PNG) or low-sulfur diesel",
+      "who": "TSPCB Regional Offices & Industrial Area Local Authorities (IALA)",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["SO2"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Sulfur dioxide is directly proportional to sulfur content in industrial furnace fuel oil, petcoke, or dirty coal.",
+      "source": "TSPCB Approved Fuel Policy Directives & MoEFCC Notification on Clean Fuel Transition in Industrial Clusters",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-SO2-02",
+      "action": "Inspect flue-gas desulfurization (FGD) scrubbers and caustic wet scrubbing systems in bulk drug and chemical manufacturing units",
+      "who": "TSPCB Task Force / Environmental Surveillance Squad",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["SO2"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Ensures acidic SO2 gas from chemical synthesis is scrubbed to permissible discharge thresholds before stack emission.",
+      "source": "CPCB Technical Guidelines for Flue Gas Scrubbers in Chemical and Pharmaceutical Plants (2018)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-CO-01",
+      "action": "Audit and regulate commercial diesel generator (DG) sets, ensuring acoustic enclosures, compliant stack heights, and catalytic converters",
+      "who": "TSPCB Air Compliance Wing & GHMC Building Inspectors",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["CO", "PM2.5"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Uncontrolled diesel generator operation in high-density commercial clusters generates localized carbon monoxide and fine particulate hot zones.",
+      "source": "CPCB Standards for Diesel Generator Sets (Environment Protection Rules, Part B)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-CO-02",
+      "action": "Inspect parking facilities and underground traffic tunnels for forced mechanical ventilation and real-time CO monitoring sensors",
+      "who": "GHMC Building Safety & Traffic Engineering Division",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["CO"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Prevents hazardous accumulation of carbon monoxide in enclosed subterranean spaces from vehicle cold starts.",
+      "source": "National Building Code of India (NBC 2016), Part 8 Building Services, Section 3 Ventilation",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-O3-01",
+      "action": "Install vapor recovery systems (Stage I & II VRS) at all commercial retail fuel dispensing stations across Greater Hyderabad",
+      "who": "Oil Marketing Companies (IOCL/BPCL/HPCL) & TSPCB",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["O3"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Ground-level ozone is a secondary photochemical pollutant formed by volatile organic compounds (VOCs) and NOx in sunlight; controlling gasoline vapors suppresses ozone formation.",
+      "source": "CPCB Guidelines for Installation of Vapor Recovery Systems (VRS) in Petrol Dispensing Stations",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-O3-02",
+      "action": "Curtail solvent evaporation and open spraying of volatile paints during high daytime solar radiation and thermal peak hours (11 AM to 4 PM)",
+      "who": "Automotive Workshops, Industrial Fabricators & GHMC Licensing",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["O3"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Shifting VOC-emitting painting and solvent degreasing away from peak ultraviolet radiation reduces photochemical ozone creation potential.",
+      "source": "CPCB Advisory on Photochemical Smog and Ozone Precursor Mitigation",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-NH3-01",
+      "action": "Enforce covered slurry storage, daily lime treatment, and odor/gas suppression in peri-urban dairy colonies, animal sheds, and bio-waste processing units",
+      "who": "GHMC Veterinary Wing & Animal Husbandry Department",
+      "time_horizon": "medium_term",
+      "applies_to": {
+        "pollutants": ["NH3"],
+        "categories": ["Satisfactory", "Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Ammonia volatilizes rapidly from decomposing urea and organic manure, contributing to secondary ammonium nitrate and sulfate particulate formation.",
+      "source": "CPCB Environmental Guidelines for Dairy Farms and Gaushalas (2021)",
+      "confidence_label": "general guidance, not station-specific"
+    },
+    {
+      "id": "MIT-NH3-02",
+      "action": "Inspect biological wastewater treatment facilities (STPs/ETPs) for proper aeration, covered sludge drying beds, and chemical scrubbing of off-gases",
+      "who": "HMWSSB (Hyderabad Metro Water Supply) & TSPCB ETP Cell",
+      "time_horizon": "immediate",
+      "applies_to": {
+        "pollutants": ["NH3"],
+        "categories": ["Moderate", "Poor", "Very Poor", "Severe"]
+      },
+      "evidence_note": "Improperly aerated or septic sewage treatment systems release fugitive gaseous ammonia into surrounding ambient air.",
+      "source": "CPCB Guidelines on Operation and Maintenance of Sewage Treatment Plants (STPs)",
+      "confidence_label": "general guidance, not station-specific"
+    }
+  ],
+  "monitoring_guidelines": {
+    "site_verification_mandate": "Because ambient continuous air monitoring stations (CAAQMS) record composite neighborhood air and do not possess chemical source-apportionment telemetry, all intervention deployments must be preceded by a physical on-site survey and stack/drainage inspection.",
+    "public_health_precaution": "Health descriptors are adapted from CPCB NAQI published documentation. They serve as broad public advisories and do not constitute individual medical diagnosis or clinical prescription."
+  }
+}

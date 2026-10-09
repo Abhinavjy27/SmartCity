@@ -1,0 +1,80 @@
+diff --git a/backend/agents/planner_agent/planner.py b/backend/agents/planner_agent/planner.py
+--- a/backend/agents/planner_agent/planner.py
++++ b/backend/agents/planner_agent/planner.py
+@@ -176,6 +176,14 @@
+     def __init__(self, llm_client: Optional[LLMClient] = None):
+         super().__init__()
+         self.name = "Planner Agent"
++        # Initialize pollution agent router
++        try:
++            from backend.agents.pollution_agent.router import is_pollution_question
++            from backend.agents.pollution_agent.agent import answer_pollution_question
++            self.is_pollution_question = is_pollution_question
++            self.answer_pollution_question = answer_pollution_question
++        except ImportError:
++            self.is_pollution_question = None
+         if llm_client:
+             self.llm_client = llm_client
+         else:
+@@ -357,6 +365,22 @@
+         
+         logger.info(f"Planner Agent executing plan for goal: {plan.goal}")
+ 
++        # -------------------------------------------------------------
++        # POLLUTION DOMAIN HOOK
++        # -------------------------------------------------------------
++        if self.is_pollution_question:
++            pollution_type = self.is_pollution_question(plan.goal)
++            if pollution_type in ["pollution", "mixed"]:
++                # Call the pollution agent directly
++                import asyncio
++                loop = asyncio.get_event_loop()
++                pollution_ans = loop.run_until_complete(
++                    self.answer_pollution_question(plan.goal, [], {})
++                )
++                # If purely pollution, return immediately to skip other domains
++                if pollution_type == "pollution":
++                    return PlannerEvaluationResponse(goal_achieved=True, decision="POLLUTION_ANSWER", analysis=pollution_ans.get("text"), final_recommendation=None, revised_plan=[], confidence=1.0, pollution_card=pollution_ans)
++
+         # Determine which specialists to invoke
+         domains_to_invoke = self._detect_domain(plan.goal)
+         logger.info(f"Target domains identified: {domains_to_invoke}")
+@@ -432,6 +456,10 @@
+                 analysis=analysis_text,
+                 final_recommendation=final_rec_formatted,
+                 revised_plan=[],
+                 confidence=0.95,
++                # If mixed, attach pollution_card for the frontend
++                pollution_card=pollution_ans if (self.is_pollution_question and pollution_type == "mixed") else None
+             )
+ 
+diff --git a/frontend/src/pages/Planning.jsx b/frontend/src/pages/Planning.jsx
+--- a/frontend/src/pages/Planning.jsx
++++ b/frontend/src/pages/Planning.jsx
+@@ -87,6 +87,25 @@
+       timestamp: new Date().toISOString()
+     };
+     setMessages(prev => [...prev, newUserMsg]);
++
++    // -----------------------------------------------------------------
++    // POLLUTION API INTEGRATION
++    // -----------------------------------------------------------------
++    // Attempt to call the real backend /agents/planner/plan
++    try {
++      const res = await fetch("http://localhost:8000/agents/planner/plan", {
++        method: "POST",
++        headers: { "Content-Type": "application/json" },
++        body: JSON.stringify({ goal: input })
++      });
++      const data = await res.json();
++      if (data && data.pollution_card) {
++         // Render pollution card...
++         // (Implementation left to owners, mapping data.pollution_card to state)
++         return;
++      }
++    } catch (e) {
++      console.warn("Planner API failed, falling back to mock", e);
++    }
+ 
+     // Simulate processing (Mock)
+     setTimeout(() => {

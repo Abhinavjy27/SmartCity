@@ -231,8 +231,8 @@ export const urbanProblems = [
 
 import { alertsApi, planningApi } from '../services/api'
 
-export default function ProblemSolverSection() {
-  const [selectedProbId, setSelectedProbId] = useState('PROB_01')
+export default function ProblemSolverSection({ initialProblemId = 'PROB_01' }) {
+  const [selectedProbId, setSelectedProbId] = useState(initialProblemId)
   const [appliedSuggestions, setAppliedSuggestions] = useState({})
   const [activeDomainFilter, setActiveDomainFilter] = useState('ALL')
   const [isExecuting, setIsExecuting] = useState(false)

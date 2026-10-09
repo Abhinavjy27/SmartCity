@@ -10,7 +10,9 @@ client = TestClient(app)
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
-    assert response.json() == {"agent": "Pollution Agent", "status": "ONLINE"}
+    data = response.json()
+    assert data["agent"] == "Pollution Agent"
+    assert data["status"] == "ONLINE"
 
 def test_get_aqi_summary():
     response = client.get("/api/v1/pollution/aqi-summary")

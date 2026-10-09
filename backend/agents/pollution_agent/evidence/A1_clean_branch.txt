@@ -1,0 +1,169 @@
+$ git fetch
+$ git switch -C pollution-only origin/main
+Reset branch 'pollution-only'
+A	backend/agents/pollution_agent/POLLUTION_AGENT_TECHNICAL_AUDIT.md
+A	backend/agents/pollution_agent/RESEARCH_REPORT.md
+M	backend/agents/pollution_agent/__init__.py
+A	backend/agents/pollution_agent/alerts.py
+A	backend/agents/pollution_agent/analytics.py
+A	backend/agents/pollution_agent/aqi_engine.py
+A	backend/agents/pollution_agent/config.py
+A	backend/agents/pollution_agent/data_provider.py
+A	backend/agents/pollution_agent/data_quality.py
+A	backend/agents/pollution_agent/date_utils.py
+A	backend/agents/pollution_agent/forecast_7d/__init__.py
+A	backend/agents/pollution_agent/forecast_7d/artifacts/best_model_meta.json
+A	backend/agents/pollution_agent/forecast_7d/artifacts/data_audit_report.json
+A	backend/agents/pollution_agent/forecast_7d/artifacts/experiment_results.json
+A	backend/agents/pollution_agent/forecast_7d/config.py
+A	backend/agents/pollution_agent/forecast_7d/data_audit.py
+A	backend/agents/pollution_agent/forecast_7d/dataset.py
+A	backend/agents/pollution_agent/forecast_7d/evaluate.py
+A	backend/agents/pollution_agent/forecast_7d/models.py
+A	backend/agents/pollution_agent/forecast_7d/train.py
+A	backend/agents/pollution_agent/knowledge/alert_rules.json
+A	backend/agents/pollution_agent/knowledge/cpcb_breakpoints.json
+A	backend/agents/pollution_agent/knowledge/data_quality_ranges.json
+A	backend/agents/pollution_agent/knowledge/docs/assistant_flow_notes.md
+A	backend/agents/pollution_agent/knowledge/docs/kb_mismatches.md
+A	backend/agents/pollution_agent/knowledge/docs/shared_vs_owned_files.md
+A	backend/agents/pollution_agent/knowledge/endpoints.json
+A	backend/agents/pollution_agent/knowledge/generate_jsons.py
+A	backend/agents/pollution_agent/knowledge/stations.json
+M	backend/agents/pollution_agent/main.py
+A	backend/agents/pollution_agent/model.py
+A	backend/agents/pollution_agent/reconciliation.py
+A	backend/agents/pollution_agent/spatial_aggregation.py
+A	backend/agents/pollution_agent/temporal_aggregation.py
+A	backend/agents/pollution_agent/test_forecast_7d.py
+A	backend/agents/pollution_agent/test_unified_forecast.py
+A	backend/agents/pollution_agent/tests.py
+A	backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_test_preds.npy
+A	backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f1_preds.npy
+A	backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f2_preds.npy
+A	backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f3_preds.npy
+A	backend/agents/pollution_agent/unified_forecast/artifacts/seasonal_cv_metrics.json
+A	backend/agents/pollution_agent/unified_forecast/artifacts/unified_best_model_meta.json
+A	backend/agents/pollution_agent/unified_forecast/config.py
+A	backend/agents/pollution_agent/unified_forecast/dataset.py
+A	backend/agents/pollution_agent/unified_forecast/evaluate.py
+A	backend/agents/pollution_agent/unified_forecast/inference.py
+A	backend/agents/pollution_agent/unified_forecast/models.py
+A	backend/agents/pollution_agent/unified_forecast/train.py
+A	frontend/src/hooks/usePollution.js
+M	frontend/src/pages/Pollution.jsx
+A	frontend/src/services/api/pollutionApi.js
+branch 'pollution-only' set up to track 'origin/main'.
+Your branch is up to date with 'origin/main'.
+
+$ git checkout pollution_agent_backup -- backend/agents/pollution_agent frontend/src/pages/Pollution.jsx frontend/src/hooks/usePollution.js frontend/src/services/api/pollutionApi.js
+
+$ git status --short
+A  backend/agents/pollution_agent/POLLUTION_AGENT_TECHNICAL_AUDIT.md
+A  backend/agents/pollution_agent/RESEARCH_REPORT.md
+M  backend/agents/pollution_agent/__init__.py
+A  backend/agents/pollution_agent/alerts.py
+A  backend/agents/pollution_agent/analytics.py
+A  backend/agents/pollution_agent/aqi_engine.py
+A  backend/agents/pollution_agent/config.py
+A  backend/agents/pollution_agent/data_provider.py
+A  backend/agents/pollution_agent/data_quality.py
+A  backend/agents/pollution_agent/date_utils.py
+A  backend/agents/pollution_agent/forecast_7d/__init__.py
+A  backend/agents/pollution_agent/forecast_7d/artifacts/best_model_meta.json
+A  backend/agents/pollution_agent/forecast_7d/artifacts/data_audit_report.json
+A  backend/agents/pollution_agent/forecast_7d/artifacts/experiment_results.json
+A  backend/agents/pollution_agent/forecast_7d/config.py
+A  backend/agents/pollution_agent/forecast_7d/data_audit.py
+A  backend/agents/pollution_agent/forecast_7d/dataset.py
+A  backend/agents/pollution_agent/forecast_7d/evaluate.py
+A  backend/agents/pollution_agent/forecast_7d/models.py
+A  backend/agents/pollution_agent/forecast_7d/train.py
+A  backend/agents/pollution_agent/knowledge/alert_rules.json
+A  backend/agents/pollution_agent/knowledge/cpcb_breakpoints.json
+A  backend/agents/pollution_agent/knowledge/data_quality_ranges.json
+A  backend/agents/pollution_agent/knowledge/docs/assistant_flow_notes.md
+A  backend/agents/pollution_agent/knowledge/docs/kb_mismatches.md
+A  backend/agents/pollution_agent/knowledge/docs/shared_vs_owned_files.md
+A  backend/agents/pollution_agent/knowledge/endpoints.json
+A  backend/agents/pollution_agent/knowledge/generate_jsons.py
+A  backend/agents/pollution_agent/knowledge/stations.json
+M  backend/agents/pollution_agent/main.py
+A  backend/agents/pollution_agent/model.py
+A  backend/agents/pollution_agent/reconciliation.py
+A  backend/agents/pollution_agent/spatial_aggregation.py
+A  backend/agents/pollution_agent/temporal_aggregation.py
+A  backend/agents/pollution_agent/test_forecast_7d.py
+A  backend/agents/pollution_agent/test_unified_forecast.py
+A  backend/agents/pollution_agent/tests.py
+A  backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_test_preds.npy
+A  backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f1_preds.npy
+A  backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f2_preds.npy
+A  backend/agents/pollution_agent/unified_forecast/artifacts/chronos2_val_f3_preds.npy
+A  backend/agents/pollution_agent/unified_forecast/artifacts/seasonal_cv_metrics.json
+A  backend/agents/pollution_agent/unified_forecast/artifacts/unified_best_model_meta.json
+A  backend/agents/pollution_agent/unified_forecast/config.py
+A  backend/agents/pollution_agent/unified_forecast/dataset.py
+A  backend/agents/pollution_agent/unified_forecast/evaluate.py
+A  backend/agents/pollution_agent/unified_forecast/inference.py
+A  backend/agents/pollution_agent/unified_forecast/models.py
+A  backend/agents/pollution_agent/unified_forecast/train.py
+A  frontend/src/hooks/usePollution.js
+M  frontend/src/pages/Pollution.jsx
+A  frontend/src/services/api/pollutionApi.js
+?? backend/agents/pollution_agent/shared_hooks.patch
+
+$ git diff --cached --stat origin/main
+ .../POLLUTION_AGENT_TECHNICAL_AUDIT.md             | 1298 ++++++
+ backend/agents/pollution_agent/RESEARCH_REPORT.md  |  417 ++
+ backend/agents/pollution_agent/__init__.py         |    2 +-
+ backend/agents/pollution_agent/alerts.py           |  173 +
+ backend/agents/pollution_agent/analytics.py        |  175 +
+ backend/agents/pollution_agent/aqi_engine.py       |  199 +
+ backend/agents/pollution_agent/config.py           |   37 +
+ backend/agents/pollution_agent/data_provider.py    |  616 +++
+ backend/agents/pollution_agent/data_quality.py     |  268 ++
+ backend/agents/pollution_agent/date_utils.py       |   93 +
+ .../agents/pollution_agent/forecast_7d/__init__.py |    6 +
+ .../forecast_7d/artifacts/best_model_meta.json     |  461 ++
+ .../forecast_7d/artifacts/data_audit_report.json   |  662 +++
+ .../forecast_7d/artifacts/experiment_results.json  | 4873 ++++++++++++++++++++
+ .../agents/pollution_agent/forecast_7d/config.py   |   60 +
+ .../pollution_agent/forecast_7d/data_audit.py      |  236 +
+ .../agents/pollution_agent/forecast_7d/dataset.py  |  329 ++
+ .../agents/pollution_agent/forecast_7d/evaluate.py |  333 ++
+ .../agents/pollution_agent/forecast_7d/models.py   |  334 ++
+ .../agents/pollution_agent/forecast_7d/train.py    |  512 ++
+ .../pollution_agent/knowledge/alert_rules.json     |    8 +
+ .../knowledge/cpcb_breakpoints.json                |  268 ++
+ .../knowledge/data_quality_ranges.json             |   50 +
+ .../knowledge/docs/assistant_flow_notes.md         |   10 +
+ .../knowledge/docs/kb_mismatches.md                |   11 +
+ .../knowledge/docs/shared_vs_owned_files.md        |   20 +
+ .../pollution_agent/knowledge/endpoints.json       |   38 +
+ .../pollution_agent/knowledge/generate_jsons.py    |   77 +
+ .../agents/pollution_agent/knowledge/stations.json |  125 +
+ backend/agents/pollution_agent/main.py             |  684 ++-
+ backend/agents/pollution_agent/model.py            |   54 +
+ backend/agents/pollution_agent/reconciliation.py   |  105 +
+ .../agents/pollution_agent/spatial_aggregation.py  |  165 +
+ .../agents/pollution_agent/temporal_aggregation.py |  230 +
+ backend/agents/pollution_agent/test_forecast_7d.py |  280 ++
+ .../pollution_agent/test_unified_forecast.py       |  126 +
+ backend/agents/pollution_agent/tests.py            |  915 ++++
+ .../artifacts/chronos2_test_preds.npy              |  Bin 0 -> 14576 bytes
+ .../artifacts/chronos2_val_f1_preds.npy            |  Bin 0 -> 14576 bytes
+ .../artifacts/chronos2_val_f2_preds.npy            |  Bin 0 -> 14576 bytes
+ .../artifacts/chronos2_val_f3_preds.npy            |  Bin 0 -> 14408 bytes
+ .../artifacts/seasonal_cv_metrics.json             |  314 ++
+ .../artifacts/unified_best_model_meta.json         |  566 +++
+ .../pollution_agent/unified_forecast/config.py     |   82 +
+ .../pollution_agent/unified_forecast/dataset.py    |  290 ++
+ .../pollution_agent/unified_forecast/evaluate.py   |  190 +
+ .../pollution_agent/unified_forecast/inference.py  |  271 ++
+ .../pollution_agent/unified_forecast/models.py     |  462 ++
+ .../pollution_agent/unified_forecast/train.py      |  736 +++
+ frontend/src/hooks/usePollution.js                 |  116 +
+ frontend/src/pages/Pollution.jsx                   | 1004 +++-
+ frontend/src/services/api/pollutionApi.js          |   41 +
+ 52 files changed, 18027 insertions(+), 295 deletions(-)

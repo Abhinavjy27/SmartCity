@@ -1,0 +1,238 @@
+{
+  "date": "2026-10-05",
+  "record_type": "aggregate",
+  "recorded_at_utc": "2026-10-05T15:46:34.649840+00:00",
+  "source": "OpenAQ (CPCB/TSPCB Network)",
+  "city_concentrations": {
+    "PM2.5": 41.1462,
+    "PM10": 50.3154,
+    "NO2": 25.5154,
+    "SO2": 13.4462,
+    "CO": 0.4432,
+    "O3": 67.6923
+  },
+  "station_count": 13,
+  "station_readings": [
+    {
+      "station_name": "Bollaram Industrial Area",
+      "lat": 17.538,
+      "lon": 78.3459,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Central University",
+      "lat": 17.4618,
+      "lon": 78.334,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Ecil Kapra",
+      "lat": 17.4719,
+      "lon": 78.5707,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Icrisat Patancheru",
+      "lat": 17.4529,
+      "lon": 78.2756,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Ida Pashamylaram",
+      "lat": 17.5335,
+      "lon": 78.2082,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Kokapet",
+      "lat": 17.4083,
+      "lon": 78.3508,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Kompally Municipal Office",
+      "lat": 17.5433,
+      "lon": 78.4889,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.409,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Nacharam_Tsiic Iala",
+      "lat": 17.4282,
+      "lon": 78.5522,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.409,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "New Malakpet",
+      "lat": 17.3645,
+      "lon": 78.4983,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 39.3,
+        "PM10": 47.7,
+        "NO2": 28.9,
+        "SO2": 14.6,
+        "CO": 0.456,
+        "O3": 70.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Ramachandrapuram",
+      "lat": 17.4449,
+      "lon": 78.2711,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Sanathnagar",
+      "lat": 17.4509,
+      "lon": 78.4483,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 41.7,
+        "PM10": 51.1,
+        "NO2": 24.5,
+        "SO2": 13.1,
+        "CO": 0.447,
+        "O3": 67.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Somajiguda",
+      "lat": 17.4235,
+      "lon": 78.465,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 39.3,
+        "PM10": 47.7,
+        "NO2": 28.9,
+        "SO2": 14.6,
+        "CO": 0.456,
+        "O3": 70.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    },
+    {
+      "station_name": "Zoo Park",
+      "lat": 17.3508,
+      "lon": 78.4527,
+      "timestamp": "2026-10-05T15:30:00+00:00",
+      "concentrations": {
+        "PM2.5": 39.3,
+        "PM10": 47.7,
+        "NO2": 28.9,
+        "SO2": 14.6,
+        "CO": 0.456,
+        "O3": 70.0,
+        "NH3": null,
+        "NO": null,
+        "NOx": null
+      }
+    }
+  ]
+}

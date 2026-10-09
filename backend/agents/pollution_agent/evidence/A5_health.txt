@@ -1,0 +1,1 @@
+{"agent":"Pollution Agent","status":"ONLINE","model_status":"ready","model_name":"TemporalGRU_KNNCovariate","city":"Hyderabad","data_mode":"historical","is_live":false,"provider_name":"TSPCB Static CSV Archive (2024-2025)","latest_observation_timestamp":"2025-12-31T23:45:00+00:00","server_time":"2026-09-19T19:09:28.579412+00:00","timestamp":"2026-09-19T19:09:28.579537+00:00"}

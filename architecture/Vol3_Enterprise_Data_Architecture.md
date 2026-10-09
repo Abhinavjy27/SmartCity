@@ -4,7 +4,7 @@
 
 **Document ID:** SUPADSP-ARCH-V2-VOL3  
 **Version:** 2.0.0  
-**Classification:** Government Restricted — Internal Use Only
+**Classification:** MIT License (Open Source)
 
 ---
 

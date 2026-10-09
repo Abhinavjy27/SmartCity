@@ -1,0 +1,482 @@
+[
+  {
+    "file": "frontend/src/App.jsx",
+    "line": 21,
+    "target": "/planning",
+    "code": "<Route path=\"/planning\" element={<Planning />} />"
+  },
+  {
+    "file": "frontend/src/components/cult-ui/CommandMenu.jsx",
+    "line": 37,
+    "target": "/planning",
+    "code": "{ label: 'AI Planning Assistant Workspace', path: '/planning', icon: Brain, category: 'Navigation' },"
+  },
+  {
+    "file": "frontend/src/components/cult-ui/CommandMenu.jsx",
+    "line": 43,
+    "target": "/planning",
+    "code": "{ label: 'View AI Domain Agent Operational Health', action: () => navigate('/planning'), icon: Shield, category: 'Actions' },"
+  },
+  {
+    "file": "frontend/src/layouts/DashboardLayout.jsx",
+    "line": 16,
+    "target": "/planning",
+    "code": "{ path: '/planning', label: 'Planning Assistant', icon: Brain },"
+  },
+  {
+    "file": "frontend/src/layouts/DashboardLayout.jsx",
+    "line": 180,
+    "target": "/planning",
+    "code": "'/planning': 'Planning Assistant',"
+  },
+  {
+    "file": "frontend/src/layouts/DashboardLayout.jsx",
+    "line": 191,
+    "target": "/planning",
+    "code": "'/planning': 'AI-powered decision support and recommended actions',"
+  },
+  {
+    "file": "frontend/src/pages/Planning.jsx",
+    "line": 292,
+    "target": "http://localhost:8000/api/planning/chat",
+    "code": "fetch('http://localhost:8000/api/planning/chat', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 48,
+    "target": "/health",
+    "code": "return await request('/health')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 48,
+    "target": "/health",
+    "code": "return await request('/health')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 56,
+    "target": "/monitoring/status",
+    "code": "return await request('/monitoring/status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 56,
+    "target": "/monitoring/status",
+    "code": "return await request('/monitoring/status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 74,
+    "target": "/monitoring/events?limit=${limit}",
+    "code": "return await request(`/monitoring/events?limit=${limit}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 74,
+    "target": "/monitoring/events?limit=${limit}",
+    "code": "return await request(`/monitoring/events?limit=${limit}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 120,
+    "target": "/planning/requests",
+    "code": "return await request('/planning/requests', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 120,
+    "target": "/planning/requests",
+    "code": "return await request('/planning/requests', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 136,
+    "target": "/planning/requests/${requestId}",
+    "code": "return await request(`/planning/requests/${requestId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 136,
+    "target": "/planning/requests/${requestId}",
+    "code": "return await request(`/planning/requests/${requestId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 163,
+    "target": "/agents/orchestrator/execute",
+    "code": "return await request('/agents/orchestrator/execute', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 163,
+    "target": "/agents/orchestrator/execute",
+    "code": "return await request('/agents/orchestrator/execute', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 247,
+    "target": "/agents/orchestrator/tasks/${taskId}",
+    "code": "return await request(`/agents/orchestrator/tasks/${taskId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 247,
+    "target": "/agents/orchestrator/tasks/${taskId}",
+    "code": "return await request(`/agents/orchestrator/tasks/${taskId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 272,
+    "target": "/agents/planner/plan",
+    "code": "return await request('/agents/planner/plan', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 272,
+    "target": "/agents/planner/plan",
+    "code": "return await request('/agents/planner/plan', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 305,
+    "target": "/models/traffic/analyze",
+    "code": "return await request('/models/traffic/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 305,
+    "target": "/models/traffic/analyze",
+    "code": "return await request('/models/traffic/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 334,
+    "target": "/models/flood/analyze",
+    "code": "return await request('/models/flood/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 334,
+    "target": "/models/flood/analyze",
+    "code": "return await request('/models/flood/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 362,
+    "target": "/models/energy/analyze",
+    "code": "return await request('/models/energy/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 362,
+    "target": "/models/energy/analyze",
+    "code": "return await request('/models/energy/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 390,
+    "target": "/models/weather/analyze",
+    "code": "return await request('/models/weather/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 390,
+    "target": "/models/weather/analyze",
+    "code": "return await request('/models/weather/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 418,
+    "target": "/alerts${query}",
+    "code": "return await request(`/alerts${query}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 418,
+    "target": "/alerts${query}",
+    "code": "return await request(`/alerts${query}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 471,
+    "target": "/alerts/${alertId}/acknowledge",
+    "code": "return await request(`/alerts/${alertId}/acknowledge`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 471,
+    "target": "/alerts/${alertId}/acknowledge",
+    "code": "return await request(`/alerts/${alertId}/acknowledge`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 487,
+    "target": "/alerts/${alertId}/dismiss",
+    "code": "return await request(`/alerts/${alertId}/dismiss`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 487,
+    "target": "/alerts/${alertId}/dismiss",
+    "code": "return await request(`/alerts/${alertId}/dismiss`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 515,
+    "target": "/simulations",
+    "code": "return await request('/simulations', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 515,
+    "target": "/simulations",
+    "code": "return await request('/simulations', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 530,
+    "target": "/simulations/${simulationId}",
+    "code": "return await request(`/simulations/${simulationId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 530,
+    "target": "/simulations/${simulationId}",
+    "code": "return await request(`/simulations/${simulationId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 544,
+    "target": "/simulations/${simulationId}/results",
+    "code": "return await request(`/simulations/${simulationId}/results`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 544,
+    "target": "/simulations/${simulationId}/results",
+    "code": "return await request(`/simulations/${simulationId}/results`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 571,
+    "target": "/recommendations/${recommendationId}",
+    "code": "return await request(`/recommendations/${recommendationId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 571,
+    "target": "/recommendations/${recommendationId}",
+    "code": "return await request(`/recommendations/${recommendationId}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 595,
+    "target": "/recommendations/${recommendationId}/approve",
+    "code": "return await request(`/recommendations/${recommendationId}/approve`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 595,
+    "target": "/recommendations/${recommendationId}/approve",
+    "code": "return await request(`/recommendations/${recommendationId}/approve`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 610,
+    "target": "/recommendations/${recommendationId}/reject",
+    "code": "return await request(`/recommendations/${recommendationId}/reject`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 610,
+    "target": "/recommendations/${recommendationId}/reject",
+    "code": "return await request(`/recommendations/${recommendationId}/reject`, {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 630,
+    "target": "/digital-twin/state",
+    "code": "return await request('/digital-twin/state')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 630,
+    "target": "/digital-twin/state",
+    "code": "return await request('/digital-twin/state')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 645,
+    "target": "/digital-twin/state/${encodeURIComponent(location)}",
+    "code": "return await request(`/digital-twin/state/${encodeURIComponent(location)}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 645,
+    "target": "/digital-twin/state/${encodeURIComponent(location)}",
+    "code": "return await request(`/digital-twin/state/${encodeURIComponent(location)}`)"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 667,
+    "target": "/agents/verification/verify",
+    "code": "return await request('/agents/verification/verify', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 667,
+    "target": "/agents/verification/verify",
+    "code": "return await request('/agents/verification/verify', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 688,
+    "target": "/agents/fail-safe/check",
+    "code": "return await request('/agents/fail-safe/check', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 688,
+    "target": "/agents/fail-safe/check",
+    "code": "return await request('/agents/fail-safe/check', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 714,
+    "target": "/api/v1/traffic/kpis",
+    "code": "return await request('/api/v1/traffic/kpis')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 714,
+    "target": "/api/v1/traffic/kpis",
+    "code": "return await request('/api/v1/traffic/kpis')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 717,
+    "target": "/api/v1/traffic/analyze",
+    "code": "return await request('/api/v1/traffic/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 717,
+    "target": "/api/v1/traffic/analyze",
+    "code": "return await request('/api/v1/traffic/analyze', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 723,
+    "target": "/api/v1/traffic/optimize-signal",
+    "code": "return await request('/api/v1/traffic/optimize-signal', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 723,
+    "target": "/api/v1/traffic/optimize-signal",
+    "code": "return await request('/api/v1/traffic/optimize-signal', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 732,
+    "target": "/api/v1/weather/current",
+    "code": "return await request('/api/v1/weather/current')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 732,
+    "target": "/api/v1/weather/current",
+    "code": "return await request('/api/v1/weather/current')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 738,
+    "target": "/api/v1/pollution/current",
+    "code": "return await request('/api/v1/pollution/current')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 738,
+    "target": "/api/v1/pollution/current",
+    "code": "return await request('/api/v1/pollution/current')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 741,
+    "target": "/api/v1/pollution/aqi-summary",
+    "code": "return await request('/api/v1/pollution/aqi-summary')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 741,
+    "target": "/api/v1/pollution/aqi-summary",
+    "code": "return await request('/api/v1/pollution/aqi-summary')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 747,
+    "target": "/api/v1/energy/grid-status",
+    "code": "return await request('/api/v1/energy/grid-status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 747,
+    "target": "/api/v1/energy/grid-status",
+    "code": "return await request('/api/v1/energy/grid-status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 753,
+    "target": "/api/v1/simulation/status",
+    "code": "return await request('/api/v1/simulation/status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 753,
+    "target": "/api/v1/simulation/status",
+    "code": "return await request('/api/v1/simulation/status')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 756,
+    "target": "/api/v1/simulation/results",
+    "code": "return await request('/api/v1/simulation/results')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 756,
+    "target": "/api/v1/simulation/results",
+    "code": "return await request('/api/v1/simulation/results')"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 759,
+    "target": "/api/v1/simulation/run",
+    "code": "return await request('/api/v1/simulation/run', {"
+  },
+  {
+    "file": "frontend/src/services/api.js",
+    "line": 759,
+    "target": "/api/v1/simulation/run",
+    "code": "return await request('/api/v1/simulation/run', {"
+  },
+  {
+    "file": "frontend/src/services/api/pollutionApi.js",
+    "line": 5,
+    "target": "/api/pollution",
+    "code": "const POLLUTION_API_BASE = '/api/pollution';"
+  },
+  {
+    "file": "frontend/src/services/api/pollutionApi.js",
+    "line": 32,
+    "target": "/alerts",
+    "code": "getAlerts: () => fetchPollution('/alerts'),"
+  },
+  {
+    "file": "frontend/src/services/map/mapDataService.js",
+    "line": 112,
+    "target": "/api/v1/gis/traffic-flows",
+    "code": "* Example: await mapDataService.loadFromApi('/api/v1/gis/traffic-flows')"
+  }
+]

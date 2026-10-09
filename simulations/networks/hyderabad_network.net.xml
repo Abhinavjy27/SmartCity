@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  SUPADSP Hyderabad Smart City - SUMO Network Definition File
+  Corridors: Gachibowli, HITECH City, Jubilee Hills, Punjagutta, Begumpet, Secunderabad, Ameerpet, LB Nagar, Kukatpally, Mehdipatnam
+-->
+
+<net version="1.20" junctionCornerDetail="5" limitTurnSpeed="5.50" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/net_file.xsd">
+
+    <location netOffset="0.00,0.00" convBoundary="0.00,0.00,10000.00,10000.00" origBoundary="17.34,78.34,17.50,78.55" projParameter="!"/>
+
+    <!-- Edge Types -->
+    <type id="highway.arterial" priority="3" numLanes="4" speed="16.67" allow="all"/>
+    <type id="highway.subarterial" priority="2" numLanes="3" speed="13.89" allow="all"/>
+    <type id="highway.collector" priority="1" numLanes="2" speed="11.11" allow="all"/>
+
+    <!-- Nodes (Intersections) -->
+    <node id="J_GACHIBOWLI" x="1000.00" y="5000.00" type="traffic_light" tl="TL_GACHIBOWLI"/>
+    <node id="J_HITECH_CITY" x="2500.00" y="6000.00" type="traffic_light" tl="TL_HITECH_CITY"/>
+    <node id="J_JUBILEE_HILLS" x="4000.00" y="5500.00" type="traffic_light" tl="TL_JUBILEE_HILLS"/>
+    <node id="J_PUNJAGUTTA" x="6000.00" y="5000.00" type="traffic_light" tl="TL_PUNJAGUTTA"/>
+    <node id="J_BEGUMPET" x="7500.00" y="6500.00" type="traffic_light" tl="TL_BEGUMPET"/>
+    <node id="J_SECUNDERABAD" x="9000.00" y="7000.00" type="traffic_light" tl="TL_SECUNDERABAD"/>
+    <node id="J_AMEERPET" x="5500.00" y="6000.00" type="traffic_light" tl="TL_AMEERPET"/>
+    <node id="J_KUKATPALLY" x="3000.00" y="8000.00" type="traffic_light" tl="TL_KUKATPALLY"/>
+    <node id="J_MEHDIPATNAM" x="4500.00" y="3500.00" type="traffic_light" tl="TL_MEHDIPATNAM"/>
+    <node id="J_LBNAGAR" x="9500.00" y="2500.00" type="traffic_light" tl="TL_LBNAGAR"/>
+
+    <!-- Outer Entry/Exit Nodes -->
+    <node id="N_WEST_ENTRY" x="0.00" y="5000.00" type="priority"/>
+    <node id="N_NORTH_ENTRY" x="3000.00" y="10000.00" type="priority"/>
+    <node id="N_EAST_ENTRY" x="10000.00" y="2500.00" type="priority"/>
+    <node id="N_SOUTH_ENTRY" x="4500.00" y="0.00" type="priority"/>
+
+    <!-- Edges (Road Corridors) -->
+    <!-- Gachibowli <-> HITECH City -->
+    <edge id="E_GACHI_HITECH" from="J_GACHIBOWLI" to="J_HITECH_CITY" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_HITECH_GACHI" from="J_HITECH_CITY" to="J_GACHIBOWLI" priority="3" numLanes="4" speed="16.67"/>
+
+    <!-- HITECH City <-> Jubilee Hills -->
+    <edge id="E_HITECH_JUBILEE" from="J_HITECH_CITY" to="J_JUBILEE_HILLS" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_JUBILEE_HITECH" from="J_JUBILEE_HILLS" to="J_HITECH_CITY" priority="3" numLanes="4" speed="16.67"/>
+
+    <!-- Jubilee Hills <-> Punjagutta -->
+    <edge id="E_JUBILEE_PUNJA" from="J_JUBILEE_HILLS" to="J_PUNJAGUTTA" priority="3" numLanes="4" speed="13.89"/>
+    <edge id="E_PUNJA_JUBILEE" from="J_PUNJAGUTTA" to="J_JUBILEE_HILLS" priority="3" numLanes="4" speed="13.89"/>
+
+    <!-- Punjagutta <-> Begumpet -->
+    <edge id="E_PUNJA_BEGUMPET" from="J_PUNJAGUTTA" to="J_BEGUMPET" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_BEGUMPET_PUNJA" from="J_BEGUMPET" to="J_PUNJAGUTTA" priority="3" numLanes="4" speed="16.67"/>
+
+    <!-- Begumpet <-> Secunderabad -->
+    <edge id="E_BEGUMPET_SEC" from="J_BEGUMPET" to="J_SECUNDERABAD" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_SEC_BEGUMPET" from="J_SECUNDERABAD" to="J_BEGUMPET" priority="3" numLanes="4" speed="16.67"/>
+
+    <!-- Kukatpally <-> Ameerpet <-> Punjagutta -->
+    <edge id="E_KUKAT_AMEERPET" from="J_KUKATPALLY" to="J_AMEERPET" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_AMEERPET_KUKAT" from="J_AMEERPET" to="J_KUKATPALLY" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_AMEERPET_PUNJA" from="J_AMEERPET" to="J_PUNJAGUTTA" priority="3" numLanes="3" speed="13.89"/>
+    <edge id="E_PUNJA_AMEERPET" from="J_PUNJAGUTTA" to="J_AMEERPET" priority="3" numLanes="3" speed="13.89"/>
+
+    <!-- Mehdipatnam <-> Jubilee Hills & LB Nagar -->
+    <edge id="E_MEHDI_JUBILEE" from="J_MEHDIPATNAM" to="J_JUBILEE_HILLS" priority="2" numLanes="3" speed="13.89"/>
+    <edge id="E_JUBILEE_MEHDI" from="J_JUBILEE_HILLS" to="J_MEHDIPATNAM" priority="2" numLanes="3" speed="13.89"/>
+    <edge id="E_PUNJA_LBNAGAR" from="J_PUNJAGUTTA" to="J_LBNAGAR" priority="3" numLanes="4" speed="16.67"/>
+    <edge id="E_LBNAGAR_PUNJA" from="J_LBNAGAR" to="J_PUNJAGUTTA" priority="3" numLanes="4" speed="16.67"/>
+
+    <!-- Traffic Light Signal Definitions -->
+    <tlLogic id="TL_GACHIBOWLI" type="static" programID="0" offset="0">
+        <phase duration="35" state="GGrrGGrr"/>
+        <phase duration="5"  state="yyrryyrr"/>
+        <phase duration="35" state="rrGGrrGG"/>
+        <phase duration="5"  state="rryyrryy"/>
+    </tlLogic>
+    <tlLogic id="TL_HITECH_CITY" type="static" programID="0" offset="0">
+        <phase duration="40" state="GGrrGGrr"/>
+        <phase duration="5"  state="yyrryyrr"/>
+        <phase duration="30" state="rrGGrrGG"/>
+        <phase duration="5"  state="rryyrryy"/>
+    </tlLogic>
+    <tlLogic id="TL_PUNJAGUTTA" type="static" programID="0" offset="0">
+        <phase duration="45" state="GGrrGGrr"/>
+        <phase duration="5"  state="yyrryyrr"/>
+        <phase duration="40" state="rrGGrrGG"/>
+        <phase duration="5"  state="rryyrryy"/>
+    </tlLogic>
+
+</net>

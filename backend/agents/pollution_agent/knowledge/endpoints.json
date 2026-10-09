@@ -1,0 +1,162 @@
+[
+  {
+    "port": 8002,
+    "path": "/api/v1/pollution/aqi-summary",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_aqi_summary"
+  },
+  {
+    "port": 8002,
+    "path": "/health",
+    "methods": [
+      "GET"
+    ],
+    "handler": "health"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/current",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_current"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/pollutants",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_pollutants"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/trend",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_trend"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/hotspots",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_hotspots"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/distribution",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_distribution"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/areas/trend",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_area_trends"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/forecast/daily",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_daily_forecast"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/forecast/7day",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_7day_forecast"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/forecast/hourly",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_hourly_forecast"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/alerts",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_alerts"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/summary",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_summary"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/historical/latest",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_historical_latest"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/reconciliation",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_reconciliation"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/predict",
+    "methods": [
+      "POST"
+    ],
+    "handler": "predict"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/info",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_info"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/metrics",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_metrics"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/live-data-status",
+    "methods": [
+      "GET"
+    ],
+    "handler": "get_live_data_status"
+  },
+  {
+    "port": 8002,
+    "path": "/api/pollution/chat",
+    "methods": [
+      "POST"
+    ],
+    "handler": "pollution_chat"
+  }
+]
