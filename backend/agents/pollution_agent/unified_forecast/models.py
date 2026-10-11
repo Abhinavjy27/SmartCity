@@ -29,7 +29,7 @@ Corrected Implementations:
 6. SeasonalNaiveForecaster: 7-day lag seasonal baseline.
 """
 import math
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
 
 import numpy as np
 import torch

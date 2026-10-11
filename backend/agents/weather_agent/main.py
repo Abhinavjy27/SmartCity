@@ -1,235 +1,175 @@
 """
 SUPADSP Specialist Agent — Weather Intelligence
-Handles ambient temperature, humidity, wind vector telemetry, and severe weather alert correlations.
-Powered by accurate live WeatherAPI.com telemetry.
+Handles ambient temperature, humidity, wind vector telemetry, severe alerts, and cross-domain correlation.
+Powered by live Open-Meteo & WeatherAPI telemetry with full offline fallback.
 """
 
-from fastapi import FastAPI, APIRouter
-from typing import Dict, Any, Optional
-import os
-import time
+from __future__ import annotations
+
 import datetime
-import logging
-import urllib.request
-import urllib.error
-import json
-from dotenv import load_dotenv
+from typing import Any, Dict, Optional
+from fastapi import APIRouter, FastAPI, Query
 
-load_dotenv()
+from backend.agents.weather_agent.alerts import compute_air_comfort, generate_weather_alerts
+from backend.agents.weather_agent.provider import get_weather_provider
+from backend.agents.weather_agent.schemas import (
+    WeatherAlertsResponse,
+    WeatherAnalyzeRequest,
+    WeatherAnalyzeResponse,
+    WeatherCurrentResponse,
+    WeatherForecastResponse,
+)
 
-logger = logging.getLogger(__name__)
-
-app = FastAPI(title="SUPADSP Weather Agent", version="2.0.0")
+app = FastAPI(
+    title="SUPADSP Weather Agent",
+    version="2.1.0",
+    description="Specialist AI Agent for Meteorological Telemetry, Severe Weather Alerts, and Atmospheric Dispersion Analysis.",
+)
 router = APIRouter()
 
-WEATHERAPI_KEY = os.getenv("WEATHERAPI_KEY", "").strip()
-CITY_QUERY = "Hyderabad"
-CACHE_TTL_SECONDS = 180.0  # 3 minutes
 
-_weather_cache: Optional[Dict[str, Any]] = None
-_cache_timestamp: float = 0.0
-
-
-def _fetch_live_weather() -> Optional[Dict[str, Any]]:
-    global _weather_cache, _cache_timestamp
-
-    now_monotonic = time.monotonic()
-    if _weather_cache and (now_monotonic - _cache_timestamp) < CACHE_TTL_SECONDS:
-        return _weather_cache
-
-    if not WEATHERAPI_KEY:
-        logger.warning("WEATHERAPI_KEY not found in environment; using baseline telemetry.")
-        return None
-
-    try:
-        url = f"https://api.weatherapi.com/v1/forecast.json?key={WEATHERAPI_KEY}&q={CITY_QUERY}&days=7&aqi=no&alerts=yes"
-        req = urllib.request.Request(url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"})
-        with urllib.request.urlopen(req, timeout=5.0) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-
-        curr = data.get("current", {})
-        forecast = data.get("forecast", {}).get("forecastday", [])
-        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-
-        # Parse 7-day forecast
-        forecast_7d = []
-        weekly_precipitation = []
-        for i, fday in enumerate(forecast):
-            date_str = fday.get("date", "")
-            day_data = fday.get("day", {})
-            try:
-                dt = datetime.date.fromisoformat(date_str)
-                day_label = "Today" if i == 0 else ("Tomorrow" if i == 1 else dt.strftime("%a"))
-            except Exception:
-                day_label = f"Day {i+1}"
-
-            rain_chance = day_data.get("daily_chance_of_rain", 0)
-            cond_text = day_data.get("condition", {}).get("text", "Clear")
-            icon_name = "Sun" if "Sun" in cond_text or "Clear" in cond_text else ("CloudRain" if "Rain" in cond_text else "Cloud")
-
-            forecast_7d.append({
-                "day": day_label,
-                "date": date_str,
-                "high": round(day_data.get("maxtemp_c", 32)),
-                "low": round(day_data.get("mintemp_c", 24)),
-                "condition": cond_text,
-                "rain": f"{rain_chance}%",
-                "icon": icon_name,
-                "avg_humidity": day_data.get("avghumidity", 60),
-                "max_wind_kmh": day_data.get("maxwind_kph", 15),
-            })
-
-            weekly_precipitation.append({
-                "day": day_label,
-                "rain": round(day_data.get("totalprecip_mm", 0.0), 1),
-            })
-
-        # Parse hourly breakdown for today
-        hourly_temp = []
-        if forecast:
-            today_hours = forecast[0].get("hour", [])
-            for h in today_hours:
-                h_time_str = h.get("time", "")
-                # Extract HH:00
-                h_short = h_time_str.split(" ")[-1] if " " in h_time_str else h_time_str
-                hourly_temp.append({
-                    "h": h_short,
-                    "temp": round(h.get("temp_c", 28.0), 1),
-                    "humidity": round(h.get("humidity", 60)),
-                    "rain_chance": h.get("chance_of_rain", 0),
-                    "wind_kmh": round(h.get("wind_kph", 10.0), 1),
-                })
-
-        temp_c = curr.get("temp_c", 30.0)
-        humidity = curr.get("humidity", 60)
-        wind_kph = curr.get("wind_kph", 12.0)
-        wind_dir = curr.get("wind_dir", "WSW")
-        precip_mm = curr.get("precip_mm", 0.0)
-        cond_text = curr.get("condition", {}).get("text", "Partly Cloudy")
-        feels_c = curr.get("feelslike_c", temp_c + 2.0)
-        dew_c = curr.get("dewpoint_c", 20.0)
-        pressure_mb = curr.get("pressure_mb", 1012.0)
-
-        # Cross-domain dynamic correlations
-        correlations = [
-            {"param": "Temperature → AQI", "correlation": "+0.72", "direction": "up", "insight": f"Current temp ({temp_c}°C) drives photochemical ozone formation"},
-            {"param": "Humidity → PM2.5", "correlation": "-0.58", "direction": "down", "insight": f"Ambient humidity ({humidity}%) influences particulate hygroscopic growth"},
-            {"param": "Wind Speed → AQI", "correlation": "-0.65", "direction": "down", "insight": f"Wind ({wind_kph} km/h {wind_dir}) disperses local industrial emissions"},
-            {"param": "Rainfall → Traffic Speed", "correlation": "-0.41", "direction": "down", "insight": f"Precipitation ({precip_mm} mm) slows arterial corridor flow by 12-18%"},
-        ]
-
-        result = {
-            "source": "Live WeatherAPI (Accurate API Telemetry)",
-            "provider": "WeatherAPI.com",
-            "is_live": True,
-            "timestamp": now_utc,
-            "city": CITY_QUERY,
-            "temperature_c": temp_c,
-            "humidity_pct": humidity,
-            "wind_speed_kmh": wind_kph,
-            "wind_direction": wind_dir,
-            "precipitation_mm": precip_mm,
-            "condition": cond_text,
-            "feels_like_c": feels_c,
-            "dew_point_c": dew_c,
-            "pressure_hpa": pressure_mb,
-            "forecast_7d": forecast_7d,
-            "hourly_temp": hourly_temp,
-            "weekly_precipitation": weekly_precipitation,
-            "correlations": correlations,
-        }
-
-        _weather_cache = result
-        _cache_timestamp = now_monotonic
-        logger.info(f"WeatherAPI: successfully synced live weather telemetry for {CITY_QUERY}")
-        return result
-
-    except Exception as e:
-        logger.warning(f"Failed to fetch live WeatherAPI telemetry: {e}")
-        return None
-
-
-def _get_baseline_fallback() -> Dict[str, Any]:
-    now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
+@app.get("/health", tags=["System"], summary="Weather agent health check")
+def health() -> Dict[str, Any]:
+    provider = get_weather_provider()
+    # Check if live data is accessible
+    sample = provider.get_weather("Hyderabad")
     return {
-        "source": "Weather Agent Baseline",
-        "provider": "WeatherAPI (Cached/Fallback)",
-        "is_live": False,
-        "timestamp": now_utc,
-        "city": "Hyderabad",
-        "temperature_c": 31.5,
-        "humidity_pct": 64,
-        "wind_speed_kmh": 12.8,
-        "wind_direction": "WSW",
-        "precipitation_mm": 0.0,
-        "condition": "Partly Cloudy",
-        "feels_like_c": 37.0,
-        "dew_point_c": 22.0,
-        "pressure_hpa": 1012,
-        "forecast_7d": [
-            {"day": "Today", "high": 34, "low": 26, "condition": "Partly Cloudy", "rain": "10%", "icon": "Sun"},
-            {"day": "Tomorrow", "high": 33, "low": 25, "condition": "Overcast", "rain": "35%", "icon": "Cloud"},
-            {"day": "Wed", "high": 31, "low": 24, "condition": "Light Rain", "rain": "65%", "icon": "CloudRain"},
-            {"day": "Thu", "high": 30, "low": 23, "condition": "Thunderstorm", "rain": "80%", "icon": "CloudLightning"},
-            {"day": "Fri", "high": 32, "low": 24, "condition": "Scattered Rain", "rain": "55%", "icon": "CloudRain"},
-            {"day": "Sat", "high": 33, "low": 25, "condition": "Cloudy", "rain": "25%", "icon": "Cloud"},
-            {"day": "Sun", "high": 35, "low": 26, "condition": "Sunny", "rain": "5%", "icon": "Sun"},
-        ],
-        "hourly_temp": [
-            {"h": "00:00", "temp": 26.2, "humidity": 74},
-            {"h": "01:00", "temp": 25.8, "humidity": 76},
-            {"h": "02:00", "temp": 25.4, "humidity": 78},
-            {"h": "03:00", "temp": 25.0, "humidity": 80},
-            {"h": "04:00", "temp": 24.8, "humidity": 82},
-            {"h": "05:00", "temp": 25.1, "humidity": 81},
-            {"h": "06:00", "temp": 26.0, "humidity": 76},
-            {"h": "07:00", "temp": 27.5, "humidity": 70},
-            {"h": "08:00", "temp": 29.2, "humidity": 64},
-            {"h": "09:00", "temp": 31.0, "humidity": 58},
-            {"h": "10:00", "temp": 32.5, "humidity": 52},
-            {"h": "11:00", "temp": 33.8, "humidity": 48},
-            {"h": "12:00", "temp": 34.5, "humidity": 45},
-            {"h": "13:00", "temp": 35.0, "humidity": 43},
-            {"h": "14:00", "temp": 34.8, "humidity": 44},
-            {"h": "15:00", "temp": 34.1, "humidity": 47},
-            {"h": "16:00", "temp": 33.0, "humidity": 52},
-            {"h": "17:00", "temp": 31.5, "humidity": 58},
-            {"h": "18:00", "temp": 30.2, "humidity": 63},
-            {"h": "19:00", "temp": 29.1, "humidity": 67},
-            {"h": "20:00", "temp": 28.3, "humidity": 70},
-            {"h": "21:00", "temp": 27.6, "humidity": 72},
-            {"h": "22:00", "temp": 27.0, "humidity": 73},
-            {"h": "23:00", "temp": 26.5, "humidity": 74},
-        ],
-        "weekly_precipitation": [
-            {"day": "Mon", "rain": 0.0},
-            {"day": "Tue", "rain": 2.5},
-            {"day": "Wed", "rain": 14.8},
-            {"day": "Thu", "rain": 22.4},
-            {"day": "Fri", "rain": 8.6},
-            {"day": "Sat", "rain": 1.2},
-            {"day": "Sun", "rain": 0.0},
-        ],
-        "correlations": [
-            {"param": "Temperature → AQI", "correlation": "+0.72", "direction": "up", "insight": "Higher temps increase ground-level ozone"},
-            {"param": "Humidity → PM2.5", "correlation": "-0.58", "direction": "down", "insight": "Moisture helps settle particulate matter"},
-            {"param": "Wind Speed → AQI", "correlation": "-0.65", "direction": "down", "insight": "Wind disperses pollutants from urban core"},
-            {"param": "Rainfall → Traffic Speed", "correlation": "-0.41", "direction": "down", "insight": "Rain slows traffic by ~15% on average"},
-        ],
+        "agent": "Weather Agent",
+        "status": "ONLINE",
+        "active_provider": sample.get("provider", "Open-Meteo"),
+        "is_live": sample.get("is_live", False),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
     }
 
 
-@app.get("/health")
-def health():
-    return {"agent": "Weather Agent", "status": "ONLINE", "provider": "WeatherAPI"}
+@router.get(
+    "/api/v1/weather/current",
+    tags=["Weather Telemetry"],
+    response_model=WeatherCurrentResponse,
+    summary="Get current real-time weather telemetry",
+)
+def get_current_weather(
+    location: Optional[str] = Query(
+        default="Hyderabad",
+        description="Location name, corridor, or locality (e.g. 'Narayanguda', 'Gachibowli', 'Begumpet', 'Hyderabad')",
+    ),
+    city: Optional[str] = Query(
+        default=None,
+        description="Optional city alias",
+    ),
+) -> Dict[str, Any]:
+    loc_query = location or city or "Hyderabad"
+    provider = get_weather_provider()
+    data = provider.get_weather(loc_query)
+    return data
 
 
-@router.get("/api/v1/weather/current")
-def get_current_weather():
-    live_data = _fetch_live_weather()
-    if live_data:
-        return live_data
-    return _get_baseline_fallback()
+@router.get(
+    "/api/v1/weather/forecast",
+    tags=["Weather Telemetry"],
+    summary="Get 7-day and hourly weather forecasts",
+)
+def get_weather_forecast(
+    location: Optional[str] = Query(default="Hyderabad", description="Location name or corridor"),
+) -> Dict[str, Any]:
+    provider = get_weather_provider()
+    data = provider.get_weather(location or "Hyderabad")
+    return {
+        "source": data.get("source"),
+        "provider": data.get("provider"),
+        "is_live": data.get("is_live"),
+        "timestamp": data.get("timestamp"),
+        "city": data.get("city"),
+        "forecast_7d": data.get("forecast_7d", []),
+        "hourly": data.get("hourly_temp", []),
+        "weekly_precipitation": data.get("weekly_precipitation", []),
+    }
+
+
+@router.get(
+    "/api/v1/weather/alerts",
+    tags=["Weather Alerts"],
+    summary="Get active weather alerts and air comfort indices",
+)
+def get_weather_alerts(
+    location: Optional[str] = Query(default="Hyderabad", description="Target location"),
+) -> Dict[str, Any]:
+    provider = get_weather_provider()
+    data = provider.get_weather(location or "Hyderabad")
+    alerts_data = generate_weather_alerts(data)
+    comfort_data = compute_air_comfort(data)
+    alerts_data.update(comfort_data)
+    return alerts_data
+
+
+@router.post(
+    "/api/v1/weather/analyze",
+    tags=["Analysis"],
+    response_model=WeatherAnalyzeResponse,
+    summary="Analyze weather impacts for planning scenario",
+)
+def analyze_weather(req: Optional[WeatherAnalyzeRequest] = None) -> Dict[str, Any]:
+    req = req or WeatherAnalyzeRequest()
+    loc = req.location or "Hyderabad"
+    provider = get_weather_provider()
+    weather_data = provider.get_weather(loc)
+
+    temp = float(weather_data.get("temperature_c", 30.0))
+    wind = float(weather_data.get("wind_speed_kmh", 10.0))
+    precip = float(weather_data.get("precipitation_mm", 0.0))
+
+    impacts = {
+        "traffic_impact": {
+            "speed_reduction_pct": 15.0 if precip > 5.0 else (8.0 if precip > 0 else 0.0),
+            "friction_coefficient": "LOW" if precip > 2.0 else "NORMAL",
+            "drainage_risk": "HIGH" if precip > 20.0 else "NOMINAL",
+        },
+        "energy_impact": {
+            "cooling_demand_factor": round(1.0 + max(0.0, (temp - 25.0) * 0.04), 2),
+            "hvac_peak_stress": "HIGH" if temp >= 38.0 else ("ELEVATED" if temp >= 32.0 else "NORMAL"),
+        },
+        "pollution_impact": {
+            "dispersion_condition": "POOR" if wind < 5.0 else ("FAVORABLE" if wind > 15.0 else "MODERATE"),
+            "ozone_formation_risk": "HIGH" if temp > 33.0 else "MODERATE",
+        },
+    }
+
+    recommendations = []
+    if precip > 10.0:
+        recommendations.append("Activate monsoon stormwater pumps in low-lying corridors (Begumpet, Narayanguda).")
+        recommendations.append("Implement traffic signal extension for wet pavement braking distances.")
+    if temp >= 35.0:
+        recommendations.append("Alert distribution substations for afternoon transformer peak cooling load.")
+    if wind < 5.0:
+        recommendations.append("Enforce temporary dust-suppression watering in industrial corridors due to low dispersion.")
+
+    if not recommendations:
+        recommendations.append("Atmospheric conditions nominal; standard operational schedules recommended.")
+
+    return {
+        "location": loc,
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "weather": weather_data,
+        "cross_domain_impacts": impacts,
+        "recommendations": recommendations,
+    }
+
+
+@router.post(
+    "/api/v1/weather/chat",
+    tags=["Weather Conversational AI"],
+    summary="Answer natural-language questions about weather in a specific area",
+)
+def weather_chat(data: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    from backend.agents.weather_agent.chat import answer_weather_question
+
+    payload = data or {}
+    question = str(payload.get("question") or payload.get("text") or payload.get("query") or "").strip()
+    location = str(payload.get("location") or "Hyderabad").strip()
+    if not question:
+        question = f"What is the weather in {location}?"
+
+    return answer_weather_question(question=question, default_location=location)
 
 
 app.include_router(router)

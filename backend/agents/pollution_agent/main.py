@@ -1144,7 +1144,12 @@ def pollution_chat(data: dict = Body(None)):
         from .grounding.domain_router import classify_domains
         primary_domain, matched_domains = classify_domains(question, domain_hint)
 
-        # Non-pollution domain queries (traffic, energy, weather, general planning) -> baseline simulation path
+        # Weather domain queries -> delegate to Weather Agent question answering engine
+        if primary_domain == "weather" or (primary_domain != "pollution" and "weather" in matched_domains):
+            from backend.agents.weather_agent.chat import answer_weather_question
+            return answer_weather_question(question, default_location="Hyderabad")
+
+        # Non-pollution domain queries (traffic, energy, general planning) -> baseline simulation path
         if primary_domain != "pollution":
             if "begumpet" in question.lower():
                 domain_label = "Begumpet Corridor"
