@@ -405,7 +405,10 @@ def _get_forecast_cached():
     from .data_provider import _provider
     if _provider is None and _FORECAST_CACHE is not None:
         c_time, c_val = _FORECAST_CACHE
-        if now_ts - c_time < 600.0:  # 10 minutes
+        from .date_utils import get_next_day_forecast_dates
+        expected_target_date = get_next_day_forecast_dates()["target_date"]
+        cached_target_date = (c_val or {}).get("daily", {}).get("forecast_date")
+        if now_ts - c_time < 600.0 and cached_target_date == expected_target_date:  # 10 minutes and same target date
             return c_val
     try:
         forecaster = UnifiedForecaster.get_instance()
@@ -1144,7 +1147,12 @@ def pollution_chat(data: dict = Body(None)):
         from .grounding.domain_router import classify_domains
         primary_domain, matched_domains = classify_domains(question, domain_hint)
 
-        # Non-pollution domain queries (traffic, energy, weather, general planning) -> baseline simulation path
+        # Weather domain queries -> delegate to Weather Agent question answering engine
+        if primary_domain == "weather" or (primary_domain != "pollution" and "weather" in matched_domains):
+            from backend.agents.weather_agent.chat import answer_weather_question
+            return answer_weather_question(question, default_location="Hyderabad")
+
+        # Non-pollution domain queries (traffic, energy, general planning) -> baseline simulation path
         if primary_domain != "pollution":
             if "begumpet" in question.lower():
                 domain_label = "Begumpet Corridor"

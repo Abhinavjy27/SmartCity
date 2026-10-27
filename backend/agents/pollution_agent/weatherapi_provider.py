@@ -332,9 +332,15 @@ class WeatherAPILiveProvider(BasePollutionDataProvider):
 
     def get_historical_trend(self, range_key: str = "24h") -> list:
         # Fallback to historical provider for multi-hour trend curves
-        from .data_provider import HistoricalTSPCBProvider
-        hist = HistoricalTSPCBProvider()
-        return hist.get_historical_trend(range_key)
+        try:
+            from .data_provider import HistoricalTSPCBProvider
+            hist = HistoricalTSPCBProvider()
+            trend = hist.get_historical_trend(range_key)
+            if trend:
+                return trend
+        except Exception as exc:
+            logger.warning("Error fetching historical trend fallback: %s", exc)
+        return []
 
     def get_city_current_concentrations(self) -> dict:
         readings = self._fetch_all_stations()

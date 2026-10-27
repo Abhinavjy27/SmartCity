@@ -93,13 +93,17 @@ class BasePollutionDataProvider(ABC):
 # Disambiguates NO vs NO2 vs NOx strictly by exact prefix lookup.
 EXACT_PREFIX_MAP = {
     "pm2.5": "PM2.5",
+    "pm2_5": "PM2.5",
     "pm10": "PM10",
     "no": "NO",
     "no2": "NO2",
+    "nitrogen_dioxide": "NO2",
     "nox": "NOx",
     "nh3": "NH3",
     "so2": "SO2",
+    "sulphur_dioxide": "SO2",
     "co": "CO",
+    "carbon_monoxide": "CO",
     "ozone": "O3",
     "o3": "O3",
     "benzene": "Benzene",
@@ -131,6 +135,8 @@ POLLUTANT_FEATURES = [
 # Station metadata — coordinates & areas for Hyderabad TSPCB stations
 # Normalized to support both canonical and filename-derived station names
 STATION_METADATA = {
+    "Hyderabad Central": {"lat": 17.3850, "lon": 78.4867, "area": "Central Hyderabad"},
+    "Hyderabad": {"lat": 17.3850, "lon": 78.4867, "area": "Central Hyderabad"},
     "Bollaram Industrial": {"lat": 17.5380, "lon": 78.3459, "area": "Bollaram"},
     "Bollaram Industrial Area": {"lat": 17.5380, "lon": 78.3459, "area": "Bollaram"},
     "Central University": {"lat": 17.4618, "lon": 78.3340, "area": "Gachibowli"},
@@ -194,9 +200,31 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
         frames = []
         for fp in csv_files:
             try:
-                df = pd.read_csv(fp, on_bad_lines="skip", low_memory=False)
+                # Detect and skip metadata header rows (e.g. Open-Meteo CSVs with coordinate metadata before column header)
+                skip_idx = 0
+                try:
+                    with open(fp, "r", encoding="utf-8", errors="ignore") as f:
+                        for idx in range(15):
+                            line = f.readline()
+                            if not line:
+                                break
+                            ll = line.lower()
+                            if ("pm10" in ll or "pm2" in ll or "us_aqi" in ll or "from date" in ll or "to date" in ll):
+                                skip_idx = idx
+                                break
+                except Exception:
+                    skip_idx = 0
+
+                if skip_idx > 0:
+                    df = pd.read_csv(fp, skiprows=skip_idx, on_bad_lines="skip", low_memory=False)
+                else:
+                    df = pd.read_csv(fp, on_bad_lines="skip", low_memory=False)
+
                 stem = Path(fp).stem
-                station = stem.replace("hyd-", "").replace("-tspcb-2024-25", "").replace("-", " ").title()
+                if stem == "hyderabad_air_quality_2020_2024":
+                    station = "Hyderabad Central"
+                else:
+                    station = stem.replace("hyd-", "").replace("-tspcb-2024-25", "").replace("-", " ").replace("_", " ").title()
                 df["station_name"] = station
                 frames.append(df)
             except Exception as e:
@@ -212,6 +240,10 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
             combined["timestamp"] = pd.to_datetime(combined["Timestamp"], errors="coerce", utc=True)
         elif "To Date" in combined.columns:
             combined["timestamp"] = pd.to_datetime(combined["To Date"], errors="coerce", utc=True)
+        elif "time" in combined.columns:
+            combined["timestamp"] = pd.to_datetime(combined["time"], errors="coerce", utc=True)
+        elif "timestamp" in combined.columns:
+            combined["timestamp"] = pd.to_datetime(combined["timestamp"], errors="coerce", utc=True)
 
         # Deterministic column resolution: exact prefix match before '('
         # Guarantees NO, NO2, and NOx are never confused.
@@ -223,6 +255,12 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
 
         combined.rename(columns=rename_map, inplace=True)
 
+        # Normalize CO unit if in µg/m³ (CPCB expects mg/m³, valid range 0-50)
+        if "CO" in combined.columns:
+            s_co = pd.to_numeric(combined["CO"], errors="coerce")
+            if s_co.dropna().median() > 50.0:
+                combined["CO"] = s_co / 1000.0
+
         # Filter invalid readings BEFORE aggregation (§4)
         # NaN, inf, non-numeric, negative values, and out-of-range values are rejected.
         for feat in POLLUTANT_FEATURES:
@@ -232,7 +270,14 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
                 # Set invalid to NaN so it never leaks into daily aggregates
                 combined[feat] = s.where((s >= lo) & (s <= hi) & np.isfinite(s), np.nan)
 
+        if "timestamp" not in combined.columns:
+            logger.warning("No timestamp column found in loaded data.")
+            return pd.DataFrame()
+
         combined.dropna(subset=["timestamp"], inplace=True)
+        if combined.empty:
+            return pd.DataFrame()
+
         combined.sort_values("timestamp", inplace=True)
 
         combined["date"] = combined["timestamp"].dt.date
@@ -345,11 +390,13 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
         rows = []
         for (station, dt), group in grouped:
             total_readings = len(group)
+            expected_count = 24 if total_readings <= 30 else 96
+            min_count = int(expected_count * 0.5)
             day_row = {
                 "station_name": station,
                 "date": dt,
                 "reading_count": total_readings,
-                "expected_count": 96,
+                "expected_count": expected_count,
                 "completeness": {},
             }
 
@@ -357,12 +404,12 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
                 if feat in group.columns:
                     valid_series = group[feat].dropna()
                     valid_count = len(valid_series)
-                    comp_ratio = valid_count / 96.0
-                    is_complete = valid_count >= MIN_DAILY_READINGS
+                    comp_ratio = valid_count / float(expected_count)
+                    is_complete = valid_count >= min_count
 
                     day_row["completeness"][feat] = {
                         "valid_count": int(valid_count),
-                        "expected_count": 96,
+                        "expected_count": expected_count,
                         "completeness_ratio": round(comp_ratio, 4),
                         "is_complete": bool(is_complete),
                     }
@@ -374,7 +421,7 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
                 else:
                     day_row["completeness"][feat] = {
                         "valid_count": 0,
-                        "expected_count": 96,
+                        "expected_count": expected_count,
                         "completeness_ratio": 0.0,
                         "is_complete": False,
                     }
@@ -427,7 +474,9 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
         rows = []
         for dt, group in grouped:
             active_stations = group["station_name"].nunique()
-            expected_total = active_stations * 96 if active_stations > 0 else 96
+            nominal_per_station = 24 if len(group) <= 30 * max(1, active_stations) else 96
+            expected_total = active_stations * nominal_per_station if active_stations > 0 else nominal_per_station
+            min_readings = int(nominal_per_station * 0.5)
 
             day_row = {
                 "date": dt,
@@ -443,7 +492,7 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
                     valid_count = len(valid_series)
                     comp_ratio = valid_count / expected_total if expected_total > 0 else 0.0
 
-                    is_complete = (valid_count >= MIN_DAILY_READINGS) and (comp_ratio >= min_completeness_ratio)
+                    is_complete = (valid_count >= min_readings) and (comp_ratio >= min_completeness_ratio)
 
                     day_row["completeness"][feat] = {
                         "valid_count": int(valid_count),
@@ -476,7 +525,7 @@ class HistoricalTSPCBProvider(BasePollutionDataProvider):
         from .aqi_engine import calculate_aqi
 
         df = self._load_all_stations()
-        if df.empty:
+        if df.empty or "timestamp" not in df.columns:
             return []
 
         range_map = {

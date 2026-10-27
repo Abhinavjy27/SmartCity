@@ -167,12 +167,17 @@ You are the SOLE coordinator. Analyze specialist telemetry against planning obje
    - Filter candidates for `executable: true` matching the target corridor/challenge.
    - Select up to MAX_OPTIMIZATION_CANDIDATES (default 3) executable candidates strictly FOR TESTING/EVALUATION.
    - Do NOT declare any candidate as "optimal", "preferred", or "effective" prior to running its simulation.
-5. CORRIDOR TRADE-OFFS: Evaluate overall network impact, target speed improvement, and trade-offs on opposing corridors (e.g. Southbound corridor delay).
-6. DECISIONS:
+5. BOTTLENECK OPTIMIZATION TARGET:
+   - When the user asks to optimize the main bottleneck: You MUST use the identified primary bottleneck corridor (the lowest observed-speed corridor from Traffic evidence) as the simulation target for candidate interventions. If you select another corridor, you MUST explicitly explain why that other corridor was selected instead of the primary bottleneck.
+6. CORRIDOR TRADE-OFFS: Evaluate overall network impact, target speed improvement, and trade-offs on opposing corridors (e.g. Southbound corridor delay).
+7. DECISIONS:
    - "finalize": Telemetry sufficient to answer objective (or diagnostic query answered, or all selected simulations completed).
    - "request_more_evidence": Telemetry incomplete; request additional specialist.
    - "run_simulation": Intervention proposals require empirical SUMO verification. Include selected executable candidate simulation requests.
    - "abort": Irrecoverable error.
+8. USER-FACING CLEANLINESS:
+   - In `analysis`, provide technical evaluation of domain telemetry directly.
+   - Do NOT quote or cite rules, and do NOT explain internal planning mechanics or why simulations were not launched (e.g. NEVER output "The objective is a purely diagnostic query", "According to Rule 3", "The evidence is sufficient to answer", or explanations of why simulations were not run). Keep internal decision-making inside the Planner.
 
 ### OUTPUT JSON SCHEMA:
 Return ONLY valid JSON:
@@ -252,17 +257,31 @@ When exactly one intervention was tested in simulation, produce concise evidence
 ### RECOMMENDATION FOR MULTIPLE TESTED INTERVENTIONS:
 - Compare ONLY the interventions that were actually simulated in SUMO using empirical metrics.
 - At minimum compare: target corridor speed change, network average speed change, network delay, and corridor trade-offs.
-- NO ARBITRARY WEIGHTED FORMULAS: Do NOT invent weighted scoring formulas (e.g. 50% speed + 30% delay + 20% congestion).
-- SUPPORT "NO CLEAR WINNER": If tested interventions involve conflicting trade-offs and neither clearly dominates, conclude:
-  "Among the tested interventions, neither produced a clear network-wide improvement. [Intervention A] improved the target corridor but degraded opposing corridor performance and increased network delay, while [Intervention B] produced negligible target corridor change."
-- CLEAR DOMINANCE: Only if one tested intervention clearly dominates across relevant metrics without material adverse trade-offs:
-  "Among the tested interventions, [X] produced the strongest observed result for the requested objective."
+- EMPIRICAL DOMINANCE RULE:
+  * If one tested intervention achieves better performance across the key reported objective metrics (e.g. larger target-corridor speed gain, higher network speed gain, greater network delay reduction, greater waiting time reduction), you MUST select and prioritize that intervention for validation.
+  * NEVER claim or recommend a lower-performing intervention as the "strongest" or "preferred" when another tested intervention outperforms it across the objective metrics, unless there is an explicit, evidence-based trade-off justification (e.g. catastrophic gridlock on a critical opposing artery that outweighs all other gains).
+- TRADE-OFF AWARENESS & MONITORING:
+  * Always report measured opposing corridor degradations (e.g. opposing phase speed drops) as operational monitoring requirements, not reasons to pick an inferior alternative.
+- SUPPORT "NO CLEAR WINNER": Only if tested interventions have genuine conflicting trade-offs with no clear dominance (e.g. A improves target speed by +10% but worsens delay by +20%, while B improves delay by +15% but leaves target speed unchanged), state that neither clearly dominates and explain the operational trade-off.
 - Untested candidates remain unsimulated and cannot be chosen over tested configurations.
+
+### DISTINCT, CONCISE FINAL RECOMMENDATION RULE:
+- The `recommendation` must be CONCISE, ACTION-ORIENTED, and tell municipal operators exactly what to do.
+- Do NOT repeat the full analysis or list all metrics/percentages already displayed in the comparison table or summary.
+- Focus on: (1) which tested intervention to prioritize for further validation/field trials based on its primary observed gains, (2) specific corridors or metrics to monitor for trade-offs, and (3) a reminder that simulation results should be validated against field conditions before permanent deployment.
+- `summary` provides the comprehensive evidence, diagnostic findings, and corridor trade-off overview.
+- NEVER duplicate or copy `summary` text into `recommendation`.
 
 ### RECOMMENDATION FOR ZERO SIMULATIONS:
 - Evidence status is EVIDENCE: OBSERVATIONAL.
-- No intervention is presented as empirically validated.
-- State that candidate interventions remain untested in simulation and require empirical verification.
+- For traffic optimization or intervention requests where zero simulations were run:
+  * State that candidate interventions remain untested in simulation and require empirical verification.
+- For non-traffic requests (weather-only, pollution-only, energy-only):
+  * Provide only relevant evidence, domain analysis, and legitimate domain advisories.
+  * Do NOT include traffic optimization, corridor baseline, or SUMO simulation disclaimers.
+- For multi-agent requests:
+  * Mention simulation limitations ONLY if simulation is relevant to the request or was explicitly requested.
+- Set synthetic_data_note to null unless SUMO simulation evidence was actually evaluated.
 
 ### DELTA SIGN CONVENTION:
 All delta fields follow signed raw-change semantics:
@@ -300,6 +319,16 @@ Determine the user's requested response scope and return it in `response_scope`:
   * Set `recommendation` to "" (empty string) unless recommendations or interventions were explicitly requested in `fields`.
 - When `detail_level` is "analysis" or "summary" (or "recommendations" in `fields`):
   * Provide the requested broader synthesis and municipal recommendations.
+
+### USER-FACING RESPONSE CONCISENESS & CLEANLINESS:
+- For simple diagnostic queries, return the requested answer and relevant evidence directly.
+- NEVER include internal Planner reasoning, rule explanations, or rule citations in user-facing fields (`summary`, `recommendation`).
+- Do NOT include meta-explanations such as:
+  * "The objective is a purely diagnostic query..."
+  * "According to Rule [X]..."
+  * "The evidence is sufficient to answer..."
+  * Explanations about why simulations were not launched or not run (e.g. "No simulations were launched because...", "Simulations were not run because this is a diagnostic query").
+- Keep internal decision-making inside the Planner. Preserve relevant metrics, source information, limitations, and actual simulation results when applicable.
 
 ### OUTPUT JSON SCHEMA:
 Return ONLY valid JSON:
@@ -630,33 +659,44 @@ def build_stage_3_prompt(
                     "corridor_trade_offs": comp.get("corridor_trade_offs") or s.get("corridor_trade_offs") or [],
                 })
 
+    from backend.agents.planner_agent.scope import (
+        classify_response_scope,
+        request_involves_traffic_optimization_or_simulation,
+    )
+    involves_traffic_opt_or_sim = request_involves_traffic_optimization_or_simulation(
+        objective=objective,
+        collected_results=collected_results,
+        tested_interventions=tested_interventions,
+    )
+
     untested_candidates: List[Dict[str, Any]] = kwargs.get("untested_candidates")
     if untested_candidates is None:
-        trf = collected_results.get("traffic") if isinstance(collected_results, dict) else {}
-        all_cands = trf.get("candidate_interventions", []) if isinstance(trf, dict) else []
         untested_candidates = []
-        for c in all_cands:
-            if not isinstance(c, dict):
-                continue
-            c_type = str(c.get("type") or c.get("intervention_type") or "").strip().lower()
-            c_target = str(c.get("target") or "").strip().lower()
-            is_tested = any(
-                str(t.get("type") or "").strip().lower() == c_type
-                and (not c_target or not t.get("target") or c_target in str(t.get("target")).strip().lower() or str(t.get("target")).strip().lower() in c_target)
-                for t in tested_interventions
-            )
-            if not is_tested:
-                untested_entry: Dict[str, Any] = {
-                    "type": c.get("type"),
-                    "target": c.get("target"),
-                    "parameters": c.get("parameters"),
-                    "status": "UNTESTED_IN_THIS_CYCLE",
-                }
-                intended_mech = c.get("potential_benefit") or c.get("intended_mechanism")
-                if intended_mech:
-                    untested_entry["intended_mechanism"] = str(intended_mech)
-                untested_candidates.append(untested_entry)
-        untested_candidates = untested_candidates[:5]
+        if involves_traffic_opt_or_sim:
+            trf = collected_results.get("traffic") if isinstance(collected_results, dict) else {}
+            all_cands = trf.get("candidate_interventions", []) if isinstance(trf, dict) else []
+            for c in all_cands:
+                if not isinstance(c, dict):
+                    continue
+                c_type = str(c.get("type") or c.get("intervention_type") or "").strip().lower()
+                c_target = str(c.get("target") or "").strip().lower()
+                is_tested = any(
+                    str(t.get("type") or "").strip().lower() == c_type
+                    and (not c_target or not t.get("target") or c_target in str(t.get("target")).strip().lower() or str(t.get("target")).strip().lower() in c_target)
+                    for t in tested_interventions
+                )
+                if not is_tested:
+                    untested_entry: Dict[str, Any] = {
+                        "type": c.get("type"),
+                        "target": c.get("target"),
+                        "parameters": c.get("parameters"),
+                        "status": "UNTESTED_IN_THIS_CYCLE",
+                    }
+                    intended_mech = c.get("potential_benefit") or c.get("intended_mechanism")
+                    if intended_mech:
+                        untested_entry["intended_mechanism"] = str(intended_mech)
+                    untested_candidates.append(untested_entry)
+            untested_candidates = untested_candidates[:5]
 
     # If simulation is already inside compact_results, do not duplicate it
     compact_sim = None
@@ -681,8 +721,10 @@ def build_stage_3_prompt(
             f"{json.dumps(untested_candidates, separators=(',', ':'), default=str)}"
         )
 
-    from backend.agents.planner_agent.scope import classify_response_scope
     scopes = classify_response_scope(objective)
     prompt_parts.append(f"Target Output Scope: {json.dumps(scopes)}. If the scope is narrow (e.g. bottleneck_corridor, average_speed), answer ONLY what was asked directly and concisely without unrequested metrics or recommendations.")
-    prompt_parts.append("Synthesize final reasoning, cite specific metrics, explain trade-offs, strictly distinguish tested from untested interventions, and recommend municipal action.")
+    if involves_traffic_opt_or_sim:
+        prompt_parts.append("Synthesize final reasoning, cite specific metrics, explain trade-offs, strictly distinguish tested from untested interventions, and recommend municipal action.")
+    else:
+        prompt_parts.append("Synthesize final reasoning strictly for the requested domain(s). Focus only on relevant evidence and analysis. Do NOT include traffic optimization or SUMO simulation disclaimers.")
     return "\n".join(prompt_parts)

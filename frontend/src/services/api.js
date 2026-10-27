@@ -454,52 +454,7 @@ export const alertsApi = {
     try {
       return await request(`/alerts${query}`)
     } catch {
-      return [
-        {
-          alert_id: 'ALERT_01',
-          status: 'ACTIVE',
-          severity: 'CRITICAL',
-          domain: 'traffic',
-          location: 'Gachibowli — HITECH City',
-          title: 'Evening Traffic Gridlock at Gachibowli Flyover & Mindspace Corridor',
-          message: 'Severe bottleneck causing 3.4 km vehicle queues during peak evening office rush.',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          alert_id: 'ALERT_02',
-          status: 'ACTIVE',
-          severity: 'HIGH',
-          domain: 'weather',
-          location: 'Nacharam Industrial Zone',
-          title: 'Air Quality Deterioration in Nacharam Sector',
-          message: 'Particulate matter PM2.5 levels exceeding threshold (>180 ug/m3).',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          alert_id: 'ALERT_03',
-          status: 'ACTIVE',
-          severity: 'MEDIUM',
-          domain: 'energy',
-          location: 'Financial District Substation',
-          title: 'High Peak Load Margin on Feeder Grid #4',
-          message: 'Transformer core temperature near 78C due to simultaneous draw.',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        },
-        {
-          alert_id: 'ALERT_04',
-          status: 'ACTIVE',
-          severity: 'HIGH',
-          domain: 'flood',
-          location: 'Begumpet Low-lying Ingress',
-          title: 'Urban Flood Risk Alert - Monsoon Inundation',
-          message: 'Stormwater catchment reaching 84% capacity. Drainage backflow risk.',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }
-      ]
+      return []
     }
   },
 

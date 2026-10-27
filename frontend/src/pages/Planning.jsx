@@ -115,7 +115,7 @@ function parseMultiSimulationComparison(res, promptText) {
   const items = displayScenarios.map(scen => {
     const intApplied = scen.intervention || scen.intervention_applied || {}
     const type = String(intApplied.type || 'intervention').replace('_', ' ')
-    const target = intApplied.target || ''
+    let target = intApplied.target || ''
     const params = intApplied.parameters || {}
 
     const paramParts = []
@@ -136,8 +136,12 @@ function parseMultiSimulationComparison(res, promptText) {
     let tgtSpdDelta = comp.target_corridor_speed_change_pct
     let tgtSpdVal = null
     if (comp.corridor_comparisons && Array.isArray(comp.corridor_comparisons)) {
-      const match = comp.corridor_comparisons.find(c => c.name === target || String(c.id || '').toUpperCase().endsWith(String(target).slice(0, 2).toUpperCase()))
+      const match = comp.corridor_comparisons.find(c =>
+        c.is_target ||
+        (target && (c.name === target || c.name?.toLowerCase().includes(target.toLowerCase()) || String(c.id || '').toUpperCase().endsWith(String(target).slice(0, 2).toUpperCase())))
+      )
       if (match) {
+        if (!target && match.name) target = match.name
         if (tgtSpdDelta === undefined || tgtSpdDelta === null) tgtSpdDelta = match.speed_change_pct
         tgtSpdVal = match.intervention_speed_kmh
       }
@@ -146,9 +150,15 @@ function parseMultiSimulationComparison(res, promptText) {
     // Use NEW signed *_change_pct fields (negative = improved for delay/waiting/congestion)
     const netSpdDelta = comp.speed_change_pct
     const netSpdVal = comp.intervention_summary?.average_speed_kmh ?? scen.metrics?.average_speed_kmh
-    const delayChangePct = comp.delay_change_pct ?? null
+    let delayChangePct = comp.delay_change_pct ?? null
+    if (delayChangePct === null && comp.delay_reduction_pct !== undefined && comp.delay_reduction_pct !== null) {
+      delayChangePct = -comp.delay_reduction_pct
+    }
     const delayVal = comp.intervention_summary?.average_delay_sec ?? scen.metrics?.average_delay_sec
-    const waitChangePct = comp.waiting_time_change_pct ?? null
+    let waitChangePct = comp.waiting_time_change_pct ?? null
+    if (waitChangePct === null && comp.waiting_time_reduction_pct !== undefined && comp.waiting_time_reduction_pct !== null) {
+      waitChangePct = -comp.waiting_time_reduction_pct
+    }
     const waitVal = comp.intervention_summary?.average_waiting_time_sec ?? scen.metrics?.average_waiting_time_sec
 
     const tradeOffs = scen.corridor_trade_offs || comp.corridor_trade_offs || []

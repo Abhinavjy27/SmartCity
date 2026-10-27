@@ -47,7 +47,7 @@ export default function Pollution() {
     try {
       const summary = await pollutionApi.getSummary()
       if (summary.status === 'error') {
-        setError(summary.message)
+        setError(summary.message || 'Failed to load pollution data')
         return
       }
       if (summary.current) setCurrent(summary.current)
@@ -70,8 +70,9 @@ export default function Pollution() {
       }
     } catch (err) {
       setError(err.message)
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }, [])
 
   // Fetch trend when timeRange changes
@@ -79,7 +80,7 @@ export default function Pollution() {
     const rangeKey = TIME_RANGE_MAP[timeRange] || '24h'
     try {
       const result = await pollutionApi.getTrend(rangeKey)
-      if (result.data) setTrendData(result.data)
+      if (result && result.data && Array.isArray(result.data)) setTrendData(result.data)
       else setTrendData([])
     } catch { setTrendData([]) }
   }, [timeRange])
@@ -88,7 +89,7 @@ export default function Pollution() {
   const fetchAlerts = useCallback(async () => {
     try {
       const result = await pollutionApi.getAlerts()
-      if (result.alerts) setAlerts(result.alerts)
+      if (result && result.alerts && Array.isArray(result.alerts)) setAlerts(result.alerts)
     } catch { /* alerts failure is non-critical */ }
   }, [])
 
@@ -155,8 +156,80 @@ export default function Pollution() {
     )
   }
 
+  if (error && !current) {
+    return (
+      <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        justifyContent: 'center',
+        alignItems: 'center',
+        height: '50vh',
+        gap: 'var(--space-md)',
+        color: 'var(--text-muted)',
+        textAlign: 'center',
+      }}>
+        <AlertTriangle size={32} style={{ color: '#E05A47' }} />
+        <div style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+          Failed to load pollution data
+        </div>
+        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', maxWidth: '400px' }}>
+          {error}
+        </div>
+        <button
+          onClick={() => { fetchData(); fetchAlerts(); fetchTrend() }}
+          style={{
+            marginTop: '8px',
+            padding: '8px 20px',
+            borderRadius: 'var(--radius-full)',
+            background: '#4C9E9B',
+            color: '#fff',
+            border: 'none',
+            fontSize: '0.75rem',
+            fontWeight: 600,
+            cursor: 'pointer',
+          }}
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
   return (
     <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
+      {error && current && (
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '10px 16px',
+          borderRadius: 'var(--radius-md)',
+          background: 'rgba(224,90,71,0.1)',
+          border: '1px solid rgba(224,90,71,0.25)',
+          color: '#E05A47',
+          fontSize: '0.78rem',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <AlertTriangle size={16} />
+            <span>{error}</span>
+          </div>
+          <button
+            onClick={() => { fetchData(); fetchAlerts(); fetchTrend() }}
+            style={{
+              padding: '4px 12px',
+              borderRadius: 'var(--radius-full)',
+              background: '#E05A47',
+              color: '#fff',
+              border: 'none',
+              fontSize: '0.7rem',
+              fontWeight: 600,
+              cursor: 'pointer',
+            }}
+          >
+            Retry
+          </button>
+        </div>
+      )}
       {/* ── Time Range Bar ───────────────────────────────── */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
         {[(isLive ? 'Live' : 'Latest'), '1 Hour', '6 Hours', '24 Hours', '7 Days', '30 Days'].map(t => (
@@ -581,11 +654,15 @@ export default function Pollution() {
               </h3>
             </div>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              Unified spatial-temporal AQI forecast for Hyderabad (1-day model horizon).
+              {forecast?.is_baseline || forecast?.source === 'historical_baseline_forecast'
+                ? 'Empirical baseline AQI forecast derived from TSPCB historical trends (1-day horizon).'
+                : 'Unified spatial-temporal AQI forecast for Hyderabad (1-day model horizon).'}
             </p>
           </div>
           <span style={{ fontSize: '0.65rem', color: '#4C9E9B', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
-            {forecast?.forecast_status === 'success' ? 'Model: Ready' : 'Model: Unavailable'}
+            {forecast?.forecast_status === 'success'
+              ? (forecast?.is_baseline || forecast?.source === 'historical_baseline_forecast' ? 'Model: Ready (Baseline)' : 'Model: Ready')
+              : 'Model: Unavailable'}
           </span>
         </div>
 
@@ -610,20 +687,41 @@ export default function Pollution() {
                   </span>
                 )}
               </div>
-              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>AQI (Unified Model)</div>
+              <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>
+                {forecast.is_baseline || forecast.source === 'historical_baseline_forecast' ? 'AQI (Baseline Model)' : 'AQI (Unified Model)'}
+              </div>
               <div style={{ fontSize: '0.52rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginTop: '3px', lineHeight: 1.2 }}>
                 * Direction is a coarse signal
               </div>
             </div>
             <div style={{ flex: 1, fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
               <div style={{ marginBottom: '4px' }}>
-                <strong>Source:</strong> Unified Model: {forecast.model_name || 'Temporal GRU'} ({forecast.sequence_days}-day input sequence)
+                <strong>Source:</strong> {forecast.is_baseline || forecast.source === 'historical_baseline_forecast' ? 'Baseline Model: ' : 'Unified Model: '}{forecast.model_name || 'Historical Baseline'} ({forecast.sequence_days || 14}-day input sequence)
               </div>
               <div style={{ marginBottom: '4px' }}>
                 <strong>Horizon:</strong> {forecast.forecast_horizon} {forecast.display_date ? `(${forecast.display_date})` : forecast.forecast_date ? `(Target: ${forecast.forecast_date})` : ''}
               </div>
-              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontStyle: 'italic' }}>
-                Validated empirical forecast derived from TSPCB ambient observations.
+              {forecast.predicted_concentrations && Object.keys(forecast.predicted_concentrations).length > 0 && (
+                <div style={{ marginTop: '8px', paddingTop: '8px', borderTop: '1px solid var(--border-divider)' }}>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', marginBottom: '4px', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    Forecast Pollutants:
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px 12px', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                    {Object.entries(forecast.predicted_concentrations).map(([pollutant, val]) => (
+                      <span key={pollutant} style={{ background: 'var(--bg-card, rgba(255,255,255,0.03))', padding: '2px 6px', borderRadius: '4px', border: '1px solid var(--border-subtle, rgba(255,255,255,0.08))' }}>
+                        <span style={{ color: 'var(--text-muted)' }}>{pollutant}: </span>
+                        <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {val} {pollutant === 'CO' ? 'mg/m³' : 'µg/m³'}
+                        </span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              <div style={{ fontSize: '0.6rem', color: 'var(--text-muted)', fontStyle: 'italic', marginTop: '6px' }}>
+                {forecast.is_baseline || forecast.source === 'historical_baseline_forecast'
+                  ? 'Validated empirical baseline forecast derived from TSPCB historical trends using exponential smoothing and CPCB NAQI formula.'
+                  : 'Validated empirical forecast derived from TSPCB ambient observations.'}
               </div>
             </div>
           </div>

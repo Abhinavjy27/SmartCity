@@ -25,7 +25,7 @@ import torch
 from ..aqi_engine import calculate_aqi, get_aqi_category
 from ..config import POLLUTION_PROXY_MODE, POLLUTION_PROXY_URL, MIN_LIVE_DAYS_FOR_FORECAST
 from ..data_provider import get_data_provider
-from ..date_utils import get_forecast_dates
+from ..date_utils import get_forecast_dates, get_next_day_forecast_dates
 from ..live_accumulation import get_live_store
 from .config import (
     ARTIFACTS_DIR,
@@ -192,7 +192,7 @@ class UnifiedForecaster:
         """
         if not self.loaded:
             if not self.load():
-                return self._unavailable_response(f"Model unavailable: {self.error_message}")
+                return self._predict_next_day_baseline()
 
         if self.proxy_mode:
             import httpx
@@ -409,6 +409,150 @@ class UnifiedForecaster:
         self._cached_forecast = None
         self._cache_timestamp = None
         self._cached_provider_id = None
+
+    def _predict_next_day_baseline(self) -> Dict[str, Any]:
+        """
+        Executes next-day baseline forecast using historical observations.
+        Per Requirements:
+        - Implements reliable next-day forecast using project's existing historical pollution data
+          and Holt linear trend exponential smoothing.
+        - Clearly labeled as a baseline forecast, not the unavailable unified model.
+        - Decoupled from 7-day extended forecast (which remains unavailable under scope restriction).
+        - Returns a clean error/unavailable state if forecasting cannot be performed.
+        - Never fabricates predictions or displays current observations as forecasts.
+        """
+        try:
+            # Determine input source
+            use_live, live_df, origin_override = self._select_input_source()
+
+            if use_live and (live_df is None or len(live_df) < 7):
+                use_live = False
+                origin_override = None
+
+            if use_live and live_df is not None:
+                city_daily = live_df
+                latest_ts_for_dates = origin_override or datetime.now(timezone.utc).isoformat()
+                input_source = "live_accumulation"
+            else:
+                provider = get_data_provider(force_historical=True)
+                latest_ts = provider.get_latest_observation_timestamp()
+                if not latest_ts:
+                    return self._unavailable_response("Baseline forecast unavailable: no historical observations found.")
+
+                # Calculate the target forecast date strictly as next calendar day relative to current date (IST)
+                next_day_info = get_next_day_forecast_dates()
+                target_forecast_date = next_day_info["target_date"]
+                target_display_date = next_day_info["display_date"]
+                target_forecast_ts = next_day_info["target_timestamp"]
+
+                # In-memory cache valid if timestamp, provider, AND target forecast date haven't changed
+                if (
+                    self._cached_forecast is not None
+                    and self._cache_timestamp == latest_ts
+                    and getattr(self, "_cached_provider_id", None) == id(provider)
+                    and self._cached_forecast.get("daily", {}).get("forecast_date") == target_forecast_date
+                ):
+                    return self._cached_forecast
+
+                city_daily = provider.get_city_daily_aggregates(n_days=CONTEXT_LENGTH)
+                input_source = "historical_archive"
+
+            # Minimum required context
+            if city_daily is None or city_daily.empty or len(city_daily) < 7:
+                return self._unavailable_response(
+                    f"Insufficient historical context: got {len(city_daily) if city_daily is not None else 0} daily observations, minimum 7 required"
+                )
+
+            # Check criteria pollutants availability
+            missing_criteria = []
+            for p in PRIMARY_TARGETS:
+                if p not in city_daily.columns or city_daily[p].isna().any() or len(city_daily[p].dropna()) < 7:
+                    missing_criteria.append(p)
+            if missing_criteria:
+                return self._unavailable_response(
+                    f"Insufficient historical observations for criteria pollutants ({', '.join(missing_criteria)}); "
+                    f"baseline forecast unavailable without fabrication"
+                )
+
+            # Compute next-day baseline forecast using Holt linear trend smoothing
+            predicted_concentrations = {}
+            for p in PRIMARY_TARGETS:
+                series = city_daily[p].dropna().values
+                alpha = 0.4
+                beta = 0.2
+                level = float(series[0])
+                trend = float(series[1] - series[0]) if len(series) > 1 else 0.0
+                for val in series[1:]:
+                    val = float(val)
+                    last_level = level
+                    level = alpha * val + (1.0 - alpha) * (level + trend)
+                    trend = beta * (level - last_level) + (1.0 - beta) * trend
+                pred_val = max(0.0, round(float(level + trend), 2))
+                predicted_concentrations[p] = pred_val
+
+            # Pass predicted concentrations through official CPCB AQI engine
+            aqi_res = calculate_aqi(predicted_concentrations)
+            aqi_val = aqi_res.get("aqi")
+            if aqi_val is None:
+                return self._unavailable_response(
+                    f"CPCB AQI calculation failed on predicted concentrations: {aqi_res.get('reason')}"
+                )
+
+            next_day_info = get_next_day_forecast_dates()
+            target_forecast_date = next_day_info["target_date"]
+            target_display_date = next_day_info["display_date"]
+            target_forecast_ts = next_day_info["target_timestamp"]
+
+            daily_forecast = {
+                "forecast_aqi": aqi_val,
+                "forecast_status": "success",
+                "source": "historical_baseline_forecast",
+                "model_name": "Historical Baseline (Holt Linear Trend)",
+                "model_type": "baseline",
+                "is_baseline": True,
+                "forecast_horizon": "1 Day (Next-Day)",
+                "forecast_date": target_forecast_date,
+                "display_date": target_display_date,
+                "target_timestamp": target_forecast_ts,
+                "origin_timestamp": latest_ts,
+                "sequence_days": len(city_daily),
+                "category": aqi_res.get("category", "Moderate"),
+                "color": aqi_res.get("color", "#F4A62A"),
+                "dominant_pollutant": aqi_res.get("dominant_pollutant", "PM2.5"),
+                "predicted_concentrations": predicted_concentrations,
+                "confidence": "Baseline (Historical Trend Smoothing)",
+                "methodology": "Holt-Linear Exponential Smoothing Baseline with CPCB NAQI Engine",
+                "forecast_input_source": input_source,
+                "forecast_basis": f"archive-based baseline, sequence ending {latest_ts.split('T')[0]}",
+            }
+
+            # Extended forecast remains unavailable (scope restriction: fix next-day forecast only)
+            extended_forecast = {
+                "status": "unavailable",
+                "reason": f"Unified deep learning model unavailable ({self.error_message or 'unified_best_model.pt not found'}); next-day baseline forecast active",
+                "forecast": [],
+            }
+
+            result = {
+                "status": "success",
+                "origin_timestamp": latest_ts,
+                "forecast_input_source": input_source,
+                "forecast_basis": f"archive-based baseline, sequence ending {latest_ts.split('T')[0]}",
+                "daily": daily_forecast,
+                "extended": extended_forecast,
+            }
+
+            if not use_live:
+                provider = get_data_provider(force_historical=True)
+                self._cached_forecast = result
+                self._cache_timestamp = latest_ts
+                self._cached_provider_id = id(provider)
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Error during baseline next-day forecasting: {e}", exc_info=True)
+            return self._unavailable_response(f"Baseline forecasting error: {e}")
 
     def _unavailable_response(self, reason: str) -> Dict[str, Any]:
         return {

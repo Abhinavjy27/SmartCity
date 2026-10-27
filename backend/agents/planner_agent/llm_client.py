@@ -21,7 +21,9 @@ from __future__ import annotations
 import json
 import logging
 import os
+import random
 import re
+import threading
 import time
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
@@ -108,6 +110,37 @@ def _validate_api_key(api_key: Optional[str], provider_name: str) -> str:
     return api_key.strip()
 
 
+_GROQ_CALL_LOCK = threading.Lock()
+_GROQ_COOLDOWN_UNTIL: float = 0.0
+
+
+def _parse_groq_retry_delay(exc: Exception) -> Optional[float]:
+    """Parse retry-after delay in seconds from HTTP headers or exception message."""
+    resp = getattr(exc, "response", None)
+    if resp is not None and hasattr(resp, "headers"):
+        hdr = resp.headers.get("retry-after")
+        if hdr:
+            try:
+                return float(hdr)
+            except (ValueError, TypeError):
+                pass
+        hdr_ms = resp.headers.get("retry-after-ms")
+        if hdr_ms:
+            try:
+                return float(hdr_ms) / 1000.0
+            except (ValueError, TypeError):
+                pass
+
+    exc_str = str(exc)
+    m = re.search(r"try again in (?:(\d+)m)?(\d+(?:\.\d+)?)s", exc_str, re.IGNORECASE)
+    if m:
+        mins = float(m.group(1) or 0)
+        secs = float(m.group(2))
+        return mins * 60.0 + secs
+
+    return None
+
+
 class GroqLLMProvider(BaseLLMProvider):
     """
     Groq Cloud API provider.
@@ -129,7 +162,7 @@ class GroqLLMProvider(BaseLLMProvider):
         if self._client is None:
             try:
                 from groq import Groq
-                self._client = Groq(api_key=self.api_key)
+                self._client = Groq(api_key=self.api_key, max_retries=0)
             except ImportError as exc:
                 raise LLMConfigurationError(
                     "The 'groq' package is required when using the Groq provider. Install it with 'pip install groq'."
@@ -158,10 +191,21 @@ class GroqLLMProvider(BaseLLMProvider):
         logger.info(log_msg)
         print(log_msg, flush=True)
 
+        # Shared retry concurrency lock and cooldown tracking
+        global _GROQ_CALL_LOCK, _GROQ_COOLDOWN_UNTIL
+
+        # Gated cooldown wait to prevent duplicate concurrent retries across worker threads
+        with _GROQ_CALL_LOCK:
+            cooldown_wait = _GROQ_COOLDOWN_UNTIL - time.monotonic()
+        if cooldown_wait > 0:
+            sleep_duration = min(cooldown_wait, 12.0)
+            logger.info(f"Groq concurrency cooldown active; waiting {sleep_duration:.2f}s before dispatch...")
+            time.sleep(sleep_duration)
+
         # Bound max_tokens defensively to 2500 to ensure valid JSON completion without exceeding Groq rate limits
         effective_max = min(max_tokens, int(os.getenv("GROQ_MAX_TOKENS", "2500")))
-        retries = 3
-        backoff = 4.0
+        retries = 2
+        backoff = 2.0
 
         for attempt in range(retries):
             try:
@@ -185,58 +229,64 @@ class GroqLLMProvider(BaseLLMProvider):
                 if "max completion tokens reached" in exc_str:
                     effective_max = min(4096, effective_max + 1000)
                     logger.warning(f"Groq max completion tokens reached; increasing effective_max to {effective_max}")
+
                 is_rate_limit = any(k in exc_str for k in ["429", "413", "rate_limit", "ITPM", "OTPM", "tokens"])
                 is_tpd = "TPD" in exc_str or "tokens per day" in exc_str
-                if is_tpd and "120b" in self.model:
-                    logger.warning(f"Groq daily TPD limit reached on {self.model}; switching model to openai/gpt-oss-20b immediately")
-                    self.model = "openai/gpt-oss-20b"
-                    try:
-                        completion = client.chat.completions.create(
-                            model=self.model,
-                            messages=[
-                                {"role": "system", "content": system_prompt},
-                                {"role": "user", "content": user_prompt},
-                            ],
-                            response_format={"type": "json_object"},
-                            temperature=temperature,
-                            max_tokens=effective_max,
-                        )
-                        raw_text = completion.choices[0].message.content
-                        if raw_text and raw_text.strip():
-                            return _clean_and_parse_json(raw_text)
-                    except Exception as fallback_exc:
-                        logger.error(f"Fallback to openai/gpt-oss-20b failed: {fallback_exc}")
 
-                if is_rate_limit and not is_tpd and attempt < retries - 1:
-                    logger.warning(
-                        f"Groq rate limit encountered (attempt {attempt + 1}/{retries}). Waiting {backoff:.1f}s before retrying... Error: {exc}"
-                    )
-                    time.sleep(backoff)
-                    backoff *= 2.0
-                    continue
+                if is_rate_limit or is_tpd:
+                    retry_delay = _parse_groq_retry_delay(exc)
 
-                if is_rate_limit:
-                    for fallback_model in ["llama-3.1-8b-instant", "llama-3.3-70b-versatile"]:
-                        if fallback_model == self.model:
-                            continue
-                        logger.warning(f"Groq token limit reached on {self.model}; attempting fallback to {fallback_model}")
-                        try:
-                            completion = client.chat.completions.create(
-                                model=fallback_model,
-                                messages=[
-                                    {"role": "system", "content": system_prompt},
-                                    {"role": "user", "content": user_prompt},
-                                ],
-                                response_format={"type": "json_object"},
-                                temperature=temperature,
-                                max_tokens=effective_max,
+                    # If retry delay is excessively high (> 12s) or daily quota exhausted (TPD),
+                    # attempt immediate model fallback instead of stalling execution
+                    fallback_models = [
+                        m.strip()
+                        for m in os.getenv("LLM_FALLBACK_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b").split(",")
+                        if m.strip()
+                    ]
+                    if ((retry_delay is not None and retry_delay > 4.0) or is_tpd or "429" in exc_str or "413" in exc_str) and fallback_models:
+                        for fb_model in fallback_models:
+                            if fb_model == self.model:
+                                continue
+                            logger.warning(
+                                f"Groq rate limit on {self.model} (delay={retry_delay}s); "
+                                f"attempting immediate proactive fallback to {fb_model}"
                             )
-                            raw_text = completion.choices[0].message.content
-                            if raw_text and raw_text.strip():
-                                self.model = fallback_model
-                                return _clean_and_parse_json(raw_text)
-                        except Exception as fallback_exc:
-                            logger.error(f"Fallback to {fallback_model} failed: {fallback_exc}")
+                            try:
+                                completion = client.chat.completions.create(
+                                    model=fb_model,
+                                    messages=[
+                                        {"role": "system", "content": system_prompt},
+                                        {"role": "user", "content": user_prompt},
+                                    ],
+                                    response_format={"type": "json_object"},
+                                    temperature=temperature,
+                                    max_tokens=effective_max,
+                                )
+                                raw_text = completion.choices[0].message.content
+                                if raw_text and raw_text.strip():
+                                    self.model = fb_model
+                                    return _clean_and_parse_json(raw_text)
+                            except Exception as fb_exc:
+                                logger.warning(f"Proactive fallback to {fb_model} failed: {fb_exc}")
+
+                    # If attempts remain, respect Retry-After with jitter and update concurrency cooldown
+                    if attempt < retries - 1 and not is_tpd:
+                        jitter = random.uniform(0.1, 0.4)
+                        if retry_delay is not None and retry_delay > 0:
+                            wait_time = min(retry_delay + jitter, 15.0)
+                        else:
+                            wait_time = min(backoff + jitter, 8.0)
+                            backoff *= 1.5
+
+                        with _GROQ_CALL_LOCK:
+                            _GROQ_COOLDOWN_UNTIL = max(_GROQ_COOLDOWN_UNTIL, time.monotonic() + wait_time)
+
+                        logger.warning(
+                            f"Groq rate limit encountered (attempt {attempt + 1}/{retries}). "
+                            f"Waiting {wait_time:.1f}s before retrying (Retry-After: {retry_delay}s)... Error: {exc}"
+                        )
+                        time.sleep(wait_time)
+                        continue
 
                 logger.error(f"Groq LLM generation error on model '{self.model}': {exc}")
                 raise LLMProviderError(f"LLM generation failed on model '{self.model}': {str(exc)}") from exc
@@ -782,6 +832,11 @@ class MockLLMProvider(BaseLLMProvider):
                     or f"corridor: {c_name}" in p_lower
                     or f"corridor': '{c_name}" in p_lower
                     or f"bottleneck: {c_name}" in p_lower
+                    or f"bottleneck: '{c_name}" in p_lower
+                    or f"main bottleneck: {c_name}" in p_lower
+                    or f"main bottleneck: '{c_name}" in p_lower
+                    or f"bottleneck corridor: {c_name}" in p_lower
+                    or f"bottleneck corridor: '{c_name}" in p_lower
                     or f"degradation on {c_name}" in p_lower
                     or f"corridor: '{c_name}" in p_lower
                 ):
@@ -1028,12 +1083,12 @@ class MockLLMProvider(BaseLLMProvider):
 
     def _mock_final_reasoning(self, user_prompt: str) -> Dict[str, Any]:
         p_lower = user_prompt.lower()
-        has_weather = "weather" in p_lower
-        has_traffic = "traffic" in p_lower
-        has_simulation = "simulation" in p_lower
-        has_pollution = "pollution" in p_lower
-        has_energy = "energy" in p_lower
-        has_multi_scenarios = "adj+10" in p_lower or "10.0s" in p_lower or "scenario_count\": 2" in p_lower or "tested_scenarios" in p_lower
+        has_weather = '"weather"' in user_prompt or 'weather.' in p_lower
+        has_traffic = '"traffic"' in user_prompt or 'traffic.' in p_lower
+        has_pollution = '"pollution"' in user_prompt or 'pollution.' in p_lower
+        has_energy = '"energy"' in user_prompt or 'energy.' in p_lower
+        has_simulation = bool(re.search(r'"simulation":\s*\{', user_prompt)) or "tested interventions" in p_lower or "\nsimulation:" in p_lower
+        has_multi_scenarios = ("tested interventions" in p_lower and ("scenario_b" in p_lower or "balanced" in p_lower or "aggressive" in p_lower or ("rerout" in p_lower and "signal" in p_lower))) or "tested_scenarios" in p_lower or "scenario_count\": 2" in p_lower
 
         evidence_used = []
         if has_traffic:
@@ -1099,6 +1154,8 @@ class MockLLMProvider(BaseLLMProvider):
 
         sim_findings = None
         assessment = None
+        uncertainty_text = "Estimates assume regular driver compliance and absence of unplanned lane blockages."
+        next_action_text = f"Adjust junction signal cycle at {loc}."
         tested_idx = p_lower.find("tested interventions")
         untested_idx = p_lower.find("untested candidates")
         if tested_idx != -1:
@@ -1133,8 +1190,9 @@ class MockLLMProvider(BaseLLMProvider):
                 "indicating that the bottleneck was not fully resolved globally across the network."
             )
             rec_text = (
-                "The target corridor improved by +17.1% in travel speed, but network delay increased and opposing corridor performance degraded (-15.2%). "
-                "The evidence supports localized improvement rather than full bottleneck resolution. No new simulation was run in this turn."
+                "Implement localized signal timing adjustments on the bottleneck corridor with caution. "
+                "Observed simulation metrics demonstrate that target speed gains (+17.1%) come at the cost of opposing corridor degradation (-15.2%) and higher network delay (+3.4%); "
+                "maintain active telemetry monitoring rather than deploying as a standalone solution."
             )
         elif is_comparative_query:
             if not has_simulation and not has_multi_scenarios:
@@ -1159,9 +1217,9 @@ class MockLLMProvider(BaseLLMProvider):
                     "Dynamic rerouting produced negligible change in the target corridor. The simulations do not establish a clear overall winner."
                 )
                 rec_text = (
-                    "Among the tested interventions, the simulations do not establish a clear overall winner due to conflicting trade-offs. "
-                    "Signal timing provided localized target corridor progression at the cost of opposing phase delay and network delay, "
-                    "while dynamic rerouting had minimal impact on the bottleneck corridor. Other candidate interventions remain untested."
+                    "Adopt a balanced operational posture: avoid isolated signal green extensions that penalize opposing phases without coordinated offsets. "
+                    "Schedule multi-corridor coordinated simulation before implementing physical field changes. "
+                    "Other candidate interventions remain untested in this cycle and require simulation."
                 )
         elif has_multi_scenarios:
             if has_rerouting_sim:
@@ -1310,11 +1368,84 @@ class MockLLMProvider(BaseLLMProvider):
                 p10_val = p10_match.group(1) if p10_match else "31.7"
                 summary_text = f"PM2.5: {p25_val} µg/m³. PM10: {p10_val} µg/m³."
                 rec_text = ""
+            elif scopes == ["temperature"]:
+                t_m = re.search(r'"temperature_c":\s*([0-9.]+)', user_prompt)
+                t_val = t_m.group(1) if t_m else "28.5"
+                summary_text = f"Current temperature: {t_val}°C."
+                rec_text = ""
+                uncertainty_text = "Weather observations based on meteorological telemetry and forecast models."
+                next_action_text = "monitor_weather"
+            elif scopes in (["precipitation", "condition"], ["precipitation"]):
+                c_m = re.search(r'"condition":\s*"([^"]+)"', user_prompt)
+                p_m = re.search(r'"precipitation_mm":\s*([0-9.]+)', user_prompt)
+                c_val = c_m.group(1) if c_m else "Clear"
+                p_val = p_m.group(1) if p_m else "0.0"
+                summary_text = f"Weather condition: {c_val}. Precipitation: {p_val} mm."
+                rec_text = ""
+                uncertainty_text = "Weather observations based on meteorological telemetry and forecast models."
+                next_action_text = "monitor_weather"
+            elif scopes in (["grid_status", "load_pct"], ["grid_status"]):
+                st_m = re.search(r'"grid_status":\s*"([^"]+)"', user_prompt)
+                lp_m = re.search(r'"load_pct":\s*([0-9.]+)', user_prompt)
+                st_val = st_m.group(1) if st_m else "ONLINE"
+                lp_val = lp_m.group(1) if lp_m else "65.0"
+                summary_text = f"Power grid status: {st_val} (Load: {lp_val}%)."
+                rec_text = ""
+                uncertainty_text = "Grid telemetry reflects substation metering intervals."
+                next_action_text = "monitor_grid_load"
             else:
-                spd_cite = [e for e in evidence_used if "average_speed_kmh" in e]
-                spd_text = f" ({spd_cite[0]})" if spd_cite else ""
-                summary_text = f"Telemetry analysis confirms empirical conditions at {loc}{spd_text}. Evidence collected from specialist agents provides empirical basis for municipal operational response."
-                rec_text = f"Deploy operational adjustments at {loc} bottlenecks and monitor corridor telemetry. Available candidate interventions remain untested in simulation."
+                has_weather_ev = any(k in user_prompt.lower() for k in ['"temperature_c"', '"condition"', '"weather"'])
+                has_pollution_ev = any(k in user_prompt.lower() for k in ['"city_avg_aqi"', '"pm25"', '"pollution"'])
+                has_energy_ev = any(k in user_prompt.lower() for k in ['"grid_status"', '"load_pct"', '"energy"'])
+                has_traffic_ev = any(k in user_prompt.lower() for k in ['"average_speed_kmh"', '"congestion_index"', '"traffic"'])
+
+                if has_weather_ev and not has_traffic_ev:
+                    t_m = re.search(r'"temperature_c":\s*([0-9.]+)', user_prompt)
+                    c_m = re.search(r'"condition":\s*"([^"]+)"', user_prompt)
+                    p_m = re.search(r'"precipitation_mm":\s*([0-9.]+)', user_prompt)
+                    h_m = re.search(r'"humidity_pct":\s*([0-9.]+)', user_prompt)
+                    t_val = t_m.group(1) if t_m else "28.5"
+                    c_val = c_m.group(1) if c_m else "Clear"
+                    p_val = float(p_m.group(1)) if p_m else 0.0
+                    h_val = h_m.group(1) if h_m else "55"
+                    summary_text = f"Current weather conditions for {loc}: {c_val}, {t_val}°C (Humidity: {h_val}%, Precipitation: {p_val} mm)."
+                    rec_text = "Advise municipal teams on stormwater drainage readiness and inform citizens." if p_val > 0 else ""
+                    uncertainty_text = "Weather observations based on meteorological telemetry and forecast models."
+                    next_action_text = "monitor_weather"
+                elif has_pollution_ev and not has_traffic_ev:
+                    aqi_m = re.search(r'"city_avg_aqi":\s*([0-9]+)', user_prompt) or re.search(r'"aqi":\s*([0-9]+)', user_prompt)
+                    p25_m = re.search(r'"pm25":\s*([0-9.]+)', user_prompt)
+                    p10_m = re.search(r'"pm10":\s*([0-9.]+)', user_prompt)
+                    aqi_val = aqi_m.group(1) if aqi_m else "64"
+                    p25_val = p25_m.group(1) if p25_m else "20.8"
+                    p10_val = p10_m.group(1) if p10_m else "31.7"
+                    summary_text = f"Air quality analysis for {loc}: City average AQI is {aqi_val} with PM2.5 at {p25_val} µg/m³ and PM10 at {p10_val} µg/m³."
+                    rec_text = "Deploy vegetative canopy buffers and localized dust suppression along high-AQI corridors." if any(w in obj_text.lower() for w in ["recommend", "intervene", "suggest", "optimize", "reduce"]) else ""
+                    uncertainty_text = "Air quality metrics subject to atmospheric dispersion variability and monitoring station coverage."
+                    next_action_text = "monitor_air_quality"
+                elif has_energy_ev and not has_traffic_ev:
+                    st_m = re.search(r'"grid_status":\s*"([^"]+)"', user_prompt)
+                    lp_m = re.search(r'"load_pct":\s*([0-9.]+)', user_prompt)
+                    mw_m = re.search(r'"current_load_mw":\s*([0-9.]+)', user_prompt)
+                    st_val = st_m.group(1) if st_m else "ONLINE"
+                    lp_val = lp_m.group(1) if lp_m else "65.0"
+                    mw_val = mw_m.group(1) if mw_m else "450.0"
+                    summary_text = f"Energy grid status for {loc}: {st_val} at {lp_val}% load ({mw_val} MW)."
+                    rec_text = "Initiate peak-shaving protocols and monitor high-load substations." if any(w in obj_text.lower() for w in ["recommend", "intervene", "suggest", "optimize", "reduce"]) else ""
+                    uncertainty_text = "Grid telemetry reflects substation metering intervals."
+                    next_action_text = "monitor_grid_load"
+                else:
+                    from backend.agents.planner_agent.scope import request_involves_traffic_optimization_or_simulation
+                    involves_opt = request_involves_traffic_optimization_or_simulation(obj_text)
+                    summary_text = f"Observational traffic analysis for {loc} completed based on baseline telemetry."
+                    spd_cite = [e for e in evidence_used if "average_speed_kmh" in e]
+                    spd_text = f" ({spd_cite[0]})" if spd_cite else ""
+                    if involves_opt:
+                        rec_text = f"Deploy operational adjustments at {loc} bottlenecks and monitor corridor telemetry. Available candidate interventions remain untested in simulation."
+                    else:
+                        rec_text = f"Deploy operational adjustments at {loc} bottlenecks and monitor corridor telemetry."
+                    uncertainty_text = "Estimates assume regular driver compliance and absence of unplanned lane blockages."
+                    next_action_text = f"Adjust junction signal cycle at {loc}." if involves_opt else "operational_monitoring"
 
         if has_multi_scenarios:
             ev_status = "EVIDENCE: MULTI-SIMULATION EVALUATION"
@@ -1330,6 +1461,7 @@ class MockLLMProvider(BaseLLMProvider):
         obj_match = re.search(r'Objective:\s*"([^"]+)"', user_prompt, re.IGNORECASE) or re.search(r'OBJECTIVE:\s*([^\n]+)', user_prompt, re.IGNORECASE)
         obj_text = obj_match.group(1).strip() if obj_match else ""
         determined_scope = determine_response_scope(obj_text)
+        sim_data_note = "SUMO simulation metrics represent simulated/synthetic evidence under a defined traffic-demand scenario, distinct from live physical road sensors." if (has_simulation or has_multi_scenarios) else None
 
         return {
             "response_scope": determined_scope.model_dump(),
@@ -1338,14 +1470,14 @@ class MockLLMProvider(BaseLLMProvider):
             "cross_domain_relationships": cross_rel,
             "causation_likelihood": causation,
             "simulation_findings": sim_findings,
-            "synthetic_data_note": "SUMO simulation metrics represent simulated/synthetic evidence under a defined traffic-demand scenario, distinct from live physical road sensors.",
-            "uncertainty_and_limitations": "Estimates assume regular driver compliance and absence of unplanned lane blockages.",
+            "synthetic_data_note": sim_data_note,
+            "uncertainty_and_limitations": uncertainty_text,
             "recommendation": rec_text,
             "requested_scope": determined_scope.fields,
             "evidence_status": ev_status,
             "recommendation_basis": rec_basis,
             "confidence": None,
-            "next_action": f"Deploy balanced signal timing program at {loc}." if has_simulation else f"Adjust junction signal cycle at {loc}.",
+            "next_action": f"Deploy balanced signal timing program at {loc}." if has_simulation else next_action_text,
             "intervention_assessment": assessment,
         }
 

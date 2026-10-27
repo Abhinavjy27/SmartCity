@@ -89,6 +89,7 @@ const SIDEBAR_STORAGE_KEY = 'supadsp-sidebar-collapsed'
 export default function DashboardLayout() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [emergencyAlert, setEmergencyAlert] = useState(null)
+  const [activeIncidentModalData, setActiveIncidentModalData] = useState(null)
   const [showIncidentModal, setShowIncidentModal] = useState(false)
   const [showCommandMenu, setShowCommandMenu] = useState(false)
   const [incidentStatus, setIncidentStatus] = useState('UNACKNOWLEDGED')
@@ -129,23 +130,6 @@ export default function DashboardLayout() {
     return () => window.removeEventListener('resize', check)
   }, [])
 
-  // Trigger mock emergency popup
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setEmergencyAlert({
-        id: 'EV_TR_089',
-        severity: 'CRITICAL',
-        title: 'Severe Traffic Disruption',
-        message: 'Major congestion detected on the Central Corridor.',
-        location: 'Central Corridor (Gachibowli to Jubilee Hills)',
-        detected: '18:42 IST',
-        domain: 'Traffic Intelligence',
-        telemetry: 'Average Speed: 8.2 km/h | Queue Length: 350m',
-        recommendedAction: 'AI Actuated Signal Phase Override triggered automatically. Deploying manual backup dispatch.',
-      })
-    }, 8000)
-    return () => clearTimeout(timer)
-  }, [])
 
   // ⌘K handler
   useEffect(() => {
@@ -485,7 +469,11 @@ export default function DashboardLayout() {
           </div>
           <div style={{ display: 'flex', gap: '8px', marginTop: '4px' }}>
             <button
-              onClick={() => { setShowIncidentModal(true); setEmergencyAlert(null); }}
+              onClick={() => {
+                setActiveIncidentModalData(emergencyAlert)
+                setShowIncidentModal(true)
+                setEmergencyAlert(null)
+              }}
               style={{
                 flex: 1, padding: '6px 12px', background: 'var(--accent-warning-dim)', color: 'var(--accent-warning)',
                 border: '1px solid rgba(229,72,63,0.2)', borderRadius: 'var(--radius-sm)',
@@ -530,10 +518,16 @@ export default function DashboardLayout() {
                   <AlertOctagon size={14} />
                   <span>CRITICAL SPATIAL INCIDENT</span>
                 </div>
-                <h3 style={{ fontSize: '1.2rem', marginTop: '2px', fontWeight: 600 }}>Event ID: EV_TR_089</h3>
+                <h3 style={{ fontSize: '1.2rem', marginTop: '2px', fontWeight: 600 }}>
+                  Event ID: {activeIncidentModalData?.id || 'INCIDENT'}
+                </h3>
               </div>
               <button
-                onClick={() => { setShowIncidentModal(false); setIncidentStatus('UNACKNOWLEDGED'); }}
+                onClick={() => {
+                  setShowIncidentModal(false)
+                  setActiveIncidentModalData(null)
+                  setIncidentStatus('UNACKNOWLEDGED')
+                }}
                 style={{ background: 'none', border: 'none', color: 'var(--text-muted)', cursor: 'pointer' }}
               >
                 <X size={20} />
@@ -587,7 +581,9 @@ export default function DashboardLayout() {
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>INCIDENT LOCATION</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginTop: '2px' }}>
                     <MapPin size={14} color="var(--accent-warning)" />
-                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>Central Corridor Area</span>
+                    <span style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      {activeIncidentModalData?.location || 'Incident Location Area'}
+                    </span>
                   </div>
                 </div>
                 <div>
@@ -597,21 +593,21 @@ export default function DashboardLayout() {
                     border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
                     fontFamily: 'var(--font-mono)', fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.5
                   }}>
-                    <div>• Average Speed: <strong style={{ color: 'var(--accent-warning)' }}>8.2 km/h</strong></div>
-                    <div>• Queue Length: <strong style={{ color: 'var(--accent-warning)' }}>350 meters</strong></div>
-                    <div>• Estimated Delay: <strong style={{ color: 'var(--accent-warning)' }}>145 seconds</strong></div>
+                    <div>• {activeIncidentModalData?.telemetry || activeIncidentModalData?.message || 'Real-time telemetry monitoring active'}</div>
                   </div>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>RESPONSIBLE DOMAIN</span>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-                    <span className="badge badge-heavy" style={{ fontSize: '0.7rem' }}>Traffic Intelligence</span>
+                    <span className="badge badge-heavy" style={{ fontSize: '0.7rem' }}>
+                      {activeIncidentModalData?.domain || 'Urban Intelligence'}
+                    </span>
                   </div>
                 </div>
                 <div>
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>AI RECOMMENDATION</span>
                   <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', lineHeight: 1.4, marginTop: '2px' }}>
-                    AI Actuated Signal Phase Override triggered automatically. Deploying manual backup dispatch.
+                    {activeIncidentModalData?.recommendedAction || 'Recommended mitigation evaluation pending confirmation.'}
                   </p>
                 </div>
                 <div>
@@ -644,7 +640,13 @@ export default function DashboardLayout() {
               )}
               {incidentStatus === 'ACKNOWLEDGED' && (
                 <button
-                  onClick={() => { setIncidentStatus('RESOLVED'); setTimeout(() => setShowIncidentModal(false), 800); }}
+                  onClick={() => {
+                    setIncidentStatus('RESOLVED')
+                    setTimeout(() => {
+                      setShowIncidentModal(false)
+                      setActiveIncidentModalData(null)
+                    }, 800)
+                  }}
                   style={{
                     padding: '8px 16px', background: 'var(--accent-traffic)', color: '#fff',
                     border: 'none', borderRadius: 'var(--radius-sm)',
@@ -655,7 +657,11 @@ export default function DashboardLayout() {
                 </button>
               )}
               <button
-                onClick={() => { setShowIncidentModal(false); setIncidentStatus('UNACKNOWLEDGED'); }}
+                onClick={() => {
+                  setShowIncidentModal(false)
+                  setActiveIncidentModalData(null)
+                  setIncidentStatus('UNACKNOWLEDGED')
+                }}
                 style={{
                   padding: '8px 16px', background: 'var(--bg-card)', color: 'var(--text-secondary)',
                   border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',

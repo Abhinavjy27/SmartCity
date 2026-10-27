@@ -12,7 +12,7 @@ export default defineConfig({
     open: true,
     proxy: {
       '/api/pollution': {
-        target: 'http://localhost:8002',
+        target: process.env.VITE_POLLUTION_API_URL || 'http://127.0.0.1:8000',
         changeOrigin: true,
       },
       '/api': {
