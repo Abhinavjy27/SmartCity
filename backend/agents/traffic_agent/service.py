@@ -68,7 +68,7 @@ class TrafficService:
         location: str = "Narayanguda, Hyderabad",
         scenario: str = "synthetic_normal",
         duration_seconds: int = 120,
-        seed: int = 42,
+        seed: Optional[int] = None,
         purpose: str = "baseline_traffic_analysis",
         force_fresh: bool = False,
     ) -> TrafficEvidenceResponse:
@@ -85,26 +85,79 @@ class TrafficService:
             )
 
         duration_seconds = max(10, min(1800, int(duration_seconds or 120)))
-        seed = int(seed if seed is not None else 42)
+        is_random_seed = (seed is None)
+        if seed is None:
+            try:
+                import random
+                seed = random.randint(1000, 99999)
+            except Exception as exc:
+                logger.warning(f"Random seed generation failed: {exc}. Falling back to 42.")
+                seed = 42
+                is_random_seed = False
+        else:
+            try:
+                seed = int(seed)
+            except (ValueError, TypeError):
+                seed = 42
 
         cache_key = f"{clean_scenario}_{duration_seconds}_{seed}_{location}"
         if not force_fresh and cache_key in self._cache:
             logger.info(f"Returning cached baseline simulation for {cache_key}")
             return self._cache[cache_key]
 
-        # 1. Generate deterministic synthetic demand route file
-        route_file = self.demand_generator.generate_route_file(
-            scenario=clean_scenario,
-            duration_seconds=duration_seconds,
-            seed=seed,
-        )
+        # 1. Generate deterministic synthetic demand route file (with safe fallback for random seed)
+        try:
+            route_file = self.demand_generator.generate_route_file(
+                scenario=clean_scenario,
+                duration_seconds=duration_seconds,
+                seed=seed,
+            )
+        except Exception as exc:
+            if is_random_seed and seed != 42:
+                logger.warning(
+                    f"Failed to generate route file for random seed={seed}: {exc}. "
+                    "Falling back to default seed=42 working simulation path."
+                )
+                seed = 42
+                is_random_seed = False
+                route_file = self.demand_generator.generate_route_file(
+                    scenario=clean_scenario,
+                    duration_seconds=duration_seconds,
+                    seed=42,
+                )
+            else:
+                raise
 
-        # 2. Execute SUMO microsimulation via TraCI
-        metrics, corridors = self.sumo_runner.run_simulation(
-            net_file=self.network_path,
-            route_file=route_file,
-            duration_seconds=duration_seconds,
-        )
+        # 2. Execute SUMO microsimulation via TraCI (with safe fallback for random seed)
+        try:
+            metrics, corridors = self.sumo_runner.run_simulation(
+                net_file=self.network_path,
+                route_file=route_file,
+                duration_seconds=duration_seconds,
+            )
+        except SumoExecutionError as exc:
+            if is_random_seed and seed != 42:
+                logger.warning(
+                    f"SUMO simulation failed for random seed={seed}: {exc}. "
+                    "Falling back to default seed=42 route and simulation."
+                )
+                seed = 42
+                is_random_seed = False
+                route_file = self.demand_generator.generate_route_file(
+                    scenario=clean_scenario,
+                    duration_seconds=duration_seconds,
+                    seed=42,
+                )
+                metrics, corridors = self.sumo_runner.run_simulation(
+                    net_file=self.network_path,
+                    route_file=route_file,
+                    duration_seconds=duration_seconds,
+                )
+            else:
+                raise
+
+        # Re-derive cache_key with final simulated seed
+        cache_key = f"{clean_scenario}_{duration_seconds}_{seed}_{location}"
 
         now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
         metadata = SimulationMetadata(
@@ -137,6 +190,7 @@ class TrafficService:
             location=location or "Narayanguda, Hyderabad",
             scenario=clean_scenario,
             status="completed",
+            seed=seed,
             metrics=metrics,
             metadata=metadata,
             observations=observations,

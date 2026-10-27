@@ -18,6 +18,202 @@ from backend.agents.planner_agent.schema import ResponseScope
 logger = logging.getLogger("planner_agent.scope")
 
 
+def strip_unrelated_traffic_disclaimers(text: str) -> str:
+    """
+    Remove traffic optimization, baseline, or SUMO simulation disclaimers
+    from non-traffic or non-simulation responses.
+    Preserves legitimate domain evidence, findings, and advisories.
+    """
+    if not text:
+        return text
+
+    patterns = [
+        r"No traffic optimization interventions were simulated in this cycle\s*(?:\([^)]*\))?\.?\s*",
+        r"Available candidate interventions\s*(?:\([^)]*\))?\s*remain untested in SUMO microsimulation;?\s*(?:their operational effectiveness has not been established and they require simulation execution[^.]*\.?)?\s*",
+        r"Available candidate interventions\s*(?:\([^)]*\))?\s*remain untested in simulation;?\s*(?:their operational effectiveness has not been established and they require simulation execution[^.]*\.?)?\s*",
+        r"Candidate interventions remain untested in SUMO microsimulation\.?\s*",
+        r"Candidate interventions remain untested in simulation\.?\s*",
+        r"No simulation history is available\.?\s*",
+        r"No simulation evidence exists\s*(?:\([^)]*\))?\.?\s*(?:No traffic optimization interventions have been executed in SUMO microsimulation yet[^.]*\.?)?\s*",
+        r"\(untested candidate requiring simulation\)",
+        r"\(Note:\s*Other candidate interventions[^)]*remain untested in this cycle[^)]*\)",
+        r"SUMO simulation metrics represent simulated/synthetic evidence under a defined traffic-demand scenario, distinct from live physical road sensors\.?\s*",
+    ]
+    cleaned = text
+    for pat in patterns:
+        cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
+
+    # Clean up whitespace and punctuation
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^\s*[,;.-]\s*", "", cleaned).strip()
+    return cleaned
+
+
+def strip_internal_planner_reasoning(text: str) -> str:
+    """
+    Remove internal Planner reasoning, rule explanations, rule citations, and
+    procedural non-launch explanations from user-facing responses.
+
+    Preserves factual metrics, source citations, legitimate domain limitations,
+    and actual simulation results when applicable.
+    """
+    if not text:
+        return text
+
+    # 1. Sentence-level filtering
+    sentences = re.split(r'(?<=[.!?])\s+', text)
+    cleaned_sentences = []
+
+    removal_patterns = [
+        # Rule citations or rules
+        r"\b(?:according to|under|per|following|as per)?\s*rule\s+\d+\b",
+        # Purely diagnostic query explanations
+        r"\bpurely\s+diagnostic\b",
+        r"\bdiagnostic\s+intent\b",
+        r"\bdiagnostic\s+query\b",
+        # Evidence sufficiency assertions
+        r"\b(?:evidence|telemetry)\s+is\s+sufficient\b",
+        r"\bsufficient\s+to\s+answer\b",
+        # Explanations about why simulations were not launched / run / needed
+        r"\b(?:no|zero)\s+simulations?\s+(?:were|was)\s+(?:launched|run|required|needed|conducted|executed)\b",
+        r"\bsimulations?\s+(?:were|was)\s+not\s+(?:launched|run|required|needed|conducted|executed)\b",
+        r"\b(?:must\s+not|do\s+not|not\s+to)\s+launch\s+simulations?\b",
+        r"\bno\s+new\s+simulations?\s+(?:were|was|required)\b",
+    ]
+
+    for sent in sentences:
+        sent_str = sent.strip()
+        if not sent_str:
+            continue
+        # Drop sentence if it contains internal Planner reasoning or rule explanations
+        if any(re.search(pat, sent_str, flags=re.IGNORECASE) for pat in removal_patterns):
+            continue
+        cleaned_sentences.append(sent_str)
+
+    cleaned = " ".join(cleaned_sentences).strip()
+
+    # 2. In-clause fragment cleanup for cases without punctuation boundaries
+    clause_patterns = [
+        r"(?:According to|Under|Per|Following|As per)\s+Rule\s+\d+[^,.:;]*[,.:;]?",
+        r"(?:The|This)\s+objective\s+is\s+(?:a\s+)?purely\s+diagnostic\s+query[^.]*\.?",
+        r"(?:The|This)\s+query\s+is\s+(?:a\s+)?purely\s+diagnostic\s*(?:query|request)?[^.]*\.?",
+        r"(?:As|Since|Because)\s+this\s+is\s+a\s+(?:purely\s+)?diagnostic\s+(?:query|request)[^,.]*,?\s*",
+        r"\b(?:purely\s+diagnostic\s+query|purely\s+diagnostic\s+request)\b[^.]*\.?",
+        r"(?:The\s+collected\s+evidence|The\s+evidence|Evidence)\s+is\s+sufficient\s+to\s+answer[^.]*\.?",
+        r"(?:(?:No|Zero)\s+simulations?\s+were\s+(?:launched|run|required|needed|conducted|executed)\s*(?:because|since|as|for)?[^.]*\.?)",
+        r"(?:(?:Simulations?|Simulation\s+runs?)\s+were\s+not\s+(?:launched|run|required|needed|conducted|executed)\s*(?:because|since|as|for)?[^.]*\.?)",
+    ]
+    for cpat in clause_patterns:
+        cleaned = re.sub(cpat, "", cleaned, flags=re.IGNORECASE)
+
+    # Clean up whitespace and punctuation
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    cleaned = re.sub(r"^\s*[,;.-]\s*", "", cleaned).strip()
+    return cleaned
+
+
+def request_involves_traffic_optimization_or_simulation(
+    objective: str,
+    collected_results: Optional[Dict[str, Any]] = None,
+    tested_interventions: Optional[List[Any]] = None,
+    untested_candidates: Optional[List[Any]] = None,
+) -> bool:
+    """
+    Determine whether the current user request actually involves traffic optimization,
+    traffic interventions, or simulation.
+
+    Returns True ONLY when:
+    1. Simulation was explicitly requested or executed (tested interventions or simulation results exist).
+    2. The objective asks about simulation execution, simulation comparison, or tested interventions.
+    3. The objective explicitly involves traffic optimization (signal timing, rerouting, bottleneck resolution, congestion reduction).
+    4. For single-domain traffic requests, candidate interventions exist from the Traffic Agent.
+
+    Returns False for:
+    - Weather-only queries
+    - Pollution-only queries
+    - Energy-only queries
+    - Multi-agent queries that do not explicitly request traffic optimization or simulation
+    - Pure observational or diagnostic queries where no candidates or simulations exist
+    """
+    if tested_interventions and len(tested_interventions) > 0:
+        return True
+
+    if collected_results and bool(collected_results.get("simulation")):
+        return True
+
+    obj = (objective or "").lower().strip()
+
+    # 1. Explicit simulation keywords / comparison inquiries
+    sim_keywords = [
+        "which tested intervention", "which tested", "performed better", "perform better",
+        "compare the tested", "compare tested", "compare the simulated", "compare simulated",
+        "was the intervention effective", "why did the tested", "why did tested",
+        "did the optimization solve", "did it solve the bottleneck", "was the bottleneck solved",
+        "simulate", "simulation", "sumo", "run simulation", "test in simulation",
+        "test the intervention", "synthetic demand"
+    ]
+    if any(k in obj for k in sim_keywords):
+        return True
+
+    # 2. Specific traffic optimization / intervention phrases
+    traffic_opt_phrases = [
+        "optimize traffic", "traffic optimization", "optimize the traffic", "optimize signals",
+        "optimize signal", "signal timing", "rerouting", "green time", "traffic intervention",
+        "candidate intervention", "candidate interventions", "bottleneck resolution",
+        "solve the bottleneck", "solve bottleneck", "alleviate the bottleneck",
+        "reduce traffic congestion", "alleviate traffic", "mitigate traffic",
+        "traffic mitigation", "improve traffic flow"
+    ]
+    if any(p in obj for p in traffic_opt_phrases):
+        return True
+
+    # 3. Combination of optimization action verb + explicit traffic concept
+    opt_verbs = [
+        "optimize", "optimization", "how can we reduce", "how to reduce",
+        "how can we improve", "how to improve", "how can we alleviate", "how to alleviate",
+        "how can we fix", "how to fix", "how to mitigate", "how can we mitigate",
+        "recommend an intervention", "suggest an intervention", "propose an intervention",
+        "mitigation strategy", "how to solve", "how can we solve"
+    ]
+    traffic_nouns = [
+        "traffic", "congestion", "bottleneck", "corridor", "delay",
+        "signal", "intersection", "junction", "vehicle queue", "queuing"
+    ]
+    if any(v in obj for v in opt_verbs) and any(n in obj for n in traffic_nouns):
+        return True
+
+    # 4. Check if candidates exist in traffic data for single-domain traffic requests
+    has_traffic_cands = False
+    if untested_candidates and len(untested_candidates) > 0:
+        has_traffic_cands = True
+    elif collected_results and isinstance(collected_results.get("traffic"), dict):
+        raw_cands = collected_results["traffic"].get("candidate_interventions", [])
+        if raw_cands and len(raw_cands) > 0:
+            has_traffic_cands = True
+
+    if has_traffic_cands:
+        domains = [k for k in (collected_results or {}).keys() if k in {"traffic", "weather", "pollution", "energy"}]
+        is_multi_agent = len(domains) > 1
+        if not is_multi_agent:
+            # Diagnostic-only questions asking only for bottleneck or metric should not trigger optimization disclaimers
+            is_diagnostic_only = any(
+                p in obj for p in [
+                    "what is the bottleneck", "which corridor is the bottleneck", "what are the bottleneck",
+                    "what is the average speed", "what is the speed", "give me the bottleneck",
+                    "what is the traffic congestion", "why is", "congestion level"
+                ]
+            ) and not any(
+                w in obj for w in [
+                    "candidate", "candidates", "intervention", "interventions", "recommend",
+                    "recommendation", "optimize", "reduce", "improve", "solve", "mitigate"
+                ]
+            )
+            if not is_diagnostic_only:
+                return True
+
+    return False
+
+
 def determine_response_scope(objective: str) -> ResponseScope:
     """
     Determine the structured ResponseScope (fields and detail_level) based on
@@ -209,6 +405,46 @@ def determine_response_scope(objective: str) -> ResponseScope:
             return ResponseScope(fields=["pollution", "city_avg_aqi", "pm25", "pm10"], detail_level="summary")
         return ResponseScope(fields=["pollution", "aqi", "pm25", "pm10", "suggested_interventions"], detail_level="analysis")
 
+    # Weather domain targeted inquiries
+    has_temp = bool(re.search(r"\btemp(erature)?\b", obj))
+    has_rain = any(w in obj for w in ["rain", "raining", "rainfall", "precipitation"])
+    has_forecast = "forecast" in obj
+    has_weather = any(w in obj for w in ["weather", "climate", "humidity", "wind", "sunny", "cloudy"]) or has_temp or has_rain or has_forecast
+    has_traffic_terms = any(w in obj for w in ["traffic", "congestion", "speed", "bottleneck", "corridor", "delay", "rerout", "signal", "junction", "vehicles"])
+
+    if has_weather and not has_traffic_terms:
+        if has_temp and not (has_rain or has_forecast) and not is_broad:
+            return ResponseScope(fields=["temperature"], detail_level="minimal")
+        if has_rain and not has_forecast and not is_broad:
+            return ResponseScope(fields=["precipitation", "condition"], detail_level="minimal")
+        if has_forecast:
+            return ResponseScope(fields=["weather_forecast"], detail_level="summary")
+        if not is_broad:
+            return ResponseScope(fields=["weather", "temperature", "condition", "humidity", "precipitation"], detail_level="summary")
+        return ResponseScope(fields=["weather", "temperature", "condition", "precipitation", "forecast"], detail_level="analysis")
+
+    # Energy domain targeted inquiries
+    has_grid = any(w in obj for w in ["grid status", "power grid", "substation", "substations"])
+    has_load = any(w in obj for w in ["power load", "grid load", "load pct", "current load", "electricity load"])
+    has_energy = any(w in obj for w in ["energy", "electricity", "power"]) or has_grid or has_load
+
+    if has_energy and not has_traffic_terms and not has_weather:
+        if has_grid and not is_broad:
+            return ResponseScope(fields=["grid_status", "load_pct"], detail_level="minimal")
+        if has_load and not is_broad:
+            return ResponseScope(fields=["load_pct", "current_load_mw"], detail_level="minimal")
+        if not is_broad:
+            return ResponseScope(fields=["energy", "grid_status", "load_pct"], detail_level="summary")
+        return ResponseScope(fields=["energy", "grid_status", "load_pct", "substations"], detail_level="analysis")
+
+    # Domain-aware default fallback
+    if has_weather and not has_traffic_terms:
+        return ResponseScope(fields=["weather", "temperature", "condition"], detail_level="summary")
+    if has_energy and not has_traffic_terms:
+        return ResponseScope(fields=["energy", "grid_status", "load_pct"], detail_level="summary")
+    if ("pollution" in obj or "air quality" in obj) and not has_traffic_terms:
+        return ResponseScope(fields=["pollution", "city_avg_aqi", "pm25", "pm10"], detail_level="summary")
+
     # Default fallback: broad analysis
     return ResponseScope(fields=["congestion", "relevant_metrics", "causes", "recommendations"], detail_level="analysis")
 
@@ -381,6 +617,40 @@ def extract_specialist_pollution_metrics(collected_results: Dict[str, Any]) -> D
     }
 
 
+def extract_specialist_weather_metrics(collected_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Safely extract specialist weather metrics from collected_results.
+    Extracts temperature_c, condition, humidity_pct, precipitation_mm, wind_speed_kmh, forecast_7d.
+    Never fabricates values.
+    """
+    wth = collected_results.get("weather") or {}
+    return {
+        "temperature_c": wth.get("temperature_c"),
+        "condition": wth.get("condition"),
+        "humidity_pct": wth.get("humidity_pct") if "humidity_pct" in wth else wth.get("humidity"),
+        "precipitation_mm": wth.get("precipitation_mm") if "precipitation_mm" in wth else wth.get("precipitation"),
+        "wind_speed_kmh": wth.get("wind_speed_kmh") if "wind_speed_kmh" in wth else wth.get("wind_speed"),
+        "forecast_7d": wth.get("forecast_7d", []),
+        "city": wth.get("city") or wth.get("location"),
+    }
+
+
+def extract_specialist_energy_metrics(collected_results: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Safely extract specialist energy metrics from collected_results.
+    Extracts grid_status, load_pct, current_load_mw, capacity_mw, substations.
+    Never fabricates values.
+    """
+    nrg = collected_results.get("energy") or {}
+    return {
+        "grid_status": nrg.get("grid_status") or nrg.get("status"),
+        "load_pct": nrg.get("load_pct"),
+        "current_load_mw": nrg.get("current_load_mw"),
+        "capacity_mw": nrg.get("capacity_mw"),
+        "substations": nrg.get("substations", []),
+    }
+
+
 def validate_and_enforce_response_scope(
     final_reasoning: Any,
     objective: str,
@@ -405,8 +675,38 @@ def validate_and_enforce_response_scope(
         setattr(final_reasoning, "response_scope", scope)
     setattr(final_reasoning, "requested_scope", scope.fields)
 
-    # 2. If broad analysis or simulation evaluation is requested, preserve comprehensive reasoning
+    involves_traffic_opt_or_sim = request_involves_traffic_optimization_or_simulation(
+        objective=objective,
+        collected_results=collected_results,
+        tested_interventions=getattr(final_reasoning, "tested_interventions", None),
+        untested_candidates=getattr(final_reasoning, "untested_candidates", None),
+    )
+
+    # Strip internal reasoning, rule citations, and simulation non-launch explanations from all user-facing fields
+    for attr in ("summary", "recommendation", "uncertainty_and_limitations"):
+        val = getattr(final_reasoning, attr, None)
+        if val and isinstance(val, str):
+            setattr(final_reasoning, attr, strip_internal_planner_reasoning(val))
+
+    # When request does not involve traffic optimization or simulation, strip any stray traffic/SUMO disclaimers
+    if not involves_traffic_opt_or_sim:
+        if hasattr(final_reasoning, "summary") and final_reasoning.summary:
+            final_reasoning.summary = strip_unrelated_traffic_disclaimers(final_reasoning.summary)
+        if hasattr(final_reasoning, "recommendation") and final_reasoning.recommendation:
+            final_reasoning.recommendation = strip_unrelated_traffic_disclaimers(final_reasoning.recommendation)
+        if hasattr(final_reasoning, "uncertainty_and_limitations") and final_reasoning.uncertainty_and_limitations:
+            final_reasoning.uncertainty_and_limitations = strip_unrelated_traffic_disclaimers(final_reasoning.uncertainty_and_limitations)
+        if hasattr(final_reasoning, "synthetic_data_note"):
+            setattr(final_reasoning, "synthetic_data_note", None)
+        if hasattr(final_reasoning, "simulation_findings"):
+            setattr(final_reasoning, "simulation_findings", None)
+
+    # 2. If broad analysis or simulation evaluation is requested, preserve comprehensive reasoning (after stripping disclaimers & internal reasoning)
     if scope.detail_level in ("analysis", "full") or "broad_analysis" in scope.fields or "simulation_evaluation" in scope.fields:
+        for attr in ("summary", "recommendation", "uncertainty_and_limitations"):
+            val = getattr(final_reasoning, attr, None)
+            if val and isinstance(val, str):
+                setattr(final_reasoning, attr, strip_internal_planner_reasoning(val))
         return
 
     # 3. For narrow/minimal scopes, enforce that unrequested information is not exposed
@@ -417,9 +717,26 @@ def validate_and_enforce_response_scope(
     wants_causes = "causes" in fields
     wants_congestion = "congestion" in fields
 
-    # If recommendations were not requested, ensure recommendation is empty
-    if not wants_recommendations:
+    wants_simulation = bool({"simulation", "simulation_evaluation"}.intersection(fields))
+
+    obj_l = (objective or "").lower()
+    wants_explicit_candidates = any(w in obj_l for w in [
+        "candidate", "candidates", "intervention", "interventions", "recommendation", "recommendations",
+        "what can be done", "solutions", "how to fix", "how to reduce", "how can we", "suggest", "propose"
+    ])
+
+    # If recommendations or candidates were not requested (e.g. diagnostic query only asking for bottleneck or metric):
+    if not wants_recommendations and not wants_explicit_candidates:
         setattr(final_reasoning, "recommendation", "")
+        if hasattr(final_reasoning, "untested_candidates"):
+            setattr(final_reasoning, "untested_candidates", [])
+
+    # If simulation was not requested, clear simulation fields
+    if not wants_simulation:
+        if hasattr(final_reasoning, "synthetic_data_note"):
+            setattr(final_reasoning, "synthetic_data_note", None)
+        if hasattr(final_reasoning, "simulation_findings"):
+            setattr(final_reasoning, "simulation_findings", None)
 
     metrics_info = extract_specialist_traffic_metrics(collected_results)
     bottleneck_name = metrics_info["bottleneck_name"]
@@ -550,6 +867,73 @@ def validate_and_enforce_response_scope(
                 final_reasoning.summary = f"Air Quality: {', '.join(parts)}."
         else:
             final_reasoning.summary = "Air Quality: Telemetry unavailable."
+
+    # Scope 13: Temperature only
+    elif fields == {"temperature"}:
+        w_info = extract_specialist_weather_metrics(collected_results)
+        t_val = w_info.get("temperature_c")
+        if t_val is not None:
+            t_disp = f"{t_val:.1f}" if isinstance(t_val, float) else str(t_val)
+            final_reasoning.summary = f"Current temperature: {t_disp}°C."
+        else:
+            final_reasoning.summary = "Temperature: Telemetry unavailable."
+
+    # Scope 14: Precipitation and Condition
+    elif fields in ({"precipitation", "condition"}, {"precipitation"}):
+        w_info = extract_specialist_weather_metrics(collected_results)
+        c_val = w_info.get("condition") or "Clear"
+        p_val = w_info.get("precipitation_mm")
+        p_str = f"{p_val} mm" if p_val is not None else "None reported"
+        final_reasoning.summary = f"Weather condition: {c_val}. Precipitation: {p_str}."
+
+    # Scope 15: Weather status / summary
+    elif "weather" in fields or "weather_forecast" in fields:
+        w_info = extract_specialist_weather_metrics(collected_results)
+        c_val = w_info.get("condition")
+        t_val = w_info.get("temperature_c")
+        p_val = w_info.get("precipitation_mm")
+        h_val = w_info.get("humidity_pct")
+        parts = []
+        if c_val:
+            parts.append(f"{c_val}")
+        if t_val is not None:
+            t_disp = f"{t_val:.1f}" if isinstance(t_val, float) else str(t_val)
+            parts.append(f"{t_disp}°C")
+        if p_val is not None:
+            parts.append(f"Precipitation: {p_val} mm")
+        if h_val is not None:
+            parts.append(f"Humidity: {h_val}%")
+        if parts:
+            final_reasoning.summary = f"Current weather: {', '.join(parts)}."
+        else:
+            final_reasoning.summary = "Weather: Telemetry unavailable."
+
+    # Scope 16: Grid status only
+    elif fields in ({"grid_status", "load_pct"}, {"grid_status"}):
+        e_info = extract_specialist_energy_metrics(collected_results)
+        st_val = e_info.get("grid_status") or "ONLINE"
+        lp_val = e_info.get("load_pct")
+        lp_str = f" (Load: {lp_val}%)" if lp_val is not None else ""
+        final_reasoning.summary = f"Power grid status: {st_val}{lp_str}."
+
+    # Scope 17: Energy load / status
+    elif "energy" in fields or "load_pct" in fields:
+        e_info = extract_specialist_energy_metrics(collected_results)
+        st_val = e_info.get("grid_status") or "ONLINE"
+        lp_val = e_info.get("load_pct")
+        mw_val = e_info.get("current_load_mw")
+        parts = [f"Status: {st_val}"]
+        if lp_val is not None:
+            parts.append(f"Load: {lp_val}%")
+        if mw_val is not None:
+            parts.append(f"{mw_val} MW")
+        final_reasoning.summary = f"Energy grid: {', '.join(parts)}."
+
+    # Final pass to ensure all user-facing fields are stripped of internal reasoning
+    for attr in ("summary", "recommendation", "uncertainty_and_limitations"):
+        val = getattr(final_reasoning, attr, None)
+        if val and isinstance(val, str):
+            setattr(final_reasoning, attr, strip_internal_planner_reasoning(val))
 
 
 def apply_response_scope(

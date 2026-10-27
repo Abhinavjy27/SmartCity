@@ -156,7 +156,7 @@ class SyntheticDemandGenerator:
         self,
         scenario: str = "synthetic_normal",
         duration_seconds: int = 120,
-        seed: int = 42,
+        seed: Optional[int] = 42,
         custom_rates: Optional[Dict[str, int]] = None,
     ) -> str:
         """
@@ -164,6 +164,17 @@ class SyntheticDemandGenerator:
         duration, and random seed.
         """
         scenario = self.validate_scenario(scenario)
+        if seed is None:
+            try:
+                seed = random.randint(1000, 99999)
+            except Exception:
+                seed = 42
+        else:
+            try:
+                seed = int(seed)
+            except (ValueError, TypeError):
+                seed = 42
+
         filename = f"{scenario}_{duration_seconds}s_seed{seed}.rou.xml"
         output_path = os.path.join(self.routes_dir, filename)
 

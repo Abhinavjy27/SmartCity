@@ -57,17 +57,27 @@ LOCALITY_COORDINATES: Dict[str, Tuple[float, float]] = {
 }
 
 
+INVALID_LOCATION_TOKENS = {
+    "unknown", "none", "null", "undefined", "n/a", "na",
+    "not specified", "unspecified", "any", "city", "location", "here",
+}
+
+
 def resolve_location(location_str: Optional[str]) -> Tuple[str, float, float]:
     """
     Resolve location text to canonical name and latitude/longitude coordinates.
-    1. Fast lookup in local coordinates cache.
-    2. Dynamic live geocoding via Open-Meteo Geocoding API for any locality, area, or city.
-    3. Fallback to Hyderabad metropolitan center.
+    1. Reject blank, 'unknown', and invalid locations before geocoding.
+    2. Fast lookup in local coordinates cache.
+    3. Dynamic live geocoding via Open-Meteo Geocoding API for verified locations.
+    4. Fallback to Hyderabad metropolitan center.
     """
     if not location_str or not location_str.strip():
         return "Hyderabad", 17.3850, 78.4867
 
     norm = location_str.lower().strip()
+    if norm in INVALID_LOCATION_TOKENS or any(norm == tok for tok in INVALID_LOCATION_TOKENS):
+        logger.info(f"Location '{location_str}' classified as invalid/unknown. Defaulting to Hyderabad.")
+        return "Hyderabad", 17.3850, 78.4867
 
     # 1. Fast match in local coordinates registry
     for loc_key, coords in LOCALITY_COORDINATES.items():

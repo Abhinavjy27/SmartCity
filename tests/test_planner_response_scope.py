@@ -483,7 +483,75 @@ class TestPlannerResponseScope(unittest.TestCase):
             self.assertEqual(collected.get("waiting_time"), 1432)
             self.assertEqual(collected.get("throughput"), 892)
 
+    # -------------------------------------------------------------------------
+    # Test I: Removal of internal Planner reasoning & rule explanations
+    # -------------------------------------------------------------------------
+    def test_strip_internal_planner_reasoning_helper(self):
+        """
+        Verify that strip_internal_planner_reasoning strips internal Planner reasoning,
+        rule explanations, and simulation non-launch notes while preserving metrics and evidence.
+        """
+        from backend.agents.planner_agent.scope import strip_internal_planner_reasoning
+
+        raw_text = (
+            "The objective is a purely diagnostic query asking for the bottleneck corridor. "
+            "According to Rule 3, purely diagnostic queries must not launch simulations. "
+            "The evidence is sufficient to answer the objective. "
+            "No simulations were launched because this is a diagnostic query. "
+            "Bottleneck corridor: Westbound. Average speed: 24.5 km/h."
+        )
+        cleaned = strip_internal_planner_reasoning(raw_text)
+        self.assertNotIn("The objective is a purely diagnostic query", cleaned)
+        self.assertNotIn("Rule 3", cleaned)
+        self.assertNotIn("evidence is sufficient", cleaned)
+        self.assertNotIn("No simulations were launched", cleaned)
+        self.assertEqual(cleaned, "Bottleneck corridor: Westbound. Average speed: 24.5 km/h.")
+
+    def test_diagnostic_query_excludes_internal_reasoning_and_rule_explanations(self):
+        """
+        Verify that for diagnostic queries, user-facing summary and recommendation
+        return direct answers without internal reasoning, rule explanations, or simulation notes.
+        """
+        from backend.agents.planner_agent.schema import LLMFinalReasoning, ResponseScope
+
+        mock_reasoning = LLMFinalReasoning(
+            response_scope=ResponseScope(fields=["bottleneck_corridor"], detail_level="minimal"),
+            summary=(
+                "The objective is a purely diagnostic query. According to Rule 3, no simulations were launched. "
+                "The evidence is sufficient to answer. Bottleneck corridor: Westbound."
+            ),
+            recommendation="No simulations were launched because the objective is a purely diagnostic query.",
+            evidence_status="EVIDENCE: OBSERVATIONAL",
+            evidence_used=["traffic.bottlenecks"],
+            uncertainty_and_limitations="Estimates assume regular driver compliance.",
+            cross_domain_relationships="Independent traffic telemetry.",
+            causation_likelihood="INDEPENDENT",
+            synthetic_data_note=None,
+            simulation_findings=None,
+            recommendation_basis="OBSERVATIONAL_TELEMETRY_ONLY",
+            next_action="finalize",
+        )
+        with patch.object(self.planner, "generate_final_reasoning", return_value=mock_reasoning):
+            eval_res = self.planner.evaluate_and_replan(
+                objective="What is the bottleneck corridor?",
+                plan=["traffic"],
+                collected_results={"traffic": self.mock_traffic_evidence},
+                failures={},
+                cycle_num=1,
+                max_cycles=3,
+                location="Narayanguda, Hyderabad",
+            )
+
+            # Direct answer returned directly
+            self.assertEqual(eval_res.final_reasoning.summary, "Bottleneck corridor: Westbound.")
+            self.assertEqual(eval_res.final_reasoning.recommendation, "")
+            self.assertNotIn("Rule 3", eval_res.final_reasoning.summary)
+            self.assertNotIn("purely diagnostic", eval_res.final_reasoning.summary.lower())
+            self.assertNotIn("evidence is sufficient", eval_res.final_reasoning.summary.lower())
+            self.assertNotIn("no simulations were launched", eval_res.final_reasoning.summary.lower())
+
 
 if __name__ == "__main__":
     unittest.main()
+
 

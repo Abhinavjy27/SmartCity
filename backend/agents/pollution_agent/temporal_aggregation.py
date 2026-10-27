@@ -57,7 +57,7 @@ def compute_pollutant_window_mean(
     valid_series = series.dropna()
     valid_count = len(valid_series)
     valid_hours = valid_count * (resolution_minutes / 60.0)
-    is_sufficient = valid_count >= spec["min_readings"]
+    is_sufficient = (valid_count >= spec["min_readings"]) or (valid_hours >= spec["min_hours"])
 
     metadata = {
         "pollutant": pollutant,
@@ -121,12 +121,19 @@ def compute_station_window_aggregates(
     concentrations = {}
     completeness = {}
 
+    resolution_minutes = 15
+    if len(station_df) >= 2 and "timestamp" in station_df.columns:
+        diffs = station_df["timestamp"].diff().dropna().dt.total_seconds() / 60.0
+        median_diff = diffs.median()
+        if pd.notna(median_diff) and median_diff > 0:
+            resolution_minutes = max(1, int(round(median_diff)))
+
     for p in ["PM2.5", "PM10", "NO2", "SO2", "NH3", "CO", "O3", "NO", "NOx", "Benzene", "Toluene", "Xylene"]:
         spec = WINDOW_SPECS.get(p, {"window_hours": 24, "min_hours": 16.0, "nominal_readings": 96, "min_readings": 64})
         target_df = df_8h if spec["window_hours"] == 8 else df_24h
 
         if p in target_df.columns:
-            mean_val, meta = compute_pollutant_window_mean(target_df[p], p)
+            mean_val, meta = compute_pollutant_window_mean(target_df[p], p, resolution_minutes=resolution_minutes)
             completeness[p] = meta
             if mean_val is not None:
                 concentrations[p] = mean_val

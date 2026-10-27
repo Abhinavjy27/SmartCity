@@ -69,6 +69,9 @@ from backend.agents.planner_agent.scope import (
     classify_response_scope,
     determine_response_scope,
     extract_specialist_traffic_metrics,
+    request_involves_traffic_optimization_or_simulation,
+    strip_internal_planner_reasoning,
+    strip_unrelated_traffic_disclaimers,
     validate_and_enforce_response_scope,
 )
 
@@ -135,6 +138,88 @@ def is_analytical_history_followup(objective: str) -> bool:
     )
 
 
+def is_test_proposed_intervention_query(objective: str) -> bool:
+    """Check if the user is asking to simulate or test the proposed / recommended intervention from context."""
+    obj_lower = (objective or "").lower().strip()
+    return any(
+        phrase in obj_lower for phrase in [
+            "test the proposed intervention",
+            "test the proposed",
+            "test proposed intervention",
+            "test proposed",
+            "simulate the proposed intervention",
+            "simulate the proposed",
+            "simulate proposed intervention",
+            "simulate proposed",
+            "test the recommended intervention",
+            "test recommended intervention",
+            "test the recommended",
+            "simulate the recommended",
+            "test the intervention",
+            "simulate the intervention",
+            "run simulation for the proposed",
+            "run simulation for proposed",
+        ]
+    )
+
+
+def extract_proposed_intervention_from_context(
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
+    existing_results: Optional[Dict[str, Any]] = None,
+) -> Optional[Dict[str, Any]]:
+    """Extract candidate intervention details from conversation history or existing results."""
+    # 1. Check existing_results
+    if existing_results and isinstance(existing_results, dict):
+        trf = existing_results.get("traffic") or {}
+        if isinstance(trf, dict):
+            cands = trf.get("candidate_interventions") or []
+            for c in cands:
+                if isinstance(c, dict) and c.get("type"):
+                    return {
+                        "type": c.get("type", "signal_timing"),
+                        "target": c.get("target", "Westbound"),
+                        "parameters": c.get("parameters", {"green_time_adjustment_sec": 10.0}),
+                    }
+
+    # 2. Check conversation_history in reverse order
+    if conversation_history:
+        for turn in reversed(conversation_history):
+            if not isinstance(turn, dict):
+                continue
+            col = turn.get("collected_results") or {}
+            if isinstance(col, dict) and "traffic" in col and isinstance(col["traffic"], dict):
+                cands = col["traffic"].get("candidate_interventions") or []
+                for c in cands:
+                    if isinstance(c, dict) and c.get("type"):
+                        return {
+                            "type": c.get("type", "signal_timing"),
+                            "target": c.get("target", "Westbound"),
+                            "parameters": c.get("parameters", {"green_time_adjustment_sec": 10.0}),
+                        }
+
+            tev = turn.get("traffic_evidence") or {}
+            if isinstance(tev, dict):
+                cands = tev.get("candidate_interventions") or []
+                for c in cands:
+                    if isinstance(c, dict) and c.get("type"):
+                        return {
+                            "type": c.get("type", "signal_timing"),
+                            "target": c.get("target", "Westbound"),
+                            "parameters": c.get("parameters", {"green_time_adjustment_sec": 10.0}),
+                        }
+
+            unc = turn.get("untested_candidates") or (turn.get("final_response") or {}).get("untested_candidates") or []
+            for c in unc:
+                if isinstance(c, dict) and c.get("type"):
+                    return {
+                        "type": c.get("type", "signal_timing"),
+                        "target": c.get("target", "Westbound"),
+                        "parameters": c.get("parameters", {"green_time_adjustment_sec": 10.0}),
+                    }
+
+    return None
+
+
 class PlannerAgent:
     """
     Autonomous LLM Planner Agent.
@@ -169,11 +254,12 @@ class PlannerAgent:
         duration_seconds: Optional[int] = None,
         scenario: Optional[str] = None,
         seed: Optional[int] = None,
+        conversation_history: Optional[List[Dict[str, Any]]] = None,
     ) -> LLMPlanDecision:
         """
         Calls the LLM with agent contracts knowledge to understand the objective,
         select required specialist agents, and generate contract-adherent inputs.
-        Supports analytical follow-ups on simulation history without redundant dispatches.
+        Supports deterministic intent routing for high-confidence single-domain queries.
         """
         if not objective or not objective.strip():
             return LLMPlanDecision(
@@ -211,7 +297,11 @@ class PlannerAgent:
                 except (ValueError, TypeError):
                     pass
 
-        # Follow-up analytical inquiry detection
+        eff_loc = location or "Narayanguda, Hyderabad"
+        if not eff_loc or eff_loc.strip().lower() in {"unknown", "none", "null", "undefined", "n/a", "na", "?", "nil", "default"}:
+            eff_loc = "Narayanguda, Hyderabad"
+
+        # 1. Follow-up analytical inquiry detection on existing simulation evidence
         is_analytical_history = is_analytical_history_followup(obj_lower)
         is_explicit_new_testing = any(
             phrase in obj_lower for phrase in [
@@ -233,8 +323,6 @@ class PlannerAgent:
 
         if is_analytical_history and not is_explicit_new_testing:
             if has_sim_history:
-                # Issue 1 & 6: Completed simulation history exists.
-                # Do NOT dispatch specialist agents. Finalize and evaluate historical evidence directly.
                 return LLMPlanDecision(
                     relevant=True,
                     objective=obj_clean,
@@ -243,12 +331,10 @@ class PlannerAgent:
                     required_capabilities=[],
                     agent_requests=[],
                     next_action="finalize",
-                    confidence=None,
+                    confidence=1.0,
                     response=None,
                 )
             else:
-                # Issue 1 & 6 (Test D): No simulation history exists anywhere.
-                # Do NOT invent results or launch simulations for historical questions.
                 return LLMPlanDecision(
                     relevant=True,
                     objective=obj_clean,
@@ -257,14 +343,192 @@ class PlannerAgent:
                     required_capabilities=[],
                     agent_requests=[],
                     next_action="finalize",
-                    confidence=None,
+                    confidence=1.0,
                     response=None,
                 )
 
+        # 2. Follow-up: "Test / simulate the proposed intervention"
+        if is_test_proposed_intervention_query(obj_lower):
+            proposed_int = extract_proposed_intervention_from_context(conversation_history, existing_results)
+            if not proposed_int:
+                proposed_int = {
+                    "type": "signal_timing",
+                    "target": "Westbound",
+                    "parameters": {"green_time_adjustment_sec": 10.0},
+                }
+            c_type = proposed_int.get("type", "signal_timing")
+            c_target = proposed_int.get("target", "Westbound")
+            c_label = f"{c_type}_{c_target.lower().replace(' ', '_')}"
+            sim_req = {
+                "scenario_name": eff_scenario or "synthetic_normal",
+                "location": eff_loc,
+                "duration_seconds": eff_duration or 120,
+                "seed": eff_seed,
+                "intervention": proposed_int,
+                "candidate_intervention": c_label,
+                "duration_steps": eff_duration or 120,
+            }
+            if c_type == "signal_timing":
+                sim_req["signal_optimization"] = True
+
+            has_base = bool(existing_results and ("traffic" in existing_results or "simulations" in existing_results))
+            req_caps = ["simulation"] if has_base else ["traffic", "simulation"]
+            agent_reqs = []
+            if not has_base:
+                agent_reqs.append(
+                    AgentRequest(
+                        agent="traffic",
+                        request={
+                            "location": eff_loc,
+                            "duration_seconds": eff_duration or 120,
+                            "scenario": eff_scenario or "synthetic_normal",
+                            "seed": eff_seed,
+                            "purpose": "baseline_traffic_analysis",
+                        },
+                        reason=f"Retrieve baseline traffic conditions at {eff_loc} before evaluating proposed intervention.",
+                    )
+                )
+            agent_reqs.append(
+                AgentRequest(
+                    agent="simulation",
+                    request=sim_req,
+                    reason=f"Simulate proposed candidate intervention {c_type} on {c_target} corridor.",
+                )
+            )
+
+            return LLMPlanDecision(
+                relevant=True,
+                objective=obj_clean,
+                identified_problem=f"Empirical simulation evaluation of proposed intervention on {c_target}",
+                objective_understanding=f"Simulate proposed {c_type} intervention on {c_target} corridor",
+                required_capabilities=req_caps,
+                agent_requests=agent_reqs,
+                next_action="run_simulation" if has_base else "collect_evidence",
+                confidence=1.0,
+            )
+
+        # 3. Deterministic Intent Routing for Single-Domain Queries
+        is_weather_kw = any(w in obj_lower for w in ["weather", "temperature", "forecast", "precipitation", "rain", "raining", "rainfall", "humidity", "wind", "monsoon", "thunderstorm", "storm", "clear sky"])
+        is_traffic_kw = any(w in obj_lower for w in ["traffic", "congestion", "bottleneck", "speed", "flow", "cars", "corridor", "queue", "delay", "flyover", "signal", "rerout", "intervention"])
+        is_pollution_kw = any(w in obj_lower for w in ["pollution", "aqi", "air quality", "pm2.5", "pm25", "pm10", "smog", "emission", "emissions", "particulate"])
+        is_energy_kw = any(w in obj_lower for w in ["energy", "grid status", "power grid", "substation load", "substation", "electricity load", "electricity consumption", "feeder load", "power consumption"])
+
+        # Weather single-domain
+        if is_weather_kw and not (is_traffic_kw or is_pollution_kw or is_energy_kw):
+            return LLMPlanDecision(
+                relevant=True,
+                objective=obj_clean,
+                identified_problem="Meteorological telemetry and weather monitoring",
+                objective_understanding=f"Retrieve current weather and meteorological conditions at {eff_loc}",
+                required_capabilities=["weather"],
+                agent_requests=[
+                    AgentRequest(
+                        agent="weather",
+                        request={"location": eff_loc, "purpose": "current_weather"},
+                        reason=f"Determine current meteorological telemetry and precipitation at {eff_loc}.",
+                    )
+                ],
+                next_action="collect_evidence",
+                confidence=1.0,
+            )
+
+        # Pollution single-domain
+        if is_pollution_kw and not (is_traffic_kw or is_weather_kw or is_energy_kw):
+            is_hist = any(w in obj_lower for w in ["historical", "history", "trend", "trends", "past", "archive", "dataset", "2020", "2024", "multi-year"])
+            data_mode = "historical" if is_hist else "current"
+            return LLMPlanDecision(
+                relevant=True,
+                objective=obj_clean,
+                identified_problem="Ambient air quality monitoring and particulate assessment",
+                objective_understanding=f"Retrieve {'historical' if is_hist else 'current real-time'} air quality index and PM2.5 levels at {eff_loc}",
+                required_capabilities=["pollution"],
+                agent_requests=[
+                    AgentRequest(
+                        agent="pollution",
+                        request={
+                            "objective": obj_clean,
+                            "location": eff_loc,
+                            "data_mode": data_mode,
+                            "purpose": "air_quality_assessment",
+                        },
+                        reason=f"Retrieve {'historical' if is_hist else 'current real-time'} ambient air quality index (AQI) and PM2.5 levels at {eff_loc}.",
+                    )
+                ],
+                next_action="collect_evidence",
+                confidence=1.0,
+            )
+
+        # Energy single-domain
+        if is_energy_kw and not (is_traffic_kw or is_weather_kw or is_pollution_kw):
+            return LLMPlanDecision(
+                relevant=True,
+                objective=obj_clean,
+                identified_problem="Municipal electrical grid and substation load monitoring",
+                objective_understanding=f"Query substation power draw and feeder load margins at {eff_loc}",
+                required_capabilities=["energy"],
+                agent_requests=[
+                    AgentRequest(
+                        agent="energy",
+                        request={"location": eff_loc, "purpose": "substation_load_monitoring"},
+                        reason=f"Query substation power draw and feeder load margins at {eff_loc}.",
+                    )
+                ],
+                next_action="collect_evidence",
+                confidence=1.0,
+            )
+
+        # Traffic diagnostic single-domain
+        is_opt_kw = any(w in obj_lower for w in [
+            "optimize", "optimization", "apply", "test", "simulate", "simulation", "compare",
+            "evaluate", "reduce", "rerout", "signal", "intervention", "strategy", "mitigate", "remedy", "how can we"
+        ])
+        is_investigative = any(w in obj_lower for w in ["why", "cause", "reason", "due to"])
+        is_traffic_diag = any(phrase in obj_lower for phrase in [
+            "which corridor is the bottleneck",
+            "which corridor is currently the bottleneck",
+            "where is the bottleneck",
+            "identify the bottleneck",
+            "identify main bottlenecks",
+            "diagnose current traffic",
+            "what is the current traffic situation",
+            "what are the current traffic conditions",
+            "what is the traffic situation",
+            "bottleneck corridor",
+        ])
+        if is_traffic_diag and not is_opt_kw and not is_investigative and not (is_weather_kw or is_pollution_kw or is_energy_kw):
+            trf_req = {
+                "location": eff_loc,
+                "purpose": "baseline_traffic_analysis",
+            }
+            if eff_duration is not None:
+                trf_req["duration_seconds"] = eff_duration
+            if eff_scenario:
+                trf_req["scenario"] = eff_scenario
+            if eff_seed is not None:
+                trf_req["seed"] = eff_seed
+
+            return LLMPlanDecision(
+                relevant=True,
+                objective=obj_clean,
+                identified_problem="Traffic congestion and corridor bottleneck diagnostics",
+                objective_understanding=f"Retrieve baseline corridor congestion index, vehicle counts, and queue bottlenecks at {eff_loc}",
+                required_capabilities=["traffic"],
+                agent_requests=[
+                    AgentRequest(
+                        agent="traffic",
+                        request=trf_req,
+                        reason=f"Retrieve baseline corridor congestion index, vehicle counts, and queue bottlenecks at {eff_loc}.",
+                    )
+                ],
+                next_action="collect_evidence",
+                confidence=1.0,
+            )
+
+        # 4. Fall through to Autonomous LLM for complex / ambiguous / multi-domain planning
         provider = self._require_llm()
         user_prompt = build_stage_1_prompt(
             objective=obj_clean,
-            location=location,
+            location=eff_loc,
             constraints=constraints,
             simulation_history=simulation_history,
             existing_results=existing_results,
@@ -458,7 +722,7 @@ class PlannerAgent:
         cap = capability.lower().strip()
 
         if not isinstance(raw_output, dict):
-            if cap in ("simulation", "simulations") and isinstance(raw_output, list):
+            if cap in ("simulation", "simulations", "simulation_history", "simulations_history") and isinstance(raw_output, list):
                 for item in raw_output:
                     if not isinstance(item, dict):
                         raise ValueError(f"Specialist agent '{capability}' list contains non-dict item")
@@ -904,19 +1168,7 @@ class PlannerAgent:
                 logger.warning(f"Failed to validate/extract evidence for {cap}: {exc}")
                 failures[cap] = str(exc)
 
-        # 2. Call Autonomous LLM Evaluation Engine
-        history = [
-            {"cycle": cycle_num, "dispatched_capabilities": list(collected_results.keys())}
-        ]
-        llm_eval = self.evaluate_and_replan_autonomous(
-            objective=objective,
-            cycle_num=cycle_num,
-            history=history,
-            collected_results=collected_results,
-            failures=failures,
-        )
-
-        # 3. Derive Cross-Domain Analysis from returned evidence
+        # 2. Derive Cross-Domain Analysis Flags from returned evidence
         has_traffic = "traffic" in collected_results and "traffic" not in failures
         has_weather = "weather" in collected_results and "weather" not in failures
         has_pollution = "pollution" in collected_results and "pollution" not in failures
@@ -928,6 +1180,101 @@ class PlannerAgent:
         )
         sim_list = sim_raw if isinstance(sim_raw, list) else ([sim_raw] if isinstance(sim_raw, dict) else [])
         has_simulation = len(sim_list) > 0 or "simulation" in collected_results or "simulations" in collected_results
+
+        # Evaluate query characteristics for deterministic evaluation
+        obj_eval_lower = (objective or "").lower().strip()
+        is_diag_eval = any(
+            w in obj_eval_lower for w in [
+                "which corridor is the bottleneck",
+                "which corridor is currently the bottleneck",
+                "where is the bottleneck",
+                "identify the bottleneck",
+                "identify main bottlenecks",
+                "diagnose current traffic",
+                "what is the current traffic situation",
+                "what are the current traffic conditions",
+                "what is the traffic situation",
+                "why is it slow",
+                "why is this corridor slow",
+                "which tested intervention",
+                "performed better",
+                "is rerouting better",
+                "did the optimization solve",
+                "did the optimization",
+                "was the intervention effective",
+                "did it solve the bottleneck",
+            ]
+        ) or (
+            any(w in obj_eval_lower for w in ["bottleneck", "traffic situation", "conditions", "slow"])
+            and not any(w in obj_eval_lower for w in [
+                "optimize", "optimization", "apply", "test", "simulat", "compare", "evaluate",
+                "reduce", "rerout", "signal", "intervention", "run", "mitigate", "solve", "how can we"
+            ])
+        )
+
+        is_opt_eval = not is_diag_eval and any(
+            w in obj_eval_lower for w in [
+                "optimize", "optimization", "improve", "evaluate", "compare",
+                "apply", "test", "simulate", "intervention", "strategy", "strategies",
+                "rerout", "signal", "mitigate", "reduce", "how can we", "solve", "remedy"
+            ]
+        )
+
+        is_analytical_eval = is_analytical_history_followup(obj_eval_lower)
+
+        # Determine if Stage 2 LLM evaluation can be resolved deterministically
+        can_eval_deterministically = False
+        det_eval_decision = "finalize"
+        det_eval_sufficient = True
+
+        if is_diag_eval:
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+        elif is_analytical_eval:
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+        elif has_simulation and len(sim_list) > 0:
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+        elif not is_opt_eval and not has_traffic and (has_weather or has_pollution or has_energy):
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+        elif is_opt_eval and len(sim_list) == 0 and has_traffic:
+            can_eval_deterministically = True
+            det_eval_decision = "run_simulation"
+            det_eval_sufficient = False
+        elif cycle_num >= max_cycles:
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+
+        history = [
+            {"cycle": cycle_num, "dispatched_capabilities": list(collected_results.keys())}
+        ]
+
+        if can_eval_deterministically:
+            llm_eval = LLMEvaluationDecision(
+                evidence_sufficient=det_eval_sufficient,
+                decision=det_eval_decision,
+                next_action=det_eval_decision,
+                analysis=f"Deterministic evaluation: evidence sufficiency verified (decision={det_eval_decision}).",
+                missing_information=[],
+                agent_requests=[],
+                required_capabilities=[],
+                confidence=1.0,
+            )
+        else:
+            llm_eval = self.evaluate_and_replan_autonomous(
+                objective=objective,
+                cycle_num=cycle_num,
+                history=history,
+                collected_results=collected_results,
+                failures=failures,
+            )
 
         key_findings = []
         diagnosed_bottlenecks = []
@@ -1064,11 +1411,37 @@ class PlannerAgent:
                     del_pct = round(((base_del - int_del) / base_del) * 100.0, 2) if (base_del and int_del and base_del > 0) else None
                     cong_pct = round(((base_cong - int_cong) / base_cong) * 100.0, 2) if (base_cong and int_cong and base_cong > 0) else None
 
+                    delay_change = round(((int_del - base_del) / base_del) * 100.0, 2) if (base_del and int_del and base_del > 0) else None
+                    cong_change = round(((int_cong - base_cong) / base_cong) * 100.0, 2) if (base_cong and int_cong and base_cong > 0) else None
+
+                    cor_comps = []
+                    base_corrs = {str(c.get("name") or c.get("id")).lower(): c.get("avg_speed") for c in trf.get("corridors", []) if isinstance(c, dict) and c.get("avg_speed") is not None}
+                    sim_corrs = sim.get("corridors", []) if isinstance(sim.get("corridors"), list) else []
+                    for sim_c in sim_corrs:
+                        if isinstance(sim_c, dict):
+                            c_name = sim_c.get("name") or sim_c.get("id")
+                            c_spd = sim_c.get("avg_speed")
+                            if c_name and c_spd is not None:
+                                b_spd = base_corrs.get(str(c_name).lower())
+                                if b_spd and b_spd > 0:
+                                    c_delta_pct = round(((c_spd - b_spd) / b_spd) * 100.0, 2)
+                                    cor_comps.append({
+                                        "name": c_name,
+                                        "id": sim_c.get("id"),
+                                        "baseline_speed_kmh": b_spd,
+                                        "intervention_speed_kmh": c_spd,
+                                        "speed_change_pct": c_delta_pct,
+                                        "is_target": bool(sim.get("intervention_applied", {}).get("target", "").lower() in str(c_name).lower()),
+                                    })
+
                     comparison_dict = {
                         "scenario_id": scen_id,
                         "speed_change_pct": spd_pct,
                         "delay_reduction_pct": del_pct,
+                        "delay_change_pct": delay_change,
                         "congestion_reduction_pct": cong_pct,
+                        "congestion_change_pct": cong_change,
+                        "corridor_comparisons": cor_comps,
                     }
 
                 trade_offs = (comparison_dict.get("corridor_trade_offs") if comparison_dict else None) or sim.get("corridor_trade_offs") or []
@@ -1234,6 +1607,45 @@ class PlannerAgent:
                 if (c.get("executable") if isinstance(c, dict) else getattr(c, "executable", False))
             ]
 
+            # Identify the primary/main bottleneck from traffic analysis
+            main_bottleneck = None
+            if diagnosed_bottlenecks:
+                main_bottleneck = diagnosed_bottlenecks[0]
+            elif trf_data.get("bottlenecks"):
+                b0 = trf_data["bottlenecks"][0]
+                main_bottleneck = b0.get("corridor") or b0.get("name") if isinstance(b0, dict) else str(b0)
+            elif trf_data.get("corridors"):
+                valid_c = [c for c in trf_data["corridors"] if c.get("avg_speed") is not None]
+                if valid_c:
+                    slowest_c = min(valid_c, key=lambda c: c["avg_speed"])
+                    main_bottleneck = slowest_c.get("name")
+
+            # Extract clean direction token if corridor has format like "Narayanguda - Hyderguda (Westbound)"
+            target_direction = main_bottleneck
+            if main_bottleneck:
+                for d in ["Westbound", "Eastbound", "Northbound", "Southbound"]:
+                    if d.lower() in main_bottleneck.lower():
+                        target_direction = d
+                        break
+
+            is_optimize_bottleneck_query = any(
+                w in obj_lower for w in [
+                    "main bottleneck", "optimize bottleneck", "optimize the bottleneck",
+                    "solve the bottleneck", "relieve the bottleneck", "address the bottleneck",
+                    "optimize slowest", "fix the bottleneck"
+                ]
+            )
+
+            # If user asks to optimize the main bottleneck, prioritize candidates targeting that bottleneck
+            if is_optimize_bottleneck_query and (target_direction or main_bottleneck):
+                tgt_key = (target_direction or main_bottleneck or "").lower()
+                bottleneck_cands = [
+                    c for c in executable_cands
+                    if tgt_key in str(c.get("target") if isinstance(c, dict) else getattr(c, "target", "")).lower()
+                ]
+                other_cands = [c for c in executable_cands if c not in bottleneck_cands]
+                executable_cands = bottleneck_cands + other_cands
+
             # Priority for explicit user-requested comparison (User Adjustment 4)
             wants_signal = any(w in obj_lower for w in ["signal", "timing", "green"])
             wants_reroute = any(w in obj_lower for w in ["rerout", "diversion", "divert"])
@@ -1289,8 +1701,17 @@ class PlannerAgent:
                 for cand in selected_candidates:
                     c_dict = cand if isinstance(cand, dict) else cand.model_dump()
                     c_type = c_dict.get("type") or c_dict.get("intervention_type")
-                    c_target = c_dict.get("target") or "Westbound"
+                    c_target = c_dict.get("target") or target_direction or main_bottleneck or "Westbound"
                     c_params = c_dict.get("parameters") or {}
+
+                    if is_optimize_bottleneck_query and target_direction and target_direction.lower() not in c_target.lower():
+                        c_reason = (
+                            f"Primary bottleneck is {main_bottleneck or target_direction}, but candidate intervention {c_type} targets "
+                            f"{c_target} to test upstream diversion / alternative arterial route mitigation."
+                        )
+                    else:
+                        c_reason = f"Candidate intervention {c_type} on {c_target} selected for evaluation under baseline conditions (seed={base_seed}, duration={base_duration}s)."
+
                     validated_next_calls.append(AgentRequest(
                         agent="simulation",
                         request={
@@ -1308,7 +1729,7 @@ class PlannerAgent:
                             "duration_steps": base_duration,
                             "baseline_reference": b_reference,
                         },
-                        reason=f"Candidate intervention {c_type} on {c_target} selected for evaluation under baseline conditions (seed={base_seed}, duration={base_duration}s).",
+                        reason=c_reason,
                     ))
                 decision_mapped = "run_simulation"
                 next_action = "run_simulation"
@@ -1319,6 +1740,7 @@ class PlannerAgent:
                 next_action = "run_simulation"
                 next_cycle_caps = ["simulation"]
                 is_sufficient = False
+                fallback_target = target_direction or main_bottleneck or "Westbound"
                 validated_next_calls = [
                     r for r in llm_eval.agent_requests if r.agent in ALLOWED_CAPABILITIES
                 ] or [
@@ -1331,11 +1753,11 @@ class PlannerAgent:
                             "seed": base_seed,
                             "intervention": {
                                 "type": "signal_timing",
-                                "target": "Westbound",
+                                "target": fallback_target,
                                 "parameters": {"green_time_adjustment_sec": 10.0},
                             },
                         },
-                        reason="Evaluate signal timing optimization on bottleneck.",
+                        reason=f"Evaluate signal timing optimization on {fallback_target} bottleneck.",
                     )
                 ]
             else:
@@ -1425,6 +1847,13 @@ class PlannerAgent:
                         "notes": "Candidate identified by Traffic Agent but not simulated in this cycle. Comparative effectiveness is unverified.",
                     })
 
+        involves_traffic_opt_or_sim = request_involves_traffic_optimization_or_simulation(
+            objective=objective,
+            collected_results=collected_results,
+            tested_interventions=tested_interventions,
+            untested_candidates=untested_candidates,
+        )
+
         # Deterministic evidence status based strictly on executed simulation count
         num_simulated = len(tested_interventions)
         if num_simulated == 0:
@@ -1451,6 +1880,9 @@ class PlannerAgent:
                     final_reasoning.evidence_status = det_evidence_status
                     final_reasoning.tested_interventions = tested_interventions
                     final_reasoning.untested_candidates = untested_candidates
+                    if not involves_traffic_opt_or_sim:
+                        final_reasoning.synthetic_data_note = None
+                        final_reasoning.simulation_findings = None
 
                     if has_traffic:
                         trf_data = collected_results["traffic"]
@@ -1513,7 +1945,7 @@ class PlannerAgent:
             goal_achieved=is_sufficient,
             decision=decision_mapped,
             next_action=next_action,
-            analysis=llm_eval.analysis,
+            analysis=strip_internal_planner_reasoning(llm_eval.analysis) if (llm_eval and hasattr(llm_eval, "analysis") and llm_eval.analysis) else (llm_eval.analysis if llm_eval else ""),
             final_recommendation=final_rec,
             final_reasoning=final_reasoning,
             revised_plan=[f"Execute {cap} specialist agent" for cap in next_cycle_caps],
@@ -1634,11 +2066,18 @@ class PlannerAgent:
         for field in ["summary", "recommendation", "simulation_findings", "intervention_assessment"]:
             val = getattr(final_reasoning, field, None)
             if val and isinstance(val, str):
-                setattr(final_reasoning, field, cls._sanitize_bottleneck_resolution_text(val))
+                cleaned_val = cls._sanitize_bottleneck_resolution_text(val)
+                cleaned_val = strip_internal_planner_reasoning(cleaned_val)
+                setattr(final_reasoning, field, cleaned_val)
 
         # Also sanitize summary from making unsupported causal claims about untested candidates
+        involves_traffic_opt_or_sim = request_involves_traffic_optimization_or_simulation(
+            objective=objective or getattr(final_reasoning, "objective", None) or "",
+            tested_interventions=tested_interventions,
+            untested_candidates=untested_candidates,
+        )
         summary = final_reasoning.summary or ""
-        if summary and untested_candidates:
+        if summary and untested_candidates and involves_traffic_opt_or_sim:
             for u in untested_candidates:
                 u_type = str(u.get("type") or "").strip().lower()
                 toks = [u_type]
@@ -1721,17 +2160,25 @@ class PlannerAgent:
                 )
                 return
 
-            optimization_terms = [
-                "optimal", "proven", "mitigated", "improved speed by", "reduced delay by",
-                "deploy", "implement", "alleviate", "recommended intervention", "effective solution",
-                "successfully addressed", "resolved the bottleneck"
-            ]
-            if any(t in rec_lower for t in optimization_terms) or "untested" not in rec_lower or not rec:
-                final_reasoning.recommendation = (
-                    f"No traffic optimization interventions were simulated in this cycle ({evidence_status}). "
-                    f"Available candidate interventions ({cand_str}) remain untested in SUMO microsimulation; "
-                    f"their operational effectiveness has not been established and they require simulation execution to empirically validate their operational impacts."
-                )
+            if involves_traffic_opt_or_sim:
+                optimization_terms = [
+                    "optimal", "proven", "mitigated", "improved speed by", "reduced delay by",
+                    "deploy", "implement", "alleviate", "recommended intervention", "effective solution",
+                    "successfully addressed", "resolved the bottleneck"
+                ]
+                if any(t in rec_lower for t in optimization_terms) or "untested" not in rec_lower or not rec:
+                    final_reasoning.recommendation = (
+                        f"No traffic optimization interventions were simulated in this cycle ({evidence_status}). "
+                        f"Available candidate interventions ({cand_str}) remain untested in SUMO microsimulation; "
+                        f"their operational effectiveness has not been established and they require simulation execution to empirically validate their operational impacts."
+                    )
+            else:
+                # User request does not involve traffic optimization or simulation.
+                # Strip any accidental traffic/SUMO disclaimers and internal reasoning.
+                final_reasoning.summary = strip_internal_planner_reasoning(strip_unrelated_traffic_disclaimers(final_reasoning.summary))
+                final_reasoning.recommendation = strip_internal_planner_reasoning(strip_unrelated_traffic_disclaimers(final_reasoning.recommendation))
+                final_reasoning.synthetic_data_note = None
+                final_reasoning.simulation_findings = None
             return
 
         if is_solve_bottleneck_query:
@@ -1874,7 +2321,12 @@ class PlannerAgent:
             violating_cand = has_untested_violation(rec_lower)
             has_optimal_claim = bool(re.search(r"\b(the\s+best|the\s+optimal|optimal\s+solution|the\s+most\s+effective|is\s+optimal)\b", rec_lower))
 
-            # Evaluate whether all tested interventions have trade-offs
+            # Compute empirically dominant intervention via multi-metric scoring.
+            # If a clear dominant exists, always rebuild recommendation deterministically
+            # so the LLM cannot smuggle an incorrect winner through the "among the tested" gate.
+            empirically_dominant_type = cls._compute_empirically_dominant_type(tested_interventions)
+
+            # Evaluate whether all tested interventions have trade-offs (for gate logic)
             perfs_check = []
             for t in tested_interventions:
                 t_comp = t.get("comparison") or {}
@@ -1893,6 +2345,9 @@ class PlannerAgent:
                 or not rec
                 or "among the tested" not in rec_lower
                 or (all_tradeoffs and "neither" not in rec_lower and "no clear" not in rec_lower)
+                # Force deterministic text whenever a clear empirical winner exists;
+                # this prevents the LLM from naming a non-dominant intervention as preferred.
+                or empirically_dominant_type is not None
             )
 
             if needs_comparison_text:
@@ -1911,6 +2366,25 @@ class PlannerAgent:
 
             final_reasoning.recommendation_basis = "MULTI_SIMULATION_EMPIRICAL_COMPARISON"
 
+        # Ensure recommendation is distinct, concise, and does not duplicate reasoning summary
+        if final_reasoning.recommendation and final_reasoning.summary and involves_traffic_opt_or_sim:
+            r_clean = final_reasoning.recommendation.strip().lower()
+            s_clean = final_reasoning.summary.strip().lower()
+            if r_clean == s_clean or (len(r_clean) > 40 and (r_clean in s_clean or s_clean in r_clean)):
+                if num_tested == 1:
+                    t_int = tested_interventions[0]
+                    t_type = str(t_int.get("type") or "intervention").replace("_", " ")
+                    t_target = str(t_int.get("target") or "target corridor")
+                    final_reasoning.recommendation = (
+                        f"Deploy the evaluated {t_type} configuration on {t_target} with operational telemetry monitoring. "
+                        f"Implement localized adjustments while monitoring opposing corridor phases to prevent queue spillback."
+                    )
+                elif num_tested >= 2:
+                    final_reasoning.recommendation = (
+                        "Implement balanced operational timing rather than aggressive single-corridor green extensions. "
+                        "Selection between tested configurations represents an empirical trade-off between target progression and network delay balance."
+                    )
+
     @classmethod
     def _build_multi_intervention_comparison_text(
         cls,
@@ -1918,21 +2392,30 @@ class PlannerAgent:
         untested_candidates: List[Dict[str, Any]],
     ) -> str:
         """
-        Build an evidence-grounded comparative synthesis across multiple tested interventions.
-        Evaluates target corridor speed changes, network speed, delay reduction, and corridor trade-offs.
-        Explicitly supports 'no clear winner' when trade-offs exist without clear dominance.
+        Build a concise, action-oriented recommendation across multiple tested interventions.
+
+        Uses multi-metric scoring (target corridor speed, network speed, delay reduction,
+        waiting-time reduction) to identify the empirically dominant intervention.
+        Corridor trade-offs are reported as monitoring requirements, NOT disqualifiers —
+        so an intervention that wins all four metrics but has a minor corridor degradation
+        is still declared dominant and prioritized for field validation.
+
+        Output format:
+          Dominant: One concise action sentence naming the winner + primary gains + monitor clause.
+          No winner: Brief factual note that trade-offs are genuine and selection is operational.
         """
         if not tested_interventions:
             return "No interventions were simulated in this cycle."
 
-        summaries: List[str] = []
-        perfs: List[Dict[str, Any]] = []
+        entries: List[Dict[str, Any]] = []
 
         for t in tested_interventions:
-            t_type = str(t.get("type") or "intervention").replace("_", " ")
-            t_target = str(t.get("target") or "target corridor")
-            t_params = t.get("parameters") or {}
-            param_parts = []
+            t_int = t.get("intervention") if isinstance(t.get("intervention"), dict) else t
+            t_type = str(t.get("type") or t_int.get("type") or "intervention").replace("_", " ")
+            t_target = str(t.get("target") or t_int.get("target") or "")
+            t_params = t.get("parameters") or t_int.get("parameters") or {}
+
+            param_parts: List[str] = []
             if isinstance(t_params, dict):
                 if "green_time_adjustment_sec" in t_params:
                     param_parts.append(f"+{float(t_params['green_time_adjustment_sec']):.0f}s green")
@@ -1942,84 +2425,246 @@ class PlannerAgent:
                     param_parts.append(f"{int(round(float(t_params['diversion_fraction']) * 100))}% diversion")
 
             param_str = f" ({', '.join(param_parts)})" if param_parts else ""
-            t_label = f"{t_type.title()}{param_str}"
+            label = f"{t_type.title()}{param_str}"
 
             comp = t.get("comparison") or {}
+
+            # Target corridor speed (primary objective metric)
             tgt_spd = comp.get("target_corridor_speed_change_pct")
             if tgt_spd is None:
                 for cc in comp.get("corridor_comparisons", []):
-                    if cc.get("name") == t_target or str(cc.get("id", "")).endswith(t_target[:2].upper()):
+                    cc_name = str(cc.get("name") or "").lower()
+                    cc_id = str(cc.get("id") or "").lower()
+                    t_tgt_l = t_target.lower() if t_target else ""
+                    if cc.get("is_target") or (
+                        t_tgt_l and (
+                            cc_name == t_tgt_l
+                            or t_tgt_l in cc_name
+                            or cc_id.endswith(t_tgt_l[:2])
+                        )
+                    ):
                         tgt_spd = cc.get("speed_change_pct")
+                        if not t_target:
+                            t_target = cc.get("name") or "target corridor"
                         break
 
+            if not t_target:
+                t_target = comp.get("target_corridor") or "target corridor"
+
             net_spd = comp.get("speed_change_pct")
-            del_red = comp.get("delay_reduction_pct")  # >0 is improvement, <0 is delay increase
+
+            # del_red: positive = delay improved, negative = delay worsened
+            del_red = comp.get("delay_reduction_pct")
+            if del_red is None and comp.get("delay_change_pct") is not None:
+                del_red = -float(comp["delay_change_pct"])
+
+            # wait_red: positive = waiting time improved
+            wait_red = comp.get("waiting_time_reduction_pct")
+            if wait_red is None and comp.get("waiting_time_change_pct") is not None:
+                wait_red = -float(comp["waiting_time_change_pct"])
+
             cor_tradeoffs = t.get("corridor_trade_offs") or comp.get("corridor_trade_offs") or []
 
-            has_adverse = (del_red is not None and del_red < -0.5) or (net_spd is not None and net_spd < -0.2) or bool(cor_tradeoffs)
-            tgt_improved = tgt_spd is not None and tgt_spd > 1.0
-
-            perfs.append({
-                "label": t_label,
+            entries.append({
+                "label": label,
                 "type": t_type,
                 "target": t_target,
                 "tgt_spd": tgt_spd,
                 "net_spd": net_spd,
                 "del_red": del_red,
+                "wait_red": wait_red,
                 "trade_offs": cor_tradeoffs,
-                "has_adverse": has_adverse,
-                "tgt_improved": tgt_improved,
             })
 
-            # Create individual factual clause
-            effect_parts = []
-            if tgt_spd is not None:
-                if tgt_spd > 0.5:
-                    effect_parts.append(f"improved target {t_target} speed by {tgt_spd:+.1f}%")
-                elif abs(tgt_spd) <= 0.5:
-                    effect_parts.append(f"produced negligible change in target {t_target} speed ({tgt_spd:+.1f}%)")
-                else:
-                    effect_parts.append(f"reduced target {t_target} speed by {abs(tgt_spd):.1f}%")
+        # ------------------------------------------------------------------
+        # Multi-metric scoring: count metric wins per intervention.
+        # All four metrics are "higher is better".
+        # Corridor trade-offs are NOT used as disqualifiers here — they are
+        # reported as monitoring requirements in the output text.
+        # ------------------------------------------------------------------
+        metric_keys = ["tgt_spd", "net_spd", "del_red", "wait_red"]
+        scores: Dict[str, int] = {e["label"]: 0 for e in entries}
 
-            to_parts = []
-            if cor_tradeoffs:
-                raw_to = str(cor_tradeoffs[0]).strip().rstrip(".")
-                m_to = re.search(r"([A-Za-z]+)\s+corridor\s+speed\s+degraded\s+by\s+(-?[0-9.]+)%", raw_to)
-                if m_to:
-                    to_parts.append(f"degraded {m_to.group(1)} speed by {abs(float(m_to.group(2))):.1f}%")
-                else:
-                    to_parts.append(raw_to)
-            if del_red is not None and del_red < -0.5:
-                to_parts.append(f"increased network delay by {abs(del_red):.1f}%")
-            elif del_red is not None and del_red > 0.5:
-                to_parts.append(f"reduced network delay by {del_red:.1f}%")
+        for mk in metric_keys:
+            vals = [(e["label"], e[mk]) for e in entries if e[mk] is not None]
+            if len(vals) < 2:
+                continue
+            best_val = max(v for _, v in vals)
+            for lbl, val in vals:
+                if abs(val - best_val) < 0.05:  # negligible difference threshold
+                    scores[lbl] += 1
 
-            summary_item = f"{t_label} {', '.join(effect_parts) if effect_parts else 'was evaluated'}"
-            if to_parts:
-                summary_item += f" but {', and '.join(to_parts)}"
-            summaries.append(summary_item)
+        max_score = max(scores.values()) if scores else 0
+        winners_by_score = [e for e in entries if scores[e["label"]] == max_score]
 
-        # Check if all tested interventions have trade-offs or lack dominance
-        all_have_tradeoffs = all(p["has_adverse"] or not p["tgt_improved"] for p in perfs)
-        dominating = None
-        if not all_have_tradeoffs:
-            candidates_with_gain_no_adverse = [p for p in perfs if p["tgt_improved"] and not p["has_adverse"]]
-            if candidates_with_gain_no_adverse:
-                dominating = max(candidates_with_gain_no_adverse, key=lambda p: p["tgt_spd"] or 0)
+        # Determine available metric count (metrics where at least 2 interventions report a value)
+        available_metrics = sum(
+            1 for mk in metric_keys
+            if sum(1 for e in entries if e[mk] is not None) >= 2
+        )
 
+        # Declare dominant if one intervention wins a clear majority of available metrics
+        dominant_entry: Optional[Dict[str, Any]] = None
+        if len(winners_by_score) == 1 and available_metrics > 0:
+            threshold = max(2, available_metrics - 1)  # e.g. ≥3/4, ≥2/3, ≥2/2
+            if max_score >= threshold:
+                dominant_entry = winners_by_score[0]
+
+        # ------------------------------------------------------------------
+        # Untested clause
+        # ------------------------------------------------------------------
         untested_clause = ""
         if untested_candidates:
-            u_types = list(dict.fromkeys([str(u.get("type") or "candidate").replace("_", " ") for u in untested_candidates if u.get("type")]))
-            untested_clause = f" Other candidate interventions ({', '.join(u_types)}) were not simulated in this cycle and require empirical verification before their comparative effectiveness can be assessed."
+            u_types = list(dict.fromkeys([
+                str(u.get("type") or "candidate").replace("_", " ")
+                for u in untested_candidates if u.get("type")
+            ]))
+            untested_clause = (
+                f" Other candidate interventions ({', '.join(u_types)}) were not simulated "
+                f"in this cycle and require empirical verification."
+            )
 
-        if all_have_tradeoffs or dominating is None:
-            comparison_lead = "Among the tested interventions, neither produced a clear network-wide improvement."
-            details_str = "; while ".join(summaries)
-            return f"{comparison_lead} {details_str}. Selection between them represents an operational trade-off between target corridor progression and network delay balance.{untested_clause}"
+        # ------------------------------------------------------------------
+        # Build output text
+        # ------------------------------------------------------------------
+        if dominant_entry:
+            # Concise action-oriented recommendation — does NOT repeat table percentages.
+            # Name the winner, cite its 1–2 primary gains briefly, add monitor clause.
+            primary_gains: List[str] = []
+            if dominant_entry["tgt_spd"] is not None and dominant_entry["tgt_spd"] > 0.5:
+                primary_gains.append(f"+{dominant_entry['tgt_spd']:.1f}% target {dominant_entry['target']} speed")
+            if dominant_entry["del_red"] is not None and dominant_entry["del_red"] > 0.5:
+                primary_gains.append(f"{dominant_entry['del_red']:.1f}% delay reduction")
+            elif dominant_entry["wait_red"] is not None and dominant_entry["wait_red"] > 0.5:
+                primary_gains.append(f"{dominant_entry['wait_red']:.1f}% waiting-time reduction")
+
+            gains_str = " and ".join(primary_gains[:2]) if primary_gains else "the strongest overall performance"
+
+            # Collect corridors to monitor from trade-offs across ALL interventions
+            monitor_cors: List[str] = []
+            for e in entries:
+                for to in e["trade_offs"]:
+                    m_to = re.search(r"([A-Za-z]+)\s+corridor", str(to), re.IGNORECASE)
+                    if m_to:
+                        cor_name = m_to.group(1).title()
+                        if cor_name not in monitor_cors:
+                            monitor_cors.append(cor_name)
+
+            monitor_clause = ""
+            if monitor_cors:
+                monitor_clause = (
+                    f" Monitor {' and '.join(monitor_cors[:3])} corridor speed for potential "
+                    f"degradation during field deployment."
+                )
+
+            other_entries = [e for e in entries if e != dominant_entry]
+            other_clause = ""
+            if other_entries:
+                other_summaries = [f"{oe['label']} on {oe['target']}" for oe in other_entries]
+                other_clause = f" (outperforming {', '.join(other_summaries)})"
+
+            return (
+                f"Prioritize {dominant_entry['label']} on {dominant_entry['target']} for field validation — "
+                f"it achieved {gains_str} among the tested interventions{other_clause}.{monitor_clause} "
+                f"Validate against live traffic conditions before permanent deployment."
+                f"{untested_clause}"
+            )
+
         else:
-            comparison_lead = f"Among the tested interventions, {dominating['label']} produced the strongest observed result for the requested objective."
-            details_str = "; in comparison, ".join(summaries)
-            return f"{comparison_lead} ({details_str}).{untested_clause}"
+            # Genuine trade-off: no intervention clearly dominates across metrics.
+            # Build a brief per-intervention factual note without repeating full tables.
+            brief_notes: List[str] = []
+            for e in entries:
+                note_parts: List[str] = []
+                if e["tgt_spd"] is not None:
+                    if e["tgt_spd"] > 0.5:
+                        note_parts.append(f"+{e['tgt_spd']:.1f}% target speed")
+                    else:
+                        note_parts.append("negligible target speed change")
+                if e["del_red"] is not None:
+                    if e["del_red"] < -0.5:
+                        note_parts.append(f"{abs(e['del_red']):.1f}% delay increase")
+                    elif e["del_red"] > 0.5:
+                        note_parts.append(f"{e['del_red']:.1f}% delay reduction")
+                brief_notes.append(f"{e['label']} ({', '.join(note_parts) if note_parts else 'no clear gain'})")
+
+            notes_str = "; ".join(brief_notes)
+            return (
+                f"Among the tested interventions, the evidence does not clearly favour one "
+                f"configuration: {notes_str}. "
+                f"Selection is an operational trade-off — validate both against live conditions "
+                f"before committing to permanent deployment."
+                f"{untested_clause}"
+            )
+
+    @classmethod
+    def _compute_empirically_dominant_type(
+        cls,
+        tested_interventions: List[Dict[str, Any]],
+    ) -> Optional[str]:
+        """
+        Determine which tested intervention is empirically dominant across the four key
+        objective metrics: target corridor speed, network speed, delay reduction, and
+        waiting-time reduction (all higher-is-better after sign normalisation).
+
+        Returns the dominant intervention's *type* string (lowercased, spaces for underscores)
+        if one intervention wins a clear majority of available metrics, else None.
+
+        Corridor trade-offs are intentionally excluded from this comparison — an intervention
+        that wins all four outcome metrics is dominant even if it has minor corridor spillbacks;
+        those spillbacks are reported as monitoring requirements, not disqualifiers.
+        """
+        if len(tested_interventions) < 2:
+            return None
+
+        entries: List[Dict[str, Any]] = []
+        for t in tested_interventions:
+            comp = t.get("comparison") or {}
+            tgt_spd = comp.get("target_corridor_speed_change_pct")
+            net_spd = comp.get("speed_change_pct")
+            del_red = comp.get("delay_reduction_pct")
+            if del_red is None and comp.get("delay_change_pct") is not None:
+                del_red = -float(comp["delay_change_pct"])
+            wait_red = comp.get("waiting_time_reduction_pct")
+            if wait_red is None and comp.get("waiting_time_change_pct") is not None:
+                wait_red = -float(comp["waiting_time_change_pct"])
+            t_type = str(t.get("type") or "").replace("_", " ").lower()
+            entries.append({
+                "type": t_type,
+                "tgt_spd": tgt_spd,
+                "net_spd": net_spd,
+                "del_red": del_red,
+                "wait_red": wait_red,
+            })
+
+        metric_keys = ["tgt_spd", "net_spd", "del_red", "wait_red"]
+        scores: Dict[str, int] = {e["type"]: 0 for e in entries}
+
+        for mk in metric_keys:
+            vals = [(e["type"], e[mk]) for e in entries if e[mk] is not None]
+            if len(vals) < 2:
+                continue
+            best_val = max(v for _, v in vals)
+            for t_type, val in vals:
+                if abs(val - best_val) < 0.05:
+                    scores[t_type] += 1
+
+        available_metrics = sum(
+            1 for mk in metric_keys
+            if sum(1 for e in entries if e[mk] is not None) >= 2
+        )
+
+        if available_metrics == 0:
+            return None
+
+        max_score = max(scores.values())
+        winners = [t for t, s in scores.items() if s == max_score]
+        threshold = max(2, available_metrics - 1)
+
+        if len(winners) == 1 and max_score >= threshold:
+            return winners[0]
+
+        return None
 
     @classmethod
     def _build_bottleneck_resolution_evaluation_text(

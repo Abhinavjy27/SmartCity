@@ -174,11 +174,23 @@ class SimulationService:
             logger.info(f"Scenario '{req.scenario_name}' mapped to 'synthetic_normal' demand profile.")
             scenario = "synthetic_normal"
 
-        route_file = self.demand_generator.generate_route_file(
-            scenario=scenario,
-            duration_seconds=duration,
-            seed=seed,
-        )
+        try:
+            route_file = self.demand_generator.generate_route_file(
+                scenario=scenario,
+                duration_seconds=duration,
+                seed=seed,
+            )
+        except Exception as exc:
+            logger.warning(
+                f"SimulationService: Failed to generate route file for seed={seed}: {exc}. "
+                "Falling back to default seed=42."
+            )
+            seed = 42
+            route_file = self.demand_generator.generate_route_file(
+                scenario=scenario,
+                duration_seconds=duration,
+                seed=42,
+            )
 
         # Validate intervention target and plan intervention
         intervention_details = self._resolve_intervention_plan(req.intervention)

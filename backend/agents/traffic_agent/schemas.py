@@ -238,6 +238,7 @@ class TrafficEvidenceResponse(BaseModel):
     trade_offs: List[PotentialTradeOff] = Field(default_factory=list)
 
     # Top-level backward compatibility fields for existing UI / Planner consumers
+    seed: Optional[int] = None
     active_vehicles: Optional[int] = None
     peak_active_vehicles: Optional[int] = None
     total_vehicles: Optional[int] = None
@@ -255,7 +256,7 @@ class TrafficAnalyzeRequest(BaseModel):
     location: Optional[str] = "Narayanguda, Hyderabad"
     scenario: Optional[str] = "synthetic_normal"
     duration_seconds: Optional[int] = 120
-    seed: Optional[int] = 42
+    seed: Optional[int] = None
     purpose: Optional[str] = "baseline_traffic_analysis"
     force_fresh: Optional[bool] = False
     inputs: Optional[Dict[str, Any]] = None

@@ -33,6 +33,77 @@ def make_id(prefix: str) -> str:
     return f"{prefix}_{uuid4().hex[:12]}"
 
 
+INVALID_LOCATION_TOKENS = {
+    "", "unknown", "none", "null", "undefined", "n/a", "na",
+    "not specified", "unspecified", "any", "city", "location", "here",
+    "default", "somewhere", "nil", "?",
+}
+
+KNOWN_HYDERABAD_LOCALITIES = [
+    "narayanguda", "hyderguda", "begumpet", "gachibowli", "hitec city",
+    "hitech city", "jubilee hills", "banjara hills", "secunderabad", "charminar",
+    "sanathnagar", "nacharam", "bollaram", "patancheru", "tarnaka", "somajiguda",
+    "kompally", "malakpet", "kukatpally", "madhapur", "miyapur", "ameerpet",
+    "kondapur", "dilsukhnagar", "lb nagar", "shamshabad", "alwal", "uppal",
+    "lingampally", "mehdipatnam", "koti", "hyderabad",
+]
+
+
+def sanitize_location(
+    location: Optional[str],
+    query_text: Optional[str] = None,
+    conversation_history: Optional[List[Dict[str, Any]]] = None,
+    default_location: str = "Narayanguda, Hyderabad",
+) -> str:
+    """
+    Sanitize location string following strict fallback hierarchy:
+    1. Prefer explicit, valid location parameter (if not blank/unknown/invalid).
+    2. Extract explicit known locality from query text if present.
+    3. Inherit valid location from prior conversation history turns.
+    4. Fallback to documented system default ('Narayanguda, Hyderabad').
+    Never silently resolves 'unknown' to an unrelated location.
+    """
+    # 1. Check explicit location argument
+    if location and isinstance(location, str):
+        norm = location.strip().lower()
+        if norm and norm not in INVALID_LOCATION_TOKENS:
+            return location.strip()
+
+    # 2. Extract explicit locality from query text
+    if query_text and isinstance(query_text, str):
+        import re
+        q_lower = query_text.lower()
+        for loc_token in KNOWN_HYDERABAD_LOCALITIES:
+            if re.search(rf"\b{re.escape(loc_token)}\b", q_lower):
+                if "hyderabad" not in loc_token:
+                    return f"{loc_token.title()}, Hyderabad"
+                return loc_token.title()
+
+    # 3. Inherit from prior conversation history
+    if conversation_history:
+        for turn in reversed(conversation_history):
+            if not isinstance(turn, dict):
+                continue
+            turn_loc = turn.get("location")
+            if turn_loc and isinstance(turn_loc, str):
+                t_norm = turn_loc.strip().lower()
+                if t_norm and t_norm not in INVALID_LOCATION_TOKENS:
+                    return turn_loc.strip()
+            col = turn.get("collected_results") or {}
+            if isinstance(col, dict):
+                for agent_key in ["traffic", "weather", "pollution", "energy"]:
+                    agent_data = col.get(agent_key)
+                    if isinstance(agent_data, dict):
+                        a_loc = agent_data.get("location")
+                        if a_loc and isinstance(a_loc, str):
+                            a_norm = a_loc.strip().lower()
+                            if a_norm and a_norm not in INVALID_LOCATION_TOKENS:
+                                return a_loc.strip()
+
+    # 4. Fallback to default
+    return default_location
+
+
 class Domain(str, Enum):
     TRAFFIC = "traffic"
     FLOOD = "flood"
@@ -223,8 +294,11 @@ class PlannerExecuteRequest(BaseModel):
                 data["objective"] = q
             elif obj and not q:
                 data["query"] = obj
-            if not data.get("location"):
-                data["location"] = "Narayanguda, Hyderabad"
+            data["location"] = sanitize_location(
+                location=data.get("location"),
+                query_text=data.get("objective") or data.get("query"),
+                conversation_history=data.get("conversation_history"),
+            )
 
             # Parse scenario, duration_seconds, seed from text if not provided
             txt = str(data.get("objective") or data.get("query") or "").lower()
@@ -1035,6 +1109,13 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
     # CURRENT REQUEST: Objective must remain faithful to current user instruction without prepending stale history
     effective_objective = (payload.objective or payload.query or "").strip()
 
+    # Sanitize and inherit location
+    payload.location = sanitize_location(
+        location=payload.location,
+        query_text=effective_objective,
+        conversation_history=payload.conversation_history,
+    )
+
     # Safe request diagnostics logging (Section 4 & Section 1)
     logger.info(
         f"[Planner Diagnostics] REQUEST_ID={req_id} | SESSION_ID={payload.session_id or 'none'} | "
@@ -1125,6 +1206,26 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         elif is_opt_request:
             req_duration = DEFAULT_PRODUCTION_EVALUATION_DURATION_SECONDS
 
+    # Determine request seed:
+    # 1. If explicit seed was provided (in payload.seed or parsed from objective), preserve it.
+    # 2. If follow-up query with prior simulation history, inherit prior simulation seed.
+    # 3. Otherwise, generate a fresh randomized seed for this planning request.
+    if payload.seed is None:
+        prior_seed = None
+        for s in prior_sims:
+            if isinstance(s, dict) and s.get("seed") is not None:
+                prior_seed = s.get("seed")
+                break
+        if prior_seed is not None:
+            payload.seed = prior_seed
+        else:
+            try:
+                import random
+                payload.seed = random.randint(1000, 99999)
+            except Exception as exc:
+                logger.warning(f"Failed to generate random seed: {exc}. Defaulting to 42.")
+                payload.seed = 42
+
     # Stage 1: Autonomous Initial Plan & Agent Selection
     t_stage1_start = time.perf_counter()
     try:
@@ -1137,6 +1238,7 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
             duration_seconds=req_duration,
             scenario=payload.scenario,
             seed=payload.seed,
+            conversation_history=payload.conversation_history,
         )
         stage_latencies["stage_1_ms"] = round((time.perf_counter() - t_stage1_start) * 1000.0, 1)
     except (LLMConfigurationError, LLMProviderError) as exc:
@@ -1375,6 +1477,10 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                                 req_payload["seed"] = payload.seed
                         agent_res = dispatch_agent(agent_cap, req_payload)
                         collected_results[agent_cap] = agent_res
+                        if agent_cap == "traffic" and isinstance(agent_res, dict):
+                            actual_sim_seed = agent_res.get("seed") or (agent_res.get("metadata", {}) or {}).get("random_seed")
+                            if actual_sim_seed is not None:
+                                payload.seed = actual_sim_seed
                         agent_tag = f"{agent_cap}_agent"
                         if agent_tag not in dispatched_agents:
                             dispatched_agents.append(agent_tag)

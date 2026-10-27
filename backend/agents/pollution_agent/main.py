@@ -405,7 +405,10 @@ def _get_forecast_cached():
     from .data_provider import _provider
     if _provider is None and _FORECAST_CACHE is not None:
         c_time, c_val = _FORECAST_CACHE
-        if now_ts - c_time < 600.0:  # 10 minutes
+        from .date_utils import get_next_day_forecast_dates
+        expected_target_date = get_next_day_forecast_dates()["target_date"]
+        cached_target_date = (c_val or {}).get("daily", {}).get("forecast_date")
+        if now_ts - c_time < 600.0 and cached_target_date == expected_target_date:  # 10 minutes and same target date
             return c_val
     try:
         forecaster = UnifiedForecaster.get_instance()

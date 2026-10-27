@@ -91,3 +91,51 @@ def get_forecast_dates(
         "origin_date_ist": origin_date_ist.isoformat(),
         "horizons": horizons,
     }
+
+
+def get_next_day_forecast_dates(
+    current_dt: Optional[Any] = None,
+    tz: timezone = IST_OFFSET,
+) -> Dict[str, Any]:
+    """
+    Calculate the next-day forecast date strictly as the next calendar day (tomorrow)
+    relative to the current date, using the project's established timezone convention (IST for Hyderabad).
+
+    Guarantees:
+    1. Target date is strictly the next calendar day (tomorrow) relative to current date in IST.
+    2. Zero date distortion across month/year boundaries (e.g., Dec 31 -> Jan 1, Feb 28 -> Mar 1).
+    3. Returns standardized target_date (YYYY-MM-DD), target_timestamp, and display_date (e.g. 'Wed, Oct 28').
+    """
+    if current_dt is None:
+        now_dt = datetime.now(timezone.utc)
+    elif isinstance(current_dt, str):
+        now_dt = parse_observation_timestamp(current_dt) or datetime.now(timezone.utc)
+    elif isinstance(current_dt, datetime):
+        now_dt = current_dt if current_dt.tzinfo else current_dt.replace(tzinfo=timezone.utc)
+    elif isinstance(current_dt, date):
+        now_dt = datetime(current_dt.year, current_dt.month, current_dt.day, 12, 0, tzinfo=tz)
+    else:
+        now_dt = datetime.now(timezone.utc)
+
+    local_dt = now_dt.astimezone(tz)
+    current_calendar_date = local_dt.date()
+    target_date = current_calendar_date + timedelta(days=1)
+
+    target_ts = datetime(
+        target_date.year, target_date.month, target_date.day,
+        23, 59, 0, tzinfo=tz
+    ).astimezone(timezone.utc)
+
+    day_num = target_date.day
+    month_str = target_date.strftime("%b")
+    weekday_str = target_date.strftime("%a")
+    weekday_full = target_date.strftime("%A")
+
+    return {
+        "current_date": current_calendar_date.isoformat(),
+        "target_date": target_date.isoformat(),
+        "target_timestamp": target_ts.isoformat(),
+        "display_date": f"{weekday_str}, {month_str} {day_num}",
+        "day_name": weekday_full,
+    }
+

@@ -50,7 +50,7 @@ def get_traffic_kpis(
     location: str = Query("Narayanguda, Hyderabad", description="Target locality"),
     scenario: str = Query("synthetic_normal", description="Synthetic demand scenario name"),
     duration_seconds: int = Query(120, description="Simulation duration in seconds"),
-    seed: int = Query(42, description="Random seed for deterministic demand generation"),
+    seed: Optional[int] = Query(None, description="Random seed for deterministic demand generation. If omitted, fresh randomized demand is generated."),
     purpose: Optional[str] = Query("baseline_traffic_analysis", description="Planner objective context"),
     force_fresh: bool = Query(False, description="Bypass cache and execute simulation afresh"),
 ) -> Dict[str, Any]:
@@ -90,7 +90,7 @@ def analyze_traffic(req: Optional[TrafficAnalyzeRequest] = None) -> Dict[str, An
             location=req.location or "Narayanguda, Hyderabad",
             scenario=req.scenario or "synthetic_normal",
             duration_seconds=req.duration_seconds or 120,
-            seed=req.seed if req.seed is not None else 42,
+            seed=req.seed,
             purpose=req.purpose or "baseline_traffic_analysis",
             force_fresh=req.force_fresh or False,
         )

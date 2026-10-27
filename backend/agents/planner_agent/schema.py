@@ -291,8 +291,8 @@ class LLMFinalReasoning(BaseModel):
     )
     simulation_findings: Optional[str] = Field(default=None, description="Interpretation of SUMO simulation metrics if simulation was executed.")
     synthetic_data_note: Optional[str] = Field(
-        default="SUMO simulation metrics represent simulated/synthetic evidence under a defined traffic-demand scenario, distinct from live physical road sensors.",
-        description="Notice regarding the synthetic nature of SUMO simulation results."
+        default=None,
+        description="Notice regarding the synthetic nature of SUMO simulation results if simulation was executed."
     )
     uncertainty_and_limitations: str = Field(..., description="Noted limitations, data gaps, or sensor assumptions.")
     recommendation: str = Field(default="", description="Actionable municipal policy, routing, or signal recommendation.")
