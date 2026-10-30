@@ -4,7 +4,13 @@
  * Provides production-ready MapLibre GL style specifications for:
  * 1. City Digital Twin (Operations GIS Map with authentic Hyderabad geography)
  * 2. Traffic Intelligence Map (High-contrast command center GIS map)
+ *
+ * Map tiles are served through the backend proxy (/api/tiles/basic/{z}/{x}/{y})
+ * so the TomTom API key never reaches the browser.
+ * Attribution: © TomTom (required by TomTom Terms of Use)
  */
+
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 export const MAP_PALETTE = {
   // Warm Ivory Theme Tokens
@@ -34,24 +40,21 @@ export const MAP_PALETTE = {
 }
 
 /**
- * High-performance, reliable Raster-based OpenStreetMap / GIS Style
- * Displays authentic Hyderabad road network, lakes (Hussain Sagar, Osman Sagar, Himayat Sagar),
- * neighborhoods, and landmarks directly from OpenStreetMap data without API key watermarks.
+ * High-performance Raster-based TomTom / GIS Style
+ * Tiles are proxied through the backend to keep the API key server-side.
  */
 export function getDigitalTwin3DStyle() {
   return {
     version: 8,
     name: 'Hyderabad-Digital-Twin-Basemap',
     sources: {
-      'osm-basemap': {
+      'tomtom-basemap': {
         type: 'raster',
         tiles: [
-          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          `${API_BASE}/api/tiles/basic/{z}/{x}/{y}`,
         ],
         tileSize: 256,
-        attribution: '© OpenStreetMap contributors',
+        attribution: '© <a href="https://www.tomtom.com" target="_blank">TomTom</a>',
       },
     },
     layers: [
@@ -65,7 +68,7 @@ export function getDigitalTwin3DStyle() {
       {
         id: 'basemap-tiles',
         type: 'raster',
-        source: 'osm-basemap',
+        source: 'tomtom-basemap',
         paint: {
           'raster-opacity': 0.92,
           'raster-saturation': -0.1,
@@ -78,23 +81,21 @@ export function getDigitalTwin3DStyle() {
 
 /**
  * Traffic Intelligence Map Style
- * Uses authentic OpenStreetMap data for highly accurate street-level detail in Hyderabad.
+ * Uses TomTom tiles (proxied) for accurate street-level Hyderabad detail.
  */
 export function getTrafficMapStyle() {
   return {
     version: 8,
     name: 'Hyderabad-Traffic-Intelligence-Basemap',
     sources: {
-      'osm-basemap': {
+      'tomtom-basemap': {
         type: 'raster',
         tiles: [
-          'https://a.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://b.tile.openstreetmap.org/{z}/{x}/{y}.png',
-          'https://c.tile.openstreetmap.org/{z}/{x}/{y}.png',
+          `${API_BASE}/api/tiles/basic/{z}/{x}/{y}`,
         ],
         tileSize: 256,
         maxzoom: 19,
-        attribution: '© OpenStreetMap contributors',
+        attribution: '© <a href="https://www.tomtom.com" target="_blank">TomTom</a>',
       },
     },
     layers: [
@@ -108,7 +109,7 @@ export function getTrafficMapStyle() {
       {
         id: 'basemap-tiles',
         type: 'raster',
-        source: 'osm-basemap',
+        source: 'tomtom-basemap',
         paint: {
           'raster-opacity': 0.85,
           'raster-saturation': -0.3, // slight desaturation so traffic lines pop

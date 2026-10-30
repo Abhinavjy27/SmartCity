@@ -1,0 +1,80 @@
+[
+  {
+    "id": "hitec-city",
+    "name": "HiTech City",
+    "point": [78.3810, 17.4504],
+    "typical_travel_min": 15
+  },
+  {
+    "id": "gachibowli",
+    "name": "Gachibowli - HiTech City",
+    "point": [78.3496, 17.4428],
+    "typical_travel_min": 16
+  },
+  {
+    "id": "madhapur",
+    "name": "Madhapur - Jubilee Hills",
+    "point": [78.3912, 17.4480],
+    "typical_travel_min": 12
+  },
+  {
+    "id": "jubilee-hills",
+    "name": "Jubilee Hills",
+    "point": [78.4071, 17.4312],
+    "typical_travel_min": 14
+  },
+  {
+    "id": "banjara-hills",
+    "name": "Banjara Hills",
+    "point": [78.4412, 17.4168],
+    "typical_travel_min": 18
+  },
+  {
+    "id": "secunderabad",
+    "name": "Secunderabad",
+    "point": [78.5020, 17.4415],
+    "typical_travel_min": 20
+  },
+  {
+    "id": "ameerpet",
+    "name": "Ameerpet Junction",
+    "point": [78.4513, 17.4375],
+    "typical_travel_min": 10
+  },
+  {
+    "id": "lb-nagar",
+    "name": "LB Nagar",
+    "point": [78.5520, 17.3480],
+    "typical_travel_min": 28
+  },
+  {
+    "id": "uppal",
+    "name": "Uppal",
+    "point": [78.5620, 17.4020],
+    "typical_travel_min": 22
+  },
+  {
+    "id": "kukatpally",
+    "name": "Kukatpally",
+    "point": [78.4020, 17.4840],
+    "typical_travel_min": 18
+  },
+  {
+    "id": "charminar",
+    "name": "Charminar",
+    "point": [78.4747, 17.3616],
+    "typical_travel_min": 25
+  },
+  {
+    "id": "begumpet",
+    "name": "Begumpet",
+    "point": [78.4680, 17.4440],
+    "typical_travel_min": 15
+  },
+  {
+    "id": "orr-gachibowli",
+    "name": "ORR Gachibowli Junction",
+    "point": [78.3298, 17.4182],
+    "typical_travel_min": 12
+  }
+]

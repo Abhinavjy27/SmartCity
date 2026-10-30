@@ -22,6 +22,13 @@ def client():
     return TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def enable_model_source(monkeypatch):
+    monkeypatch.setenv("FORECAST_SOURCE", "model")
+    from .live_accumulation import get_live_store
+    monkeypatch.setattr(get_live_store(), "get_status", lambda: {"consecutive_live_days": 14})
+
+
 class TestUnifiedForecastPipeline:
     """Test suite verifying unified forecasting integration."""
 

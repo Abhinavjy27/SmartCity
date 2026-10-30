@@ -7,6 +7,7 @@ Forecast from verified BiLSTM model (inference only, no training).
 Single consistent city-level pipeline (§11) and shared validation (§16).
 """
 import asyncio
+import os
 import json
 import logging
 import traceback
@@ -20,7 +21,8 @@ from fastapi import FastAPI, Query, Body, APIRouter, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from pathlib import Path
-from .config import CITY_NAME, POLLUTION_LIVE_MODE, OPENAQ_STALE_HOURS
+from .config import CITY_NAME, POLLUTION_LIVE_MODE, OPENAQ_STALE_HOURS, FORECAST_SOURCE
+from .weatherapi_forecast_provider import get_weatherapi_forecast_provider, WeatherAPIForecastProvider
 from .data_provider import get_data_provider, set_data_provider, POLLUTANT_FEATURES
 from .aqi_engine import calculate_aqi, get_aqi_category
 from .schema import PollutionAnalyzeRequest, PollutionAnalyzeResponse
@@ -399,7 +401,11 @@ _LAST_GOOD_FORECAST = None
 
 
 def _get_forecast_cached():
-    """Cache forecast predictions for 10 minutes to guarantee <=3s warm responses."""
+    """
+    Get unified forecast based on FORECAST_SOURCE (weatherapi | model).
+    Defaults to weatherapi. Model branch is used ONLY when consecutive_live_days >= 14.
+    Cache forecast predictions for 10 minutes to guarantee <=3s warm responses.
+    """
     global _FORECAST_CACHE, _LAST_GOOD_FORECAST
     now_ts = time.time()
     from .data_provider import _provider
@@ -410,18 +416,52 @@ def _get_forecast_cached():
         cached_target_date = (c_val or {}).get("daily", {}).get("forecast_date")
         if now_ts - c_time < 600.0 and cached_target_date == expected_target_date:  # 10 minutes and same target date
             return c_val
-    try:
-        forecaster = UnifiedForecaster.get_instance()
-        res = forecaster.predict()
+
+    forecast_src = os.getenv("FORECAST_SOURCE", FORECAST_SOURCE).strip().lower()
+    if forecast_src == "model":
+        from .live_accumulation import get_live_store
+        store = get_live_store()
+        status_info = store.get_status()
+        consecutive = status_info.get("consecutive_live_days", 0)
+        if consecutive < 14:
+            return {
+                "status": "unavailable",
+                "reason": f"Model forecast requires >= 14 consecutive live accumulation days (currently {consecutive}).",
+                "daily": {
+                    "forecast_aqi": None,
+                    "forecast_status": "unavailable",
+                    "source": "External modeled air-quality forecast",
+                    "model_name": "External Model",
+                    "reason": f"Model forecast requires >= 14 consecutive live accumulation days (currently {consecutive}).",
+                },
+                "extended": {
+                    "status": "unavailable",
+                    "architecture": "External Model",
+                    "reason": f"Model forecast requires >= 14 consecutive live accumulation days (currently {consecutive}).",
+                    "forecast": [],
+                    "metrics": None,
+                },
+            }
+        try:
+            forecaster = UnifiedForecaster.get_instance()
+            res = forecaster.predict()
+            if _provider is None:
+                _FORECAST_CACHE = (now_ts, res)
+                _LAST_GOOD_FORECAST = res
+            return res
+        except Exception as exc:
+            if _provider is None and _LAST_GOOD_FORECAST is not None:
+                logger.warning("[cache] Forecast inference failed (%s); using last-good cached forecast.", exc)
+                return _LAST_GOOD_FORECAST
+            raise
+    else:
+        # Default: external WeatherAPI air-quality forecast provider
+        provider = get_weatherapi_forecast_provider()
+        res = provider.get_forecast()
         if _provider is None:
             _FORECAST_CACHE = (now_ts, res)
             _LAST_GOOD_FORECAST = res
         return res
-    except Exception as exc:
-        if _provider is None and _LAST_GOOD_FORECAST is not None:
-            logger.warning("[cache] Forecast inference failed (%s); using last-good cached forecast.", exc)
-            return _LAST_GOOD_FORECAST
-        raise
 
 
 def _get_forecast():
@@ -589,11 +629,13 @@ def analyze_pollution(request: PollutionAnalyzeRequest):
 def health():
     forecaster = UnifiedForecaster.get_instance()
     provider = get_data_provider()
+    forecast_src = os.getenv("FORECAST_SOURCE", FORECAST_SOURCE).strip().lower()
     return {
         "agent": "Pollution Agent",
         "status": "ONLINE",
         "model_status": "ready" if forecaster.loaded else "unavailable",
         "model_name": forecaster.model_name,
+        "forecast_source": forecast_src,
         "city": CITY_NAME,
         "data_mode": provider.data_mode,
         "is_live": provider.is_live,
@@ -922,9 +964,8 @@ def get_summary():
         server_time, data_age_seconds, data_age_hours, stale, last_updated_label = _compute_freshness(latest_obs_ts, provider.is_live)
         city_aqi = city_result.get("aqi") if city_result else None
 
-        # Call unified forecasting engine: guarantees daily D1 == extended D1 == summary D1
-        forecaster = UnifiedForecaster.get_instance()
-        unified_pred = forecaster.predict()
+        # Call unified forecasting: guarantees daily D1 == extended D1 == summary D1
+        unified_pred = _get_forecast_cached()
         forecast = unified_pred["daily"]
         ext_forecast = unified_pred["extended"]
 
@@ -1077,6 +1118,13 @@ def get_info():
 @router.get("/api/pollution/metrics")
 def get_metrics():
     """Authoritative forecast evaluation metrics loaded from knowledge/forecast_metrics.json."""
+    forecast_src = os.getenv("FORECAST_SOURCE", FORECAST_SOURCE).strip().lower()
+    if forecast_src != "model":
+        return {
+            "status": "unavailable",
+            "reason": "Evaluation metrics not applicable for external modeled air-quality forecast",
+            "mae_per_horizon": None,
+        }
     metrics_path = Path(__file__).resolve().parent / "knowledge" / "forecast_metrics.json"
     if metrics_path.exists():
         with open(metrics_path, "r", encoding="utf-8") as f:

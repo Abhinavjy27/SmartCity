@@ -576,6 +576,17 @@ def not_found(code: str, message: str, details: Dict[str, Any]) -> HTTPException
     )
 
 
+from contextlib import asynccontextmanager
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    from backend.services.congestion_service import congestion_service
+    congestion_service.start_background_task()
+    yield
+    congestion_service.stop_background_task()
+
+
 app = FastAPI(
     title="SUPADSP Unified API Contract",
     version="1.0.0-contract",
@@ -584,6 +595,7 @@ app = FastAPI(
         "This OpenAPI defines integration boundaries between frontend, planner, "
         "domain models (traffic/flood/energy/weather/pollution/simulation), and specialist internal agents."
     ),
+    lifespan=lifespan,
 )
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -2178,4 +2190,11 @@ app.include_router(weather_router, tags=["Specialist Agent - Weather"])
 app.include_router(pollution_router, tags=["Specialist Agent - Pollution"])
 app.include_router(energy_router, tags=["Specialist Agent - Energy"])
 app.include_router(simulation_router, tags=["Specialist Agent - Simulation"])
+
+# ---------------------------------------------------------------------------
+# TomTom Traffic Intelligence API (/api/traffic/*, /api/tiles/*)
+# ---------------------------------------------------------------------------
+from backend.routers.traffic import router as tomtom_traffic_router  # noqa: E402
+
+app.include_router(tomtom_traffic_router, tags=["Traffic - TomTom"])
 

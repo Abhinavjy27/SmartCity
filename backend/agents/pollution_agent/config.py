@@ -62,6 +62,8 @@ if env_file.exists():
                         os.environ["WEATHERAPI_KEY"] = _val
                     elif _k == "OPENAQ_API_KEY" and not os.getenv("OPENAQ_API_KEY"):
                         os.environ["OPENAQ_API_KEY"] = _val
+                    elif _k == "FORECAST_SOURCE" and not os.getenv("FORECAST_SOURCE"):
+                        os.environ["FORECAST_SOURCE"] = _val
     except Exception:
         pass
 
@@ -88,5 +90,10 @@ MIN_LIVE_DAYS_FOR_FORECAST: int = 14
 # Maximum age of a live OpenAQ measurement before it is considered stale.
 # Default is strictly 3 hours per Requirement 5.
 OPENAQ_STALE_HOURS: int = int(os.getenv("OPENAQ_STALE_HOURS", "3"))
+
+# Forecast source mode: "weatherapi" (default) or "model"
+# The model branch is used only when consecutive_live_days >= 14
+FORECAST_SOURCE: str = os.getenv("FORECAST_SOURCE", "weatherapi").strip().lower()
+
 
 

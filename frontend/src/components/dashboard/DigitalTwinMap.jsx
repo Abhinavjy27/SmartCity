@@ -5,10 +5,19 @@ import { getDigitalTwin3DStyle } from '../../services/map/mapStyleService'
 import {
   DIGITAL_TWIN_CENTER,
   HYDERABAD_BOUNDS,
-  REAL_TRAFFIC_FLOWS,
-  REAL_ENERGY_SUBSTATIONS,
-  REAL_AQI_SENSORS,
 } from '../../services/map/mapDataService'
+import {
+  addTrafficLayers,
+  setTrafficVisibility,
+  reloadTrafficTiles,
+  buildTrafficPopup,
+  TRAFFIC_LINE_LAYER_ID,
+  TRAFFIC_SOURCE_ID,
+  TRAFFIC_LEGEND_BUCKETS,
+} from '../../services/map/trafficLayerService'
+import {
+  MapMarkerManager,
+} from '../../services/map/markerLayerService'
 
 /* ═══════════════════════════════════════════════════════════
    MAP INITIAL CONFIGURATION
@@ -22,144 +31,51 @@ const INITIAL_VIEW = {
 }
 
 const LAYER_DEFS = [
-  { id: 'traffic', label: 'Traffic Flow', icon: Car, color: '#2F8F72', desc: 'Real road network speeds' },
+  { id: 'traffic', label: 'Traffic Flow', icon: Car, color: '#2F8F72', desc: 'TomTom live vector tiles' },
   { id: 'energy', label: 'Energy Substations', icon: Zap, color: '#F59E0B', desc: 'TSSPDCL / TSTRANSCO Grid' },
   { id: 'aqi', label: 'AQI Sensors', icon: Wind, color: '#10B981', desc: 'TSPCB / CPCB CAAQMS Stations' },
 ]
 
 const LEGEND_ITEMS = [
-  { label: 'Free Flow (>50 km/h)', color: '#2F8F72', type: 'line' },
-  { label: 'Moderate (30-50 km/h)', color: '#EAB308', type: 'line' },
-  { label: 'Congested (15-30 km/h)', color: '#EF4444', type: 'line' },
-  { label: 'Severe (<15 km/h)', color: '#8B0000', type: 'line' },
+  { label: 'Free Flow (> 85%)', color: '#16A34A', type: 'line' },
+  { label: 'Near Free (70% – 85%)', color: '#2F8F72', type: 'line' },
+  { label: 'Moderate (50% – 70%)', color: '#EAB308', type: 'line' },
+  { label: 'Slow (25% – 50%)', color: '#F97316', type: 'line' },
+  { label: 'Congested (< 25%)', color: '#EF4444', type: 'line' },
   { label: 'Energy Substation (132-400kV)', color: '#F59E0B', type: 'node' },
   { label: 'AQI Sensor Station', color: '#10B981', type: 'sensor' },
 ]
 
 /* ═══════════════════════════════════════════════════════════
-   POPUP BUILDERS (Clean GIS Telemetry)
-   ═══════════════════════════════════════════════════════════ */
-
-function buildTrafficPopup(p) {
-  const color = p.color || '#2F8F72'
-  return `
-    <div style="font-family: var(--font-body, system-ui); min-width: 240px; padding: 2px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-size: 0.65rem; font-weight: 700; color: ${color}; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); background: ${color}15; padding: 2px 8px; border-radius: 4px;">
-          ${p.statusLabel || p.status}
-        </span>
-        <span style="font-size: 0.65rem; color: #8F9295; font-family: var(--font-mono);">${p.corridor || 'Hyderabad'}</span>
-      </div>
-      <div style="font-size: 0.9rem; font-weight: 700; color: #17212B; margin-bottom: 4px;">
-        ${p.road || p.name}
-      </div>
-      <p style="font-size: 0.7rem; color: #64748B; margin-bottom: 10px; line-height: 1.35;">
-        ${p.description || ''}
-      </p>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #F8FAFC; padding: 8px 10px; border-radius: 6px; font-size: 0.72rem; border: 1px solid #E2E8F0;">
-        <div>
-          <div style="color: #8F9295; font-size: 0.6rem; font-family: var(--font-mono); text-transform: uppercase;">CURRENT SPEED</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: ${color}; font-family: var(--font-heading);">${p.speed} <span style="font-size: 0.65rem; font-weight: 500;">km/h</span></div>
-        </div>
-        <div>
-          <div style="color: #8F9295; font-size: 0.6rem; font-family: var(--font-mono); text-transform: uppercase;">TRAFFIC VOLUME</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: #17212B; font-family: var(--font-heading);">${p.volume || 3800} <span style="font-size: 0.65rem; font-weight: 500;">vph</span></div>
-        </div>
-      </div>
-      ${p.queueLength ? `
-        <div style="margin-top: 8px; font-size: 0.68rem; color: #8B0000; font-family: var(--font-mono); font-weight: 600; display: flex; align-items: center; gap: 4px;">
-          ⚠ Choke Point Queue: <strong>${p.queueLength}</strong>
-        </div>
-      ` : ''}
-    </div>
-  `
-}
-
-function buildEnergyPopup(p) {
-  const isHighLoad = p.status === 'High Load'
-  return `
-    <div style="font-family: var(--font-body, system-ui); min-width: 250px; padding: 2px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-size: 0.65rem; font-weight: 700; color: #D97706; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); background: #FEF3C7; padding: 2px 8px; border-radius: 4px;">
-          ⚡ ${p.voltage} GRID
-        </span>
-        <span style="font-size: 0.65rem; color: ${isHighLoad ? '#EF4444' : '#10B981'}; font-weight: 700; font-family: var(--font-mono);">
-          ● ${p.status}
-        </span>
-      </div>
-      <div style="font-size: 0.9rem; font-weight: 700; color: #17212B; margin-bottom: 4px;">
-        ${p.name}
-      </div>
-      <div style="font-size: 0.68rem; color: #64748B; margin-bottom: 8px; font-family: var(--font-mono);">
-        Operator: <strong>${p.operator || 'TSTRANSCO'}</strong> · Location: ${p.latitude.toFixed(4)}°N, ${p.longitude.toFixed(4)}°E
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #FFFBEB; padding: 8px 10px; border-radius: 6px; border: 1px solid #FDE68A; margin-bottom: 8px;">
-        <div>
-          <div style="color: #92400E; font-size: 0.6rem; font-family: var(--font-mono);">CURRENT LOAD</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: ${isHighLoad ? '#DC2626' : '#D97706'}; font-family: var(--font-heading);">${p.currentLoad}</div>
-        </div>
-        <div>
-          <div style="color: #92400E; font-size: 0.6rem; font-family: var(--font-mono);">ACTIVE DEMAND</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: #17212B; font-family: var(--font-heading);">${p.activeDemand}</div>
-        </div>
-      </div>
-      <div style="font-size: 0.68rem; color: #475569; line-height: 1.35; background: #F8FAFC; padding: 6px 8px; border-radius: 4px; border: 1px solid #E2E8F0;">
-        <span style="color: #64748B; font-weight: 600;">Feed Sector:</span> ${p.feedArea || 'Regional Distribution'}
-      </div>
-    </div>
-  `
-}
-
-function buildAqiPopup(p) {
-  return `
-    <div style="font-family: var(--font-body, system-ui); min-width: 240px; padding: 2px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-size: 0.65rem; font-weight: 700; color: ${p.color}; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); background: ${p.color}18; padding: 2px 8px; border-radius: 4px;">
-          ${p.category} AIR QUALITY
-        </span>
-        <span style="font-size: 0.65rem; color: #8F9295; font-family: var(--font-mono);">${p.source || 'TSPCB CAAQMS'}</span>
-      </div>
-      <div style="font-size: 0.9rem; font-weight: 700; color: #17212B; margin-bottom: 4px;">
-        ${p.location}
-      </div>
-      <div style="display: flex; align-items: baseline; gap: 8px; margin: 8px 0;">
-        <span style="font-size: 1.8rem; font-weight: 800; color: ${p.color}; font-family: var(--font-heading); line-height: 1;">${p.aqi}</span>
-        <span style="font-size: 0.72rem; color: #64748B; font-weight: 600;">AQI Index · ${p.temp} · ${p.humidity} RH</span>
-      </div>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.68rem; background: #F8FAFC; padding: 6px 8px; border-radius: 4px; font-family: var(--font-mono); border: 1px solid #E2E8F0;">
-        <div>PM2.5: <strong>${p.pm25} µg/m³</strong></div>
-        <div>PM10: <strong>${p.pm10} µg/m³</strong></div>
-        <div>NO₂: <strong>${p.no2} ppb</strong></div>
-        <div>SO₂: <strong>${p.so2} ppb</strong></div>
-      </div>
-      <div style="margin-top: 6px; font-size: 0.62rem; color: #8F9295; font-family: var(--font-mono);">
-        Coordinates: ${p.latitude.toFixed(4)}°N, ${p.longitude.toFixed(4)}°E
-      </div>
-    </div>
-  `
-}
-
-/* ═══════════════════════════════════════════════════════════
-   MAIN COMPONENT
+   MAIN DIGITAL TWIN COMPONENT
    ═══════════════════════════════════════════════════════════ */
 
 export default function DigitalTwinMap() {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const popupRef = useRef(null)
-  const markersRef = useRef([])
+  const markerManagerRef = useRef(null)
 
   const [layerState, setLayerState] = useState({
     traffic: true,
     energy: true,
     aqi: true,
   })
+  const layerStateRef = useRef(layerState)
+  layerStateRef.current = layerState
+
   const [loading, setLoading] = useState(true)
+  const [trafficError, setTrafficError] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(() => new Date().toLocaleTimeString())
 
   const activeCount = Object.values(layerState).filter(Boolean).length
 
   const toggleLayer = useCallback(id => {
-    setLayerState(prev => ({ ...prev, [id]: !prev[id] }))
+    setLayerState(prev => {
+      const next = { ...prev, [id]: !prev[id] }
+      layerStateRef.current = next
+      return next
+    })
   }, [])
 
   /* ── Initialize Real Geospatial MapLibre Instance ── */
@@ -179,6 +95,9 @@ export default function DigitalTwinMap() {
       maxZoom: 18,
       attributionControl: false,
       antialias: true,
+      transformRequest: (url) => {
+        return { url, credentials: 'omit' }
+      },
     })
 
     const popup = new maplibregl.Popup({
@@ -189,207 +108,78 @@ export default function DigitalTwinMap() {
     })
     popupRef.current = popup
 
-    map.on('load', () => {
-      /* ── 1. Real Hyderabad Traffic Road Geometry ── */
-      map.addSource('hyderabad-traffic-corridors', {
-        type: 'geojson',
-        data: REAL_TRAFFIC_FLOWS,
-      })
+    const markerManager = new MapMarkerManager(map)
+    markerManagerRef.current = markerManager
 
-      // Traffic casing glow
-      map.addLayer({
-        id: 'twin-traffic-casing',
-        type: 'line',
-        source: 'hyderabad-traffic-corridors',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'free', '#2F8F72',
-            'moderate', '#EAB308',
-            'congested', '#EF4444',
-            'severe', '#8B0000',
-            '#8F9295',
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 12],
-          'line-opacity': 0.25,
-        },
-      })
+    // Idempotent setup function called on both 'load' and 'style.load'
+    const setupLayers = () => {
+      try {
+        // 1. Add shared TomTom traffic vector layers
+        addTrafficLayers(map)
+        setTrafficVisibility(map, layerStateRef.current.traffic)
 
-      // Crisp solid traffic flow line
-      map.addLayer({
-        id: 'twin-traffic-line',
-        type: 'line',
-        source: 'hyderabad-traffic-corridors',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'free', '#2F8F72',
-            'moderate', '#EAB308',
-            'congested', '#EF4444',
-            'severe', '#8B0000',
-            '#8F9295',
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6],
-          'line-opacity': 0.95,
-        },
-      })
+        // 2. Initialize and position authentic Substations & AQI markers
+        markerManager.init()
+        markerManager.setVisibility('energy', layerStateRef.current.energy)
+        markerManager.setVisibility('aqi', layerStateRef.current.aqi)
 
-      // Traffic hover and click interactions
-      map.on('mouseenter', 'twin-traffic-line', e => {
-        map.getCanvas().style.cursor = 'pointer'
-        const fid = e.features?.[0]?.properties?.id
-        if (fid) {
-          map.setPaintProperty('twin-traffic-line', 'line-width', [
-            'case',
-            ['==', ['get', 'id'], fid],
-            8,
-            ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6],
-          ])
-        }
-      })
+        setLastUpdated(new Date().toLocaleTimeString())
+        setLoading(false)
+        setTrafficError(false)
+      } catch (err) {
+        console.error('[DigitalTwinMap] Error setting up layers:', err)
+      }
+    }
 
-      map.on('mouseleave', 'twin-traffic-line', () => {
-        map.getCanvas().style.cursor = ''
-        map.setPaintProperty('twin-traffic-line', 'line-width', [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          3.5,
-          14,
-          6,
-        ])
-      })
+    map.on('load', setupLayers)
+    map.on('style.load', setupLayers)
 
-      map.on('click', 'twin-traffic-line', e => {
-        const feat = e.features?.[0]
-        if (!feat) return
-        popup
-          .setLngLat(e.lngLat)
-          .setHTML(buildTrafficPopup(feat.properties))
-          .addTo(map)
-      })
-
-      /* ── 2. Real Energy Substations (TSSPDCL / TSTRANSCO) ── */
-      REAL_ENERGY_SUBSTATIONS.features.forEach(sub => {
-        const el = document.createElement('div')
-        el.className = 'sc-energy-node-marker'
-        el.style.cssText = `
-          display: flex;
-          align-items: center;
-          gap: 6px;
-          cursor: pointer;
-          transition: transform 0.18s ease;
-        `
-        el.innerHTML = `
-          <div style="
-            width: 28px;
-            height: 28px;
-            border-radius: 8px;
-            background: #F59E0B;
-            border: 2px solid #FFFFFF;
-            box-shadow: 0 4px 12px rgba(245, 158, 11, 0.45);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #FFFFFF;
-            font-size: 13px;
-            font-weight: 800;
-          ">
-            ⚡
-          </div>
-          <div style="
-            background: rgba(23, 33, 43, 0.92);
-            color: #FFFFFF;
-            padding: 3px 7px;
-            border-radius: 4px;
-            font-size: 0.62rem;
-            font-weight: 700;
-            font-family: var(--font-mono);
-            letter-spacing: 0.02em;
-            white-space: nowrap;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.25);
-            border: 1px solid rgba(245, 158, 11, 0.4);
-          ">
-            ${sub.properties.capacity}
-          </div>
-        `
-        el.onmouseenter = () => (el.style.transform = 'scale(1.12)')
-        el.onmouseleave = () => (el.style.transform = 'scale(1)')
-
-        const nodePopup = new maplibregl.Popup({
-          offset: 14,
-          closeButton: true,
-          maxWidth: '340px',
-          className: 'sc-popup',
-        }).setHTML(buildEnergyPopup(sub.properties))
-
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(sub.geometry.coordinates)
-          .setPopup(nodePopup)
-          .addTo(map)
-
-        markersRef.current.push({ id: 'energy', marker })
-      })
-
-      /* ── 3. Real AQI Monitoring Stations (TSPCB / CPCB CAAQMS) ── */
-      REAL_AQI_SENSORS.features.forEach(sensor => {
-        const el = document.createElement('div')
-        el.className = 'sc-aqi-sensor-marker'
-        el.style.cssText = `
-          display: flex;
-          align-items: center;
-          gap: 5px;
-          cursor: pointer;
-          transition: transform 0.18s ease;
-        `
-        el.innerHTML = `
-          <div style="
-            width: 32px;
-            height: 32px;
-            border-radius: 50%;
-            background: ${sensor.properties.color};
-            border: 2.5px solid #FFFFFF;
-            box-shadow: 0 4px 12px ${sensor.properties.color}66;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center;
-            color: #FFFFFF;
-          ">
-            <span style="font-size: 0.65rem; font-weight: 800; font-family: var(--font-heading); line-height: 1;">${sensor.properties.aqi}</span>
-            <span style="font-size: 0.45rem; font-weight: 700; font-family: var(--font-mono); opacity: 0.9;">AQI</span>
-          </div>
-        `
-        el.onmouseenter = () => (el.style.transform = 'scale(1.15)')
-        el.onmouseleave = () => (el.style.transform = 'scale(1)')
-
-        const aqiPopup = new maplibregl.Popup({
-          offset: 14,
-          closeButton: true,
-          maxWidth: '340px',
-          className: 'sc-popup',
-        }).setHTML(buildAqiPopup(sensor.properties))
-
-        const marker = new maplibregl.Marker({ element: el, anchor: 'center' })
-          .setLngLat(sensor.geometry.coordinates)
-          .setPopup(aqiPopup)
-          .addTo(map)
-
-        markersRef.current.push({ id: 'aqi', marker })
-      })
-
-      setLoading(false)
+    // Traffic line click & hover
+    map.on('mouseenter', TRAFFIC_LINE_LAYER_ID, () => {
+      map.getCanvas().style.cursor = 'pointer'
     })
+    map.on('mouseleave', TRAFFIC_LINE_LAYER_ID, () => {
+      map.getCanvas().style.cursor = ''
+    })
+    map.on('click', TRAFFIC_LINE_LAYER_ID, e => {
+      const feat = e.features?.[0]
+      if (!feat) return
+      popup
+        .setLngLat(e.lngLat)
+        .setHTML(buildTrafficPopup(feat.properties))
+        .addTo(map)
+    })
+
+    // Capture source errors
+    map.on('error', err => {
+      if (err.sourceId === TRAFFIC_SOURCE_ID) {
+        console.warn('[DigitalTwinMap] Vector tile error:', err.error)
+        setTrafficError(true)
+      }
+    })
+
+    // 60-second auto-reload for live vector tiles
+    const refreshInterval = setInterval(() => {
+      if (mapRef.current) {
+        reloadTrafficTiles(mapRef.current)
+        setLastUpdated(new Date().toLocaleTimeString())
+      }
+    }, 60000)
+
+    // ResizeObserver for dynamic layout adjustment
+    const ro = new ResizeObserver(() => {
+      map.resize()
+    })
+    ro.observe(containerRef.current)
 
     mapRef.current = map
 
     return () => {
+      clearInterval(refreshInterval)
+      ro.disconnect()
       popup.remove()
+      markerManager.destroy()
+      markerManagerRef.current = null
       map.remove()
       mapRef.current = null
     }
@@ -400,17 +190,14 @@ export default function DigitalTwinMap() {
     const map = mapRef.current
     if (!map) return
 
-    // Traffic line layers
-    const trafficVis = layerState.traffic ? 'visible' : 'none'
-    if (map.getLayer('twin-traffic-line')) map.setLayoutProperty('twin-traffic-line', 'visibility', trafficVis)
-    if (map.getLayer('twin-traffic-casing')) map.setLayoutProperty('twin-traffic-casing', 'visibility', trafficVis)
+    // Traffic vector layer visibility
+    setTrafficVisibility(map, layerState.traffic)
 
-    // Markers (Substations & AQI Sensors)
-    markersRef.current.forEach(({ id, marker }) => {
-      const active = layerState[id] ?? true
-      const el = marker.getElement()
-      if (el) el.style.display = active ? 'flex' : 'none'
-    })
+    // Substation & AQI marker visibility
+    if (markerManagerRef.current) {
+      markerManagerRef.current.setVisibility('energy', layerState.energy)
+      markerManagerRef.current.setVisibility('aqi', layerState.aqi)
+    }
   }, [layerState])
 
   /* ── Map Navigation Controls ── */
@@ -500,6 +287,38 @@ export default function DigitalTwinMap() {
           <p style={{ fontSize: '0.72rem', color: 'var(--text-muted, #8F9295)', lineHeight: 1.4 }}>
             Geospatial synchronization with TSSPDCL Grid, TSPCB CAAQMS Stations & GHMC Arterial Networks.
           </p>
+        </div>
+
+        {/* Live Status Badge */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <div
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+              padding: '4px 10px',
+              background: trafficError ? '#FEF2F2' : '#F0FDF4',
+              border: `1px solid ${trafficError ? '#FECACA' : '#BBF7D0'}`,
+              borderRadius: '6px',
+              fontSize: '0.68rem',
+              fontFamily: 'var(--font-mono)',
+              fontWeight: 600,
+              color: trafficError ? '#DC2626' : '#16A34A',
+            }}
+          >
+            <span
+              style={{
+                width: 6,
+                height: 6,
+                borderRadius: '50%',
+                background: trafficError ? '#DC2626' : '#16A34A',
+                display: 'inline-block',
+              }}
+            />
+            {trafficError
+              ? 'Traffic data unavailable'
+              : `Live: TomTom | updated ${lastUpdated}`}
+          </div>
         </div>
       </div>
 
@@ -618,7 +437,7 @@ export default function DigitalTwinMap() {
                       padding: '2px',
                       display: 'flex',
                     }}
-                    title={active ? 'Hide Layer' : 'Show Layer'}
+                    title={active ? `Hide ${layer.label}` : `Show ${layer.label}`}
                   >
                     {active ? <Eye size={15} /> : <EyeOff size={15} />}
                   </button>

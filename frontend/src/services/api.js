@@ -240,7 +240,7 @@ export const planningApi = {
       let assigned_capabilities = ['traffic', 'weather']
       let dispatched_agents = ['traffic_agent', 'weather_agent']
       let collected_results = {
-        traffic: { active_vehicles: 2150, average_speed_kmh: 24.2, congestion_index: 64.5 },
+        traffic: { average_speed_kmh: 24.2, congestion_index: 64.5 },
         weather: { temperature_c: 32.5, humidity_pct: 68.0 }
       }
       let finalRec = 'Deploy AI-Actuated Traffic Signal overrides along congested intersections and coordinate traffic divergence routes.'
@@ -716,6 +716,15 @@ export const trafficApi = {
       method: 'POST',
       body: JSON.stringify(payload)
     })
+  },
+  async getCongestionIndex() {
+    return await request('/api/traffic/congestion-index')
+  },
+  async getCongestionHistory(hours = 24) {
+    return await request(`/api/traffic/congestion-index/history?hours=${hours}`)
+  },
+  async getCorridors() {
+    return await request('/api/traffic/corridors')
   }
 }
 
@@ -754,3 +763,5 @@ export const simulationApi = {
     })
   }
 }
+
+

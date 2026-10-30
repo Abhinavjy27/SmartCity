@@ -233,7 +233,6 @@ function parseTrafficEvidence(res) {
   const waitingTime = metrics.average_waiting_time_sec ?? trf.average_waiting_time_sec ?? obs.average_waiting_time_sec
   const delay = metrics.average_delay_sec ?? trf.average_delay_sec ?? obs.average_delay_sec
   const congestion = metrics.congestion_index ?? trf.congestion_index ?? obs.congestion_index
-  const activeVehicles = metrics.active_vehicles ?? trf.active_vehicles ?? obs.active_vehicles
   const totalVehicles = metrics.total_vehicles ?? trf.total_vehicles ?? obs.total_vehicles
   const throughput = metrics.throughput ?? trf.throughput ?? obs.throughput
 
@@ -247,7 +246,6 @@ function parseTrafficEvidence(res) {
     waitingTime: waitingTime !== null && waitingTime !== undefined ? Number(waitingTime).toFixed(1) : null,
     delay: delay !== null && delay !== undefined ? Number(delay).toFixed(1) : null,
     congestion: congestion !== null && congestion !== undefined ? `${(congestion * 100).toFixed(1)}%` : null,
-    activeVehicles,
     totalVehicles,
     throughput,
     bottlenecks,

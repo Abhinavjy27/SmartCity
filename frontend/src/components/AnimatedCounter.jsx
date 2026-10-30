@@ -7,6 +7,15 @@ export default function AnimatedCounter({ value, duration = 1500, prefix = '', s
 
   useEffect(() => {
     const target = Number(value) || 0
+    const prefersReducedMotion = typeof window !== 'undefined' &&
+      window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
+    if (prefersReducedMotion) {
+      setDisplay(target)
+      return
+    }
+
     let raf
     const animate = (timestamp) => {
       if (!startRef.current) startRef.current = timestamp

@@ -5,8 +5,15 @@ import { getTrafficMapStyle } from '../../services/map/mapStyleService'
 import {
   HYDERABAD_CENTER,
   HYDERABAD_BOUNDS,
-  REAL_TRAFFIC_FLOWS,
 } from '../../services/map/mapDataService'
+import {
+  addTrafficLayers,
+  reloadTrafficTiles,
+  buildTrafficPopup,
+  TRAFFIC_LINE_LAYER_ID,
+  TRAFFIC_SOURCE_ID,
+  TRAFFIC_LEGEND_BUCKETS,
+} from '../../services/map/trafficLayerService'
 
 /* ═══════════════════════════════════════════════════════════
    MAP CONFIGURATION
@@ -19,47 +26,6 @@ const INITIAL_VIEW = {
   bearing: 0,
 }
 
-const MAP_LEGEND = [
-  { label: 'Free Flow (>50 km/h)', color: '#2F8F72' },
-  { label: 'Moderate (30-50 km/h)', color: '#EAB308' },
-  { label: 'Congested (15-30 km/h)', color: '#EF4444' },
-  { label: 'Severe (<15 km/h)', color: '#8B0000' },
-]
-
-/* ═══════════════════════════════════════════════════════════
-   POPUP BUILDER (Traffic Flow Corridors)
-   ═══════════════════════════════════════════════════════════ */
-
-function buildCorridorPopup(props) {
-  const color = props.color || '#2F8F72'
-  return `
-    <div style="font-family: var(--font-body, system-ui); min-width: 230px; padding: 2px;">
-      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
-        <span style="font-size: 0.65rem; font-weight: 700; color: ${color}; text-transform: uppercase; letter-spacing: 0.06em; font-family: var(--font-mono); background: ${color}15; padding: 2px 8px; border-radius: 4px;">
-          ${props.statusLabel || props.status}
-        </span>
-        <span style="font-size: 0.65rem; color: #8F9295; font-family: var(--font-mono);">${props.corridor || 'Hyderabad'}</span>
-      </div>
-      <div style="font-size: 0.88rem; font-weight: 700; color: #17212B; margin-bottom: 4px;">
-        ${props.road || props.name}
-      </div>
-      <p style="font-size: 0.7rem; color: #64748B; margin-bottom: 8px; line-height: 1.35;">
-        ${props.description || ''}
-      </p>
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #F8FAFC; padding: 8px 10px; border-radius: 6px; font-size: 0.72rem; border: 1px solid #E2E8F0;">
-        <div>
-          <div style="color: #8F9295; font-size: 0.6rem; font-family: var(--font-mono);">AVG SPEED</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: ${color}; font-family: var(--font-heading);">${props.speed} <span style="font-size: 0.65rem; font-weight: 400;">km/h</span></div>
-        </div>
-        <div>
-          <div style="color: #8F9295; font-size: 0.6rem; font-family: var(--font-mono);">LANES / VOL</div>
-          <div style="font-weight: 800; font-size: 1.1rem; color: #17212B; font-family: var(--font-heading);">${props.lanes || 6} <span style="font-size: 0.65rem; font-weight: 400;">Lanes</span></div>
-        </div>
-      </div>
-    </div>
-  `
-}
-
 /* ═══════════════════════════════════════════════════════════
    MAIN COMPONENT
    ═══════════════════════════════════════════════════════════ */
@@ -69,6 +35,8 @@ export default function TrafficIntelligenceMap() {
   const mapRef = useRef(null)
   const popupRef = useRef(null)
   const [loading, setLoading] = useState(true)
+  const [tileError, setTileError] = useState(false)
+  const [lastUpdated, setLastUpdated] = useState(() => new Date().toLocaleTimeString())
 
   /* ── Initialize MapLibre GL ── */
   useEffect(() => {
@@ -87,6 +55,9 @@ export default function TrafficIntelligenceMap() {
       maxZoom: 18,
       attributionControl: false,
       antialias: true,
+      transformRequest: (url) => {
+        return { url, credentials: 'omit' }
+      },
     })
 
     const popup = new maplibregl.Popup({
@@ -97,97 +68,66 @@ export default function TrafficIntelligenceMap() {
     })
     popupRef.current = popup
 
-    map.on('load', () => {
-      /* ── Traffic Flow GeoJSON Source & Crisp Speed Layers ── */
-      map.addSource('traffic-flows', {
-        type: 'geojson',
-        data: REAL_TRAFFIC_FLOWS,
-      })
+    // Idempotent setup called on 'load' and on every 'style.load'
+    const setupLayers = () => {
+      try {
+        addTrafficLayers(map)
+        setLastUpdated(new Date().toLocaleTimeString())
+        setTileError(false)
+        setLoading(false)
+      } catch (err) {
+        console.error('[TrafficIntelligenceMap] Error setting up traffic layers:', err)
+      }
+    }
 
-      // Traffic casing glow
-      map.addLayer({
-        id: 'flow-casing',
-        type: 'line',
-        source: 'traffic-flows',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'free', '#2F8F72',
-            'moderate', '#EAB308',
-            'congested', '#EF4444',
-            'severe', '#8B0000',
-            '#8F9295',
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 6, 14, 12],
-          'line-opacity': 0.25,
-        },
-      })
+    map.on('load', setupLayers)
+    map.on('style.load', setupLayers)
 
-      // Solid flow line
-      map.addLayer({
-        id: 'flow-line',
-        type: 'line',
-        source: 'traffic-flows',
-        layout: { 'line-join': 'round', 'line-cap': 'round' },
-        paint: {
-          'line-color': [
-            'match',
-            ['get', 'status'],
-            'free', '#2F8F72',
-            'moderate', '#EAB308',
-            'congested', '#EF4444',
-            'severe', '#8B0000',
-            '#8F9295',
-          ],
-          'line-width': ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6],
-          'line-opacity': 0.95,
-        },
-      })
-
-      /* ── Click & Hover Events on Traffic Corridors ── */
-      map.on('mouseenter', 'flow-line', e => {
-        map.getCanvas().style.cursor = 'pointer'
-        const fid = e.features?.[0]?.properties?.id
-        if (fid) {
-          map.setPaintProperty('flow-line', 'line-width', [
-            'case',
-            ['==', ['get', 'id'], fid],
-            8,
-            ['interpolate', ['linear'], ['zoom'], 10, 3.5, 14, 6],
-          ])
-        }
-      })
-
-      map.on('mouseleave', 'flow-line', () => {
-        map.getCanvas().style.cursor = ''
-        map.setPaintProperty('flow-line', 'line-width', [
-          'interpolate',
-          ['linear'],
-          ['zoom'],
-          10,
-          3.5,
-          14,
-          6,
-        ])
-      })
-
-      map.on('click', 'flow-line', e => {
-        const feat = e.features?.[0]
-        if (!feat) return
-        popup
-          .setLngLat(e.lngLat)
-          .setHTML(buildCorridorPopup(feat.properties))
-          .addTo(map)
-      })
-
-      setLoading(false)
+    /* ── Hover & Click on Vector Traffic Lines ── */
+    map.on('mouseenter', TRAFFIC_LINE_LAYER_ID, () => {
+      map.getCanvas().style.cursor = 'pointer'
     })
+
+    map.on('mouseleave', TRAFFIC_LINE_LAYER_ID, () => {
+      map.getCanvas().style.cursor = ''
+    })
+
+    map.on('click', TRAFFIC_LINE_LAYER_ID, e => {
+      const feat = e.features?.[0]
+      if (!feat) return
+      popup
+        .setLngLat(e.lngLat)
+        .setHTML(buildTrafficPopup(feat.properties))
+        .addTo(map)
+    })
+
+    // Listen for source errors
+    map.on('error', err => {
+      if (err.sourceId === TRAFFIC_SOURCE_ID) {
+        console.warn('[TrafficIntelligenceMap] Vector tile source error:', err.error)
+        setTileError(true)
+      }
+    })
+
+    // 60-second auto-reload for live vector tiles
+    const refreshInterval = setInterval(() => {
+      if (mapRef.current) {
+        reloadTrafficTiles(mapRef.current)
+        setLastUpdated(new Date().toLocaleTimeString())
+      }
+    }, 60000)
+
+    // ResizeObserver
+    const ro = new ResizeObserver(() => {
+      map.resize()
+    })
+    ro.observe(containerRef.current)
 
     mapRef.current = map
 
     return () => {
+      clearInterval(refreshInterval)
+      ro.disconnect()
       popup.remove()
       map.remove()
       mapRef.current = null
@@ -260,12 +200,35 @@ export default function TrafficIntelligenceMap() {
                 fontWeight: 700,
               }}
             >
-              INITIALIZING HYDERABAD TRAFFIC GIS ENGINE…
+              LOADING TOMTOM TRAFFIC FLOW TILES…
             </div>
           </div>
         )}
 
-        {/* ── Top-Left: Clean Flow Speeds Legend ── */}
+        {/* Tile error or unavailable banner */}
+        {tileError && !loading && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 16,
+              right: 16,
+              background: '#FEF2F2',
+              border: '1px solid #FECACA',
+              borderRadius: 6,
+              padding: '6px 14px',
+              fontSize: '0.68rem',
+              fontFamily: 'var(--font-mono)',
+              color: '#DC2626',
+              fontWeight: 700,
+              zIndex: 12,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.08)',
+            }}
+          >
+            ⚠ Traffic data unavailable — upstream proxy error
+          </div>
+        )}
+
+        {/* ── Top-Left: Flow Speeds Legend ── */}
         <div
           style={{
             position: 'absolute',
@@ -275,7 +238,7 @@ export default function TrafficIntelligenceMap() {
             backdropFilter: 'blur(8px)',
             borderRadius: '10px',
             padding: '14px 16px',
-            minWidth: '170px',
+            minWidth: '220px',
             color: '#FFFFFF',
             boxShadow: '0 10px 30px rgba(0, 0, 0, 0.35)',
             zIndex: 10,
@@ -292,14 +255,37 @@ export default function TrafficIntelligenceMap() {
               color: '#FFFFFF',
               display: 'flex',
               alignItems: 'center',
-              gap: '6px',
+              justifyContent: 'space-between',
             }}
           >
-            <span>FLOW SPEEDS</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+              <span>FLOW SPEEDS</span>
+              <span
+                style={{
+                  fontSize: '0.58rem',
+                  background: 'rgba(47,143,114,0.25)',
+                  color: '#2F8F72',
+                  padding: '1px 6px',
+                  borderRadius: 4,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                LIVE
+              </span>
+            </div>
+            <span
+              style={{
+                fontSize: '0.58rem',
+                color: 'rgba(203,213,225,0.7)',
+                fontFamily: 'var(--font-mono)',
+              }}
+            >
+              {lastUpdated}
+            </span>
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-            {MAP_LEGEND.map(item => (
+            {TRAFFIC_LEGEND_BUCKETS.map(item => (
               <div
                 key={item.label}
                 style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
@@ -315,7 +301,7 @@ export default function TrafficIntelligenceMap() {
                 />
                 <span
                   style={{
-                    fontSize: '0.66rem',
+                    fontSize: '0.63rem',
                     color: '#CBD5E1',
                     fontFamily: 'var(--font-mono)',
                   }}
@@ -324,6 +310,22 @@ export default function TrafficIntelligenceMap() {
                 </span>
               </div>
             ))}
+          </div>
+
+          <div
+            style={{
+              marginTop: 10,
+              paddingTop: 8,
+              borderTop: '1px solid rgba(255,255,255,0.08)',
+              fontSize: '0.58rem',
+              color: 'rgba(203,213,225,0.6)',
+              fontFamily: 'var(--font-mono)',
+              display: 'flex',
+              justifyContent: 'space-between',
+            }}
+          >
+            <span>TomTom Vector Flow Tiles</span>
+            <span>60s TTL</span>
           </div>
         </div>
 
