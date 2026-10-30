@@ -66,7 +66,7 @@ export default function DigitalTwinMap() {
 
   const [loading, setLoading] = useState(true)
   const [trafficError, setTrafficError] = useState(false)
-  const [lastUpdated, setLastUpdated] = useState(() => new Date().toLocaleTimeString())
+  const [lastUpdated, setLastUpdated] = useState('—')
 
   const activeCount = Object.values(layerState).filter(Boolean).length
 
@@ -123,7 +123,6 @@ export default function DigitalTwinMap() {
         markerManager.setVisibility('energy', layerStateRef.current.energy)
         markerManager.setVisibility('aqi', layerStateRef.current.aqi)
 
-        setLastUpdated(new Date().toLocaleTimeString())
         setLoading(false)
         setTrafficError(false)
       } catch (err) {
@@ -162,7 +161,6 @@ export default function DigitalTwinMap() {
     const refreshInterval = setInterval(() => {
       if (mapRef.current) {
         reloadTrafficTiles(mapRef.current)
-        setLastUpdated(new Date().toLocaleTimeString())
       }
     }, 60000)
 
@@ -199,6 +197,131 @@ export default function DigitalTwinMap() {
       markerManagerRef.current.setVisibility('aqi', layerState.aqi)
     }
   }, [layerState])
+
+  /* ── AQI Polling (Every 90s, active only while Dashboard is viewed) ── */
+  useEffect(() => {
+    const abortController = new AbortController()
+    let timerId = null
+    let isMounted = true
+
+    const updateAqiInPlace = (stations) => {
+      if (!markerManagerRef.current || !Array.isArray(stations) || stations.length === 0) return
+      const aqiMarkers = markerManagerRef.current.markers.filter(m => m.id === 'aqi')
+      aqiMarkers.forEach(item => {
+        const lngLat = item.marker.getLngLat()
+        let nearestStation = null
+        let minDist = Infinity
+        for (const s of stations) {
+          const d2 = (s.lon - lngLat.lng) ** 2 + (s.lat - lngLat.lat) ** 2
+          if (d2 < minDist) {
+            minDist = d2
+            nearestStation = s
+          }
+        }
+        if (nearestStation && minDist < 0.1) {
+          const inner = item.container?.querySelector('.sc-aqi-marker-inner')
+          if (inner) {
+            const circle = inner.querySelector('div')
+            if (circle) {
+              if (nearestStation.color) {
+                circle.style.background = nearestStation.color
+                circle.style.boxShadow = `0 4px 12px ${nearestStation.color}66`
+              }
+              const aqiSpan = circle.querySelector('span')
+              if (aqiSpan && nearestStation.aqi !== null && nearestStation.aqi !== undefined) {
+                aqiSpan.textContent = String(nearestStation.aqi)
+              }
+            }
+          }
+          const popup = item.marker.getPopup()
+          if (popup) {
+            popup.setHTML(`
+              <div style="font-family: var(--font-body, system-ui); min-width: 250px; padding: 2px;">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px;">
+                  <span style="font-size: 0.65rem; font-weight: 700; color: ${nearestStation.color || '#10B981'}; text-transform: uppercase;
+                    letter-spacing: 0.06em; font-family: var(--font-mono); background: ${(nearestStation.color || '#10B981')}18; padding: 2px 8px; border-radius: 4px;">
+                    ${nearestStation.category || 'MODERATE'} AIR QUALITY
+                  </span>
+                  <span style="font-size: 0.65rem; color: #8F9295; font-family: var(--font-mono);">${nearestStation.provider_name || 'TSPCB CAAQMS'}</span>
+                </div>
+                <div style="font-size: 0.92rem; font-weight: 700; color: #17212B; margin-bottom: 4px;">
+                  ${nearestStation.station_name || nearestStation.area}
+                </div>
+                <div style="display: flex; align-items: baseline; gap: 8px; margin: 8px 0;">
+                  <span style="font-size: 1.8rem; font-weight: 800; color: ${nearestStation.color || '#10B981'}; font-family: var(--font-heading); line-height: 1;">
+                    ${nearestStation.aqi}
+                  </span>
+                  <span style="font-size: 0.72rem; color: #64748B; font-weight: 600;">AQI Index · Live Telemetry</span>
+                </div>
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 0.68rem; background: #F8FAFC;
+                  padding: 6px 8px; border-radius: 4px; font-family: var(--font-mono); border: 1px solid #E2E8F0;">
+                  <div>PM2.5: <strong>${nearestStation['PM2.5'] ?? '—'} µg/m³</strong></div>
+                  <div>PM10: <strong>${nearestStation['PM10'] ?? '—'} µg/m³</strong></div>
+                  <div>NO₂: <strong>${nearestStation['NO2'] ?? '—'} ppb</strong></div>
+                  <div>SO₂: <strong>${nearestStation['SO2'] ?? '—'} ppb</strong></div>
+                </div>
+                <div style="margin-top: 6px; font-size: 0.62rem; color: #8F9295; font-family: var(--font-mono);">
+                  Coordinates: ${Number(nearestStation.lat).toFixed(4)}°N, ${Number(nearestStation.lon).toFixed(4)}°E
+                </div>
+              </div>
+            `)
+          }
+        }
+      })
+    }
+
+    const pollAqi = async () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return
+      }
+      try {
+        const resp = await fetch('/api/v1/pollution/current', { signal: abortController.signal })
+        if (!resp.ok) return
+        const json = await resp.json()
+        if (!isMounted) return
+
+        if (json?.stations) {
+          updateAqiInPlace(json.stations)
+        }
+        if (json?.timestamp) {
+          const d = new Date(json.timestamp)
+          const timeStr = !isNaN(d.getTime())
+            ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+            : json.timestamp
+          setLastUpdated(timeStr)
+        }
+      } catch (err) {
+        if (err.name === 'AbortError') return
+        console.warn('[DigitalTwinMap] AQI poll error; keeping last good readings:', err)
+      }
+    }
+
+    // Initial fetch once map layers are loaded
+    pollAqi()
+
+    // 90s cadence
+    timerId = setInterval(pollAqi, 90000)
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        pollAqi()
+        if (timerId) clearInterval(timerId)
+        timerId = setInterval(pollAqi, 90000)
+      } else {
+        if (timerId) clearInterval(timerId)
+        timerId = null
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility)
+
+    return () => {
+      isMounted = false
+      abortController.abort()
+      if (timerId) clearInterval(timerId)
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
+  }, [])
 
   /* ── Map Navigation Controls ── */
   const handleZoomIn = useCallback(() => {

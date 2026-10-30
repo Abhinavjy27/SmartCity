@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 WEATHERAPI_BASE_URL = "https://api.weatherapi.com/v1/current.json"
 WEATHERAPI_TIMEOUT_SECONDS = 5.0
-CACHE_TTL_SECONDS = 180.0  # 3 minutes
+CACHE_TTL_SECONDS = 90.0  # 90 seconds lazy cache per Task 1 specification
 
 # 13 Canonical Hyderabad CAAQMS Stations matching HistoricalTSPCBProvider
 STATIONS_CONFIG = [
