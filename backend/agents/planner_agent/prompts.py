@@ -273,12 +273,21 @@ When exactly one intervention was tested in simulation, produce concise evidence
 - SUPPORT "NO CLEAR WINNER": Only if tested interventions have genuine conflicting trade-offs with no clear dominance (e.g. A improves target speed by +10% but worsens delay by +20%, while B improves delay by +15% but leaves target speed unchanged), state that neither clearly dominates and explain the operational trade-off.
 - Untested candidates remain unsimulated and cannot be chosen over tested configurations.
 
-### DISTINCT, CONCISE FINAL RECOMMENDATION RULE:
-- The `recommendation` must be CONCISE, ACTION-ORIENTED, and tell municipal operators exactly what to do.
-- Do NOT repeat the full analysis or list all metrics/percentages already displayed in the comparison table or summary.
-- Focus on: (1) which tested intervention to prioritize for further validation/field trials based on its primary observed gains, (2) specific corridors or metrics to monitor for trade-offs, and (3) a reminder that simulation results should be validated against field conditions before permanent deployment.
-- `summary` provides the comprehensive evidence, diagnostic findings, and corridor trade-off overview.
-- NEVER duplicate or copy `summary` text into `recommendation`.
+### GENERAL USER-CENTRIC CONCISENESS & OPERATIONAL DESIGN:
+Keep outputs clear, professional, readable, and easy to understand for municipal operators and everyday citizens:
+1. Assessment Structure:
+   - Provide a direct, plain-language assessment in 2 to 3 sentences maximum.
+   - For Traffic: State whether conditions are Free Flow, Moderate, or Congested, along with current speed vs. free-flow baseline and observed delay.
+   - For Weather: State the condition (e.g. Sunny, Rain), temperature, humidity, and immediate outlook in one clean sentence.
+   - For Air Quality: State AQI score, health category, and primary pollutant driver clearly.
+   - For Energy / Grid: State current substation load status (e.g. Normal, High), demand MW, and capacity headroom.
+2. No Jargon & No Speculative Clutter:
+   - Avoid long, repetitive technical essays that overwhelm the user.
+   - Never speculate on secondary unverified causes (e.g. mechanical soil resuspension or industrial perimeter fires) unless specifically requested by an analytical query.
+   - Do not quote internal engine mechanics or planning rules.
+3. Actionable Recommendations:
+   - Keep recommended operational actions concise and prioritized (top 2 to 3 items only).
+   - Tell operators or citizens what immediate action is needed without duplicating the assessment text.
 
 ### HONEST EVIDENCE STATUS & PROVENANCE:
 - For responses where simulations were actually executed:
@@ -312,7 +321,11 @@ When users ask how to improve a situation (e.g. "How can we reduce pollution in 
    - Do not automatically assume traffic is the cause of every pollution problem. Distinguish confirmed sources from possible contributing factors.
 3. Relevant Stakeholders:
    - Identify relevant implementation bodies such as GHMC (sanitation, town planning), Hyderabad Traffic Police, TSPCB, and Transport Department.
-4. Integrity:
+4. User-Centric Conciseness:
+   - Keep the Assessment brief, direct, and conversational (2-3 concise sentences maximum).
+   - Answer directly: State the current AQI, health category (e.g., Moderate / Unhealthy for Sensitive Groups), and the primary pollutant.
+   - Avoid overwhelming simple users with exhaustive paragraphs about mechanical resuspension or speculative causality unless explicitly asked.
+5. Integrity:
    - Do NOT invent percentage improvements or guaranteed outcomes.
    - Do NOT run SUMO simulations for pollution reduction queries.
    - Explain what action is proposed, why it is relevant, how it helps, and the implementation horizon.
@@ -609,6 +622,38 @@ def _compact_weather_evidence(wtr: Any) -> Any:
     }
 
 
+def _compact_pollution_evidence(pol: Any) -> Any:
+    """Extract concise, essential air quality telemetry for clean municipal reasoning."""
+    if not isinstance(pol, dict):
+        return pol
+
+    # Keep only the top 2-3 immediate actionable interventions to avoid drowning the LLM in boilerplates
+    suggested = pol.get("suggested_interventions") or []
+    compact_interventions = []
+    if isinstance(suggested, list):
+        for inv in suggested[:3]:
+            if isinstance(inv, dict):
+                compact_interventions.append({
+                    "action_type": inv.get("action_type"),
+                    "horizon": inv.get("horizon"),
+                    "description": inv.get("description"),
+                })
+            else:
+                compact_interventions.append(str(inv))
+
+    return {
+        "location": pol.get("location"),
+        "city_avg_aqi": pol.get("city_avg_aqi") if "city_avg_aqi" in pol else pol.get("aqi"),
+        "category": pol.get("category"),
+        "primary_pollutant": pol.get("primary_pollutant"),
+        "pm25": pol.get("pm25"),
+        "pm10": pol.get("pm10"),
+        "pollutants": pol.get("pollutants"),
+        "suggested_interventions": compact_interventions,
+        "data_source": pol.get("data_source"),
+    }
+
+
 def _compact_generic_evidence(data: Any) -> Any:
     """Strip massive arrays like station lists or hourly data from generic telemetry."""
     if isinstance(data, dict):
@@ -633,6 +678,8 @@ def compact_specialist_results(results: Dict[str, Any]) -> Dict[str, Any]:
             compacted["traffic"] = _compact_traffic_evidence(val)
         elif agent_cap == "weather":
             compacted["weather"] = _compact_weather_evidence(val)
+        elif agent_cap == "pollution":
+            compacted["pollution"] = _compact_pollution_evidence(val)
         elif agent_cap in ("simulation", "simulations"):
             if "simulation" not in compacted:
                 compacted["simulation"] = _compact_simulation_evidence(val)

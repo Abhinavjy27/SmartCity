@@ -46,7 +46,10 @@ KNOWN_HYDERABAD_LOCALITIES = [
     "sanathnagar", "nacharam", "bollaram", "patancheru", "tarnaka", "somajiguda",
     "kompally", "malakpet", "kukatpally", "madhapur", "miyapur", "ameerpet",
     "kondapur", "dilsukhnagar", "lb nagar", "shamshabad", "alwal", "uppal",
-    "lingampally", "mehdipatnam", "koti", "hyderabad",
+    "lingampally", "mehdipatnam", "koti", "santosh nagar", "santhosh nagar",
+    "santoshnagar", "amberpet", "abids", "falaknuma", "nampally", "masab tank",
+    "tolichowki", "manikonda", "raidurg", "chandanagar", "nizampet", "bowenpally",
+    "malkajgiri", "habsiguda", "attapur", "balapur", "hyderabad",
 ]
 
 

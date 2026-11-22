@@ -1191,44 +1191,7 @@ export default function Planning() {
                           </div>
                         </div>
 
-                        {/* Potential Pollution Contributors & Verification Notice */}
-                        <div style={{
-                          padding: '10px 12px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
-                          border: '1px solid var(--border-divider)', marginBottom: '12px'
-                        }}>
-                          <div style={{
-                            fontSize: '0.68rem', fontWeight: 700, color: 'var(--text-primary)',
-                            fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '6px'
-                          }}>
-                            Potential Contributors
-                          </div>
-                          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '8px', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                              <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>•</span>
-                              <span><strong>Road Dust Resuspension:</strong> Loose soil and vehicular mechanical displacement (correlating with elevated PM10).</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                              <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>•</span>
-                              <span><strong>Vehicular Emissions:</strong> Internal combustion exhaust and heavy commercial transit (correlating with PM2.5 / CO).</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                              <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>•</span>
-                              <span><strong>Construction & Earthworks:</strong> Unmitigated demolition or transit corridor developments.</span>
-                            </div>
-                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '6px' }}>
-                              <span style={{ color: 'var(--accent-warning)', fontWeight: 700 }}>•</span>
-                              <span><strong>Localized Combustion:</strong> Municipal waste burning, roadside leaf fires, or industrial perimeter activity.</span>
-                            </div>
-                          </div>
-                          <div style={{
-                            marginTop: '8px', paddingTop: '6px', borderTop: '1px dashed var(--border-divider)',
-                            fontSize: '0.65rem', color: 'var(--text-muted)', fontStyle: 'italic'
-                          }}>
-                            * Verification Notice: Specific source contributions require ground monitoring, field inspection or source-apportionment chemical analysis. Modelled concentrations alone do not establish individual source causality.
-                          </div>
-                        </div>
-
-                        {/* Structured Municipal Interventions by Operational Horizon */}
+                        {/* Structured Municipal Actions & Health Advisory (Clean, user-centric) */}
                         {turn.pollutionEvidence.suggestedInterventions && turn.pollutionEvidence.suggestedInterventions.length > 0 && (
                           <div style={{
                             padding: '12px 14px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
@@ -1238,17 +1201,17 @@ export default function Planning() {
                               fontSize: '0.68rem', fontWeight: 700, color: 'var(--accent-emerald)',
                               fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px'
                             }}>
-                              Recommended Municipal Environmental Actions
+                              Recommended Municipal Actions
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {turn.pollutionEvidence.suggestedInterventions.map((inv, idx) => {
+                              {turn.pollutionEvidence.suggestedInterventions.slice(0, 3).map((inv, idx) => {
                                 const actionType = typeof inv === 'object' ? (inv.action_type || 'MUNICIPAL_INTERVENTION') : 'MUNICIPAL_ACTION'
                                 const desc = typeof inv === 'object' ? (inv.description || '') : String(inv)
-                                const horizon = typeof inv === 'object' ? (inv.horizon || (idx < 2 ? 'Immediate' : (idx < 5 ? 'Medium-term' : 'Long-term'))) : 'Proposed'
+                                const horizon = typeof inv === 'object' ? (inv.horizon || (idx < 2 ? 'Immediate' : 'Medium-term')) : 'Proposed'
                                 const stakeholders = typeof inv === 'object' && Array.isArray(inv.stakeholders) ? inv.stakeholders.join(', ') : 'GHMC / TSPCB'
                                 
                                 return (
-                                  <div key={idx} style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                  <div key={idx} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                                       <span style={{
                                         fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '2px',
@@ -1435,7 +1398,7 @@ export default function Planning() {
                           </div>
                         )}
 
-                        {/* Structured Energy Recommendations by Horizon */}
+                        {/* Structured Energy Recommendations (Top 2-3 High Impact Actions) */}
                         {turn.energyEvidence.recommendations && turn.energyEvidence.recommendations.length > 0 && (
                           <div style={{
                             padding: '12px 14px', background: 'var(--bg-input)', borderRadius: 'var(--radius-sm)',
@@ -1445,23 +1408,19 @@ export default function Planning() {
                               fontSize: '0.68rem', fontWeight: 700, color: '#38bdf8',
                               fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: '8px'
                             }}>
-                              Recommended Grid Operations & Demand Management
+                              Recommended Grid Actions
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                              {turn.energyEvidence.recommendations.map((rec, rIdx) => {
+                              {turn.energyEvidence.recommendations.slice(0, 3).map((rec, rIdx) => {
                                 const priority = rec.priority || (rIdx === 0 ? 'CRITICAL' : (rIdx < 3 ? 'HIGH' : 'MEDIUM'))
-                                const horizonLabel = rIdx < 2 ? 'Immediate' : (rIdx < 4 ? 'Medium-term' : 'Long-term')
+                                const horizonLabel = rIdx < 2 ? 'Immediate' : 'Medium-term'
                                 return (
-                                  <div key={rIdx} style={{ fontSize: '0.76rem', color: 'var(--text-secondary)' }}>
+                                  <div key={rIdx} style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '2px' }}>
                                       <span style={{
                                         fontSize: '0.6rem', fontWeight: 700, padding: '1px 5px', borderRadius: '2px',
-                                        background: horizonLabel === 'Immediate' ? 'rgba(239, 68, 68, 0.15)' : (
-                                          horizonLabel === 'Medium-term' ? 'rgba(245, 158, 11, 0.15)' : 'rgba(56, 189, 248, 0.15)'
-                                        ),
-                                        color: horizonLabel === 'Immediate' ? '#ef4444' : (
-                                          horizonLabel === 'Medium-term' ? '#f59e0b' : '#38bdf8'
-                                        )
+                                        background: horizonLabel === 'Immediate' ? 'rgba(239, 68, 68, 0.15)' : 'rgba(56, 189, 248, 0.15)',
+                                        color: horizonLabel === 'Immediate' ? '#ef4444' : '#38bdf8'
                                       }}>
                                         {horizonLabel.toUpperCase()}
                                       </span>
@@ -1653,8 +1612,8 @@ export default function Planning() {
                       </div>
                     )}
 
-                    {/* Actionable Municipal Recommendation */}
-                    {turn.recommendation && (
+                    {/* Actionable Municipal Recommendation (Avoid duplicating if already rendered inside Pollution/Energy sections) */}
+                    {turn.recommendation && !turn.pollutionEvidence && !turn.energyEvidence && (
                       <div style={{
                         padding: '12px 14px', background: 'var(--bg-input)',
                         borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-default)',
