@@ -108,18 +108,24 @@ Workflow: Frontend -> LLM Planner -> Specialist Agents -> LLM Planner -> Fronten
    Set `relevant: false`, `required_capabilities: []`, `agent_requests: []`, `next_action: "finalize"`, and provide a polite rejection in `response`.
    NEVER return null for `next_action`.
 2. Identify core objective, location, constraints.
-3. QUERY INTENT CLASSIFICATION:
-   - A. New observation request (e.g. "Which corridor is currently the bottleneck?", "What are current traffic conditions?"):
-     Select `traffic` agent (`required_capabilities: ["traffic"]`, `next_action: "collect_evidence"`).
-   - B. New optimization / evaluation request (e.g. "Optimize the traffic situation", "Evaluate interventions"):
-     Collect baseline traffic first (`required_capabilities: ["traffic"]`, `next_action: "collect_evidence"`). Candidate simulations will be evaluated after baseline evidence exists.
-   - C. Follow-up analytical request about already completed simulations (e.g. "Which tested intervention performed better and why?", "Compare the tested interventions again", "Did the optimization solve the bottleneck?"):
-     When completed simulation history exists or user asks to compare/analyze previously tested interventions:
-     DO NOT dispatch new specialist agents (`required_capabilities: []`, `agent_requests: []`).
-     Set `next_action: "finalize"`.
-   - D. Follow-up explicitly requesting NEW simulation testing (e.g. "Now test a different signal timing", "Simulate rerouting with 20% diversion"):
-     Select `simulation` agent with requested parameters (`required_capabilities: ["simulation"]`, `next_action: "run_simulation"`).
-   - E. Immediate-answer or clarifying requests where no specialist agent is needed (`agent_requests: []`):
+3. QUERY INTENT CLASSIFICATION (8 Distinct Intents):
+   - A. Factual query / Monitoring (e.g. "What is the current traffic situation in Narayanguda?", "What is the AQI in Tarnaka?"):
+     Select relevant domain agent (`traffic`, `pollution`, `weather`, or `energy`), `next_action: "collect_evidence"`. Do NOT run simulation.
+   - B. Explanation (e.g. "Why is this corridor slow?", "Why is PM10 high in Tarnaka?"):
+     Retrieve specialist evidence, `next_action: "collect_evidence"`. Explain verified mechanisms and contributing factors. Do NOT run simulation.
+   - C. Practical Recommendation (e.g. "How can we reduce pollution in Tarnaka even with heavy traffic?", "What measures can control road dust?", "Suggest ways to reduce vehicle emissions", "What can GHMC do to reduce pollution?"):
+     Retrieve relevant specialist evidence (`pollution`, plus `traffic` for context if helpful). Set `next_action: "collect_evidence"`. DO NOT select `simulation`. Recommend practical, actionable municipal measures.
+   - D. Prediction / Forecast (e.g. "Will it rain this evening?", "What is the 24-hour air quality forecast?"):
+     Select domain agent with forecast mode (`data_mode: "forecast"`), `next_action: "collect_evidence"`.
+   - E. Traffic Optimization & Actionable Improvement (e.g. "How can I improve traffic in Ameerpet?", "How can I reduce traffic congestion in Gachibowli?", "How to reduce traffic delays?", "Optimize traffic signal timings in Nacharam", "Optimize bottleneck in Madhapur"):
+     Collect baseline traffic first (`required_capabilities: ["traffic"]`, `next_action: "collect_evidence"`). Candidate intervention simulations will be automatically evaluated in SUMO before generating the final response.
+   - F. What-if analysis (e.g. "What would happen if we restricted heavy vehicles during peak hours?"):
+     Determine if supported by traffic microsimulation. If supported, evaluate via `simulation`. If not supported, explain limitations and recommend operational alternatives.
+   - G. Scenario comparison (e.g. "Compare signal timing vs rerouting"):
+     Evaluate supported candidate traffic interventions in simulation.
+   - H. Follow-up analytical request about already completed simulations (e.g. "Which tested intervention performed better and why?", "Compare the tested interventions again"):
+     DO NOT dispatch new specialist agents (`required_capabilities: []`, `agent_requests: []`). Set `next_action: "finalize"`.
+   - I. Immediate-answer or clarifying requests where no specialist agent is needed (`agent_requests: []`):
      Set `next_action: "finalize"`.
 4. For multi-domain investigations, select `weather`, `pollution`, or `energy` only when relevant to the prompt.
    - For `pollution`: specify `data_mode: "current"` when real-time or current AQI/pollution is requested. Specify `data_mode: "historical"` for historical trend or multi-year analysis.
@@ -158,9 +164,10 @@ You are the SOLE coordinator. Analyze specialist telemetry against planning obje
 ### RULES:
 1. SUMO simulation metrics are simulated/synthetic evidence under defined demand, NOT live sensor telemetry.
 2. BOTTLENECK TERMINOLOGY: Identify the slowest corridor strictly as "Lowest observed-speed corridor", NEVER as "Lowest flow corridor".
-3. DIAGNOSTIC VS OPTIMIZATION INTENT:
-   - Purely diagnostic queries (e.g. "Which corridor is the bottleneck?", "Why is this corridor slow?", "What is current traffic?") must NOT launch simulations. Set decision: "finalize", next_action: "finalize", agent_requests: [].
-   - Optimization or evaluation queries (e.g. "optimize", "improve", "evaluate interventions", "compare signal timing and rerouting") require candidate simulation.
+3. CONDITIONAL SIMULATION POLICY (RUN ONLY WHEN GENUINELY NEEDED):
+   - Factual, monitoring, diagnostic, explanation, and recommendation queries (e.g. "How can we reduce pollution in Tarnaka even with heavy traffic?", "What measures can control road dust?", "What is current traffic?", "Why is PM10 high?", "Suggest ways to reduce emissions") MUST NOT launch simulations. Set decision: "finalize", next_action: "finalize", agent_requests: [].
+   - SUMO CAPABILITY BOUNDARY: SUMO is a traffic microsimulation tool that models vehicle speed, delay, queue lengths, waiting time, and throughput. SUMO DOES NOT model atmospheric chemistry, air quality, road dust suppression, or mechanized sweeping. NEVER dispatch SUMO for pollution reduction or dust suppression queries.
+   - Simulation is STRICTLY RESTRICTED to explicit traffic signal timing optimization, alternative routing evaluation, or supported traffic restriction what-if scenarios. Optimization or evaluation queries that specifically target traffic signal timings or traffic routing require candidate SUMO simulation.
 4. CANDIDATE SELECTION FOR TESTING (NOT RECOMMENDATION):
    - When optimization is requested, inspect candidate interventions returned by Traffic Agent.
    - User comparison priority: If the user explicitly asks to compare specific intervention strategies (e.g. "compare signal timing and rerouting"), prioritize matching executable candidates for those strategies.
@@ -180,20 +187,21 @@ You are the SOLE coordinator. Analyze specialist telemetry against planning obje
    - Do NOT quote or cite rules, and do NOT explain internal planning mechanics or why simulations were not launched (e.g. NEVER output "The objective is a purely diagnostic query", "According to Rule 3", "The evidence is sufficient to answer", or explanations of why simulations were not run). Keep internal decision-making inside the Planner.
 
 ### OUTPUT JSON SCHEMA:
-Return ONLY valid JSON:
+Return ONLY valid JSON. Ensure a comma separates EVERY field (especially between `missing_information`, `required_capabilities`, and `agent_requests`):
 {{
   "evidence_sufficient": true,
-  "decision": "finalize" | "request_more_evidence" | "run_simulation" | "abort",
-  "next_action": "finalize" | "request_more_evidence" | "run_simulation" | "abort",
-  "analysis": "...",
+  "decision": "finalize",
+  "next_action": "finalize",
+  "analysis": "Technical evaluation...",
   "missing_information": [],
   "required_capabilities": [],
   "agent_requests": [
-    {{"agent": "simulation", "request": {{"scenario_name": "synthetic_normal", "intervention": {{"type": "signal_timing", "target": "Westbound", "parameters": {{"green_time_adjustment_sec": 10.0}}}}}}, "reason": "..."}}
+    {{"agent": "simulation", "request": {{"scenario_name": "synthetic_normal", "intervention": {{"type": "signal_timing", "target": "Westbound", "parameters": {{"green_time_adjustment_sec": 15.0}}}}}}, "reason": "Empirical SUMO evaluation"}}
   ],
   "simulation_context": null,
   "scenarios": null
 }}
+// CRITICAL: Parameters must be flat scalar values. NEVER nest an intervention dictionary inside its own parameters. Always separate fields with commas.
 """
 
 STAGE_3_FINAL_REASONING_SYSTEM_PROMPT = """[STAGE 3: FINAL REASONING]
@@ -272,11 +280,47 @@ When exactly one intervention was tested in simulation, produce concise evidence
 - `summary` provides the comprehensive evidence, diagnostic findings, and corridor trade-off overview.
 - NEVER duplicate or copy `summary` text into `recommendation`.
 
+### HONEST EVIDENCE STATUS & PROVENANCE:
+- For responses where simulations were actually executed:
+  * If 2 or more simulations: `EVIDENCE: MULTI-SIMULATION EVALUATION`
+  * If 1 simulation: `EVIDENCE: SINGLE SIMULATION RUN`
+- For responses with ZERO simulations:
+  * If primary evidence is from numerical air quality models (e.g. Open-Meteo): `EVIDENCE: MODELLED ESTIMATE`. (Do NOT mislabel numerical atmospheric models as physical ground sensor observations).
+  * If primary evidence is from live API traffic telemetry (e.g. TomTom): `EVIDENCE: API-SOURCED TELEMETRY`.
+  * If combining TomTom live traffic telemetry and Open-Meteo air quality model: `EVIDENCE: MULTI-SOURCE (API & MODELLED)`.
+  * If providing municipal recommendations or domain advisories: `EVIDENCE: MUNICIPAL ADVISORY & RECOMMENDATION`.
+  * NEVER assign a blanket 'EVIDENCE: OBSERVATIONAL' to modelled atmospheric estimates or simulation results.
+
+### STRICT REAL-WORLD TRAFFIC EVIDENCE GROUNDING:
+- Every real-world traffic metric MUST originate from the TomTom API response.
+- If the traffic data source is TomTom (observed):
+  * Only cite observed TomTom fields: `network_speed_kmh`, `free_flow_speed_kmh`, `congestion_index`, and `corridors` (speed, status).
+  * Never invent or state metrics unsupported by TomTom, such as vehicle counts/volume, queue length, waiting time, or vehicle throughput.
+  * If delay_sec is cited, cite it strictly as segment travel time delay compared to free flow (not average stopped delay per vehicle).
+  * Distinguish direct API observations from inferences. If data is unavailable, omit it or state that it is not measured by the traffic API.
+
+### PRACTICAL, ACTIONABLE MUNICIPAL RECOMMENDATIONS:
+When users ask how to improve a situation (e.g. "How can we reduce pollution in Tarnaka even with heavy traffic?", "What measures can control road dust?", "Suggest ways to reduce vehicle emissions", "What can GHMC do?"):
+1. Focus on practical, actionable municipal measures structured by horizon:
+   - Immediate measures: Mechanized road sweeping, water-mist dust suppression, clearing roadside dust/silt, controlling open waste burning, covering construction material trucks with tarpaulins, reducing unnecessary vehicle idling at intersections.
+   - Medium-term measures: Construction-site dust-control enforcement (windbreak sheets, water cannons), improved municipal waste collection, public transit augmentation (feeder buses), cleaner commercial vehicle fleets.
+   - Long-term measures: Sustainable urban transport planning, green buffer strips with broad-leaved vegetation along corridors, road paving, non-motorized transport infrastructure.
+2. Ground recommendations in the specific observed evidence:
+   - Elevated PM10 justifies prioritizing road dust and construction dust controls.
+   - Elevated PM2.5 and NO2 justifies transport, idling reduction, and fleet emission controls.
+   - Open burning or localized peaks justify waste-management enforcement.
+   - Do not automatically assume traffic is the cause of every pollution problem. Distinguish confirmed sources from possible contributing factors.
+3. Relevant Stakeholders:
+   - Identify relevant implementation bodies such as GHMC (sanitation, town planning), Hyderabad Traffic Police, TSPCB, and Transport Department.
+4. Integrity:
+   - Do NOT invent percentage improvements or guaranteed outcomes.
+   - Do NOT run SUMO simulations for pollution reduction queries.
+   - Explain what action is proposed, why it is relevant, how it helps, and the implementation horizon.
+
 ### RECOMMENDATION FOR ZERO SIMULATIONS:
-- Evidence status is EVIDENCE: OBSERVATIONAL.
 - For traffic optimization or intervention requests where zero simulations were run:
   * State that candidate interventions remain untested in simulation and require empirical verification.
-- For non-traffic requests (weather-only, pollution-only, energy-only):
+- For non-traffic requests (weather-only, pollution-only, energy-only, or environmental recommendations):
   * Provide only relevant evidence, domain analysis, and legitimate domain advisories.
   * Do NOT include traffic optimization, corridor baseline, or SUMO simulation disclaimers.
 - For multi-agent requests:
@@ -361,15 +405,22 @@ def _compact_traffic_evidence(trf: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(trf, dict):
         return trf
 
+    is_observed = (trf.get("source_type") or (trf.get("source") or {}).get("type")) == "observed" or (trf.get("source_provider") or (trf.get("source") or {}).get("provider")) == "tomtom"
+
     metrics = trf.get("metrics") or {}
     compact: Dict[str, Any] = {
+        "location": trf.get("location"),
+        "source_provider": trf.get("source_provider") or (trf.get("source") or {}).get("provider") or "tomtom",
+        "source_type": trf.get("source_type") or (trf.get("source") or {}).get("type") or "observed",
+        "data_source": trf.get("data_source") or "tomtom_traffic_api",
         "network_speed_kmh": metrics.get("average_speed_kmh") if metrics.get("average_speed_kmh") is not None else trf.get("average_speed_kmh"),
+        "free_flow_speed_kmh": trf.get("free_flow_speed_kmh"),
         "congestion_index": metrics.get("congestion_index") if metrics.get("congestion_index") is not None else trf.get("congestion_index"),
-        "waiting_time_sec": metrics.get("average_waiting_time_sec") if metrics.get("average_waiting_time_sec") is not None else trf.get("average_waiting_time_sec"),
+        "waiting_time_sec": None if is_observed else (metrics.get("average_waiting_time_sec") if metrics.get("average_waiting_time_sec") is not None else trf.get("average_waiting_time_sec")),
         "delay_sec": metrics.get("average_delay_sec") if metrics.get("average_delay_sec") is not None else trf.get("average_delay_sec"),
-        "active_vehicles": metrics.get("active_vehicles") or trf.get("active_vehicles"),
-        "total_vehicles": metrics.get("total_vehicles") or trf.get("total_vehicles"),
-        "throughput": metrics.get("throughput") if metrics.get("throughput") is not None else trf.get("throughput"),
+        "active_vehicles": None if is_observed else (metrics.get("active_vehicles") or trf.get("active_vehicles")),
+        "total_vehicles": None if is_observed else (metrics.get("total_vehicles") or trf.get("total_vehicles")),
+        "throughput": None if is_observed else (metrics.get("throughput") if metrics.get("throughput") is not None else trf.get("throughput")),
     }
 
     # Corridors
@@ -524,10 +575,47 @@ def _compact_simulation_evidence(sim: Any) -> Any:
     }
 
 
+def _compact_weather_evidence(wtr: Any) -> Any:
+    """Extract strictly essential weather telemetry for token-bounded LLM reasoning."""
+    if not isinstance(wtr, dict):
+        return wtr
+
+    forecast_summary = []
+    for day in (wtr.get("forecast_7d") or [])[:3]:
+        if isinstance(day, dict):
+            forecast_summary.append({
+                "day": day.get("day"),
+                "high": day.get("high"),
+                "low": day.get("low"),
+                "condition": day.get("condition"),
+                "rain": day.get("rain"),
+            })
+
+    return {
+        "city": wtr.get("city") or wtr.get("location"),
+        "temperature_c": wtr.get("temperature_c"),
+        "feels_like_c": wtr.get("feels_like_c"),
+        "condition": wtr.get("condition"),
+        "humidity_pct": wtr.get("humidity_pct"),
+        "wind_speed_kmh": wtr.get("wind_speed_kmh"),
+        "wind_direction": wtr.get("wind_direction"),
+        "precipitation_mm": wtr.get("precipitation_mm"),
+        "pressure_hpa": wtr.get("pressure_hpa"),
+        "uv_index": wtr.get("uv_index"),
+        "visibility_km": wtr.get("visibility_km"),
+        "provider": wtr.get("provider") or wtr.get("source"),
+        "timestamp": wtr.get("timestamp"),
+        "forecast_summary": forecast_summary,
+    }
+
+
 def _compact_generic_evidence(data: Any) -> Any:
     """Strip massive arrays like station lists or hourly data from generic telemetry."""
     if isinstance(data, dict):
-        exclude = {"stations", "substations", "forecast_7d", "hourly_data", "metadata", "source"}
+        exclude = {
+            "stations", "substations", "forecast_7d", "hourly_temp", "hourly_data",
+            "weekly_precipitation", "metadata", "source", "correlations", "provenance_summary"
+        }
         return {k: _compact_generic_evidence(v) for k, v in data.items() if k not in exclude}
     elif isinstance(data, list):
         return [_compact_generic_evidence(v) for v in data]
@@ -543,6 +631,8 @@ def compact_specialist_results(results: Dict[str, Any]) -> Dict[str, Any]:
     for agent_cap, val in results.items():
         if agent_cap == "traffic":
             compacted["traffic"] = _compact_traffic_evidence(val)
+        elif agent_cap == "weather":
+            compacted["weather"] = _compact_weather_evidence(val)
         elif agent_cap in ("simulation", "simulations"):
             if "simulation" not in compacted:
                 compacted["simulation"] = _compact_simulation_evidence(val)

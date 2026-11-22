@@ -230,6 +230,55 @@ class GroqLLMProvider(BaseLLMProvider):
                     effective_max = min(4096, effective_max + 1000)
                     logger.warning(f"Groq max completion tokens reached; increasing effective_max to {effective_max}")
 
+                # Catch Groq 400 json_validate_failed and retry with plain-text completion + robust JSON repair
+                is_json_validate = any(k in exc_str for k in ["json_validate_failed", "Failed to generate JSON", "invalid_request_error"]) or ("400" in exc_str and "json" in exc_str.lower())
+                if is_json_validate:
+                    logger.warning(
+                        f"Groq JSON mode validation error on model '{self.model}': {exc_str}. "
+                        "Retrying with standard completion and bounded parsing/repair..."
+                    )
+                    repair_prompt = (
+                        user_prompt + "\n\nCRITICAL: Return ONLY a single raw valid JSON object without markdown fences or commentary. "
+                        "Ensure all keys and values are double-quoted and all properties are separated by commas."
+                    )
+                    try:
+                        completion = client.chat.completions.create(
+                            model=self.model,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": repair_prompt},
+                            ],
+                            temperature=temperature,
+                            max_tokens=effective_max,
+                        )
+                        raw_text = completion.choices[0].message.content
+                        if raw_text and raw_text.strip():
+                            return _clean_and_parse_json(raw_text)
+                    except Exception as retry_exc:
+                        logger.warning(f"Plain-text completion retry on '{self.model}' failed: {retry_exc}")
+                        fallback_models = [
+                            m.strip()
+                            for m in os.getenv("LLM_FALLBACK_MODELS", "openai/gpt-oss-120b,openai/gpt-oss-20b").split(",")
+                            if m.strip() and m.strip() != self.model
+                        ]
+                        for fb_model in fallback_models:
+                            try:
+                                logger.info(f"Attempting fallback to model '{fb_model}'...")
+                                completion = client.chat.completions.create(
+                                    model=fb_model,
+                                    messages=[
+                                        {"role": "system", "content": system_prompt},
+                                        {"role": "user", "content": repair_prompt},
+                                    ],
+                                    temperature=temperature,
+                                    max_tokens=effective_max,
+                                )
+                                raw_text = completion.choices[0].message.content
+                                if raw_text and raw_text.strip():
+                                    return _clean_and_parse_json(raw_text)
+                            except Exception as fb_err:
+                                logger.warning(f"Fallback model '{fb_model}' failed: {fb_err}")
+
                 is_rate_limit = any(k in exc_str for k in ["429", "413", "rate_limit", "ITPM", "OTPM", "tokens"])
                 is_tpd = "TPD" in exc_str or "tokens per day" in exc_str
 
@@ -548,16 +597,12 @@ class MockLLMProvider(BaseLLMProvider):
                 "response": "This question is outside the scope of the Smart City system."
             }
 
-        loc = "Narayanguda, Hyderabad"
-        for candidate in ["narayanguda", "gachibowli", "hitech city", "nacharam", "financial district", "punjagutta", "secunderabad", "kukatpally", "ameerpet", "begumpet"]:
-            if candidate in clean_obj:
-                loc = f"{candidate.title()}, Hyderabad" if "hyderabad" not in candidate else candidate.title()
-                break
+        loc_match = re.search(r'(?:User-Provided Location|Location):\s*(?:"""|")?([^\n\r"]+)(?:"""|")?', user_prompt, re.IGNORECASE)
+        explicit_loc = loc_match.group(1).strip() if loc_match and "not specified" not in loc_match.group(1).lower() else None
 
-        if not loc or loc == "Narayanguda, Hyderabad":
-            loc_match = re.search(r'User-Provided Location.*?:.*?\"\"\"(.*?)\"\"\"', user_prompt, re.DOTALL)
-            if loc_match and loc_match.group(1).strip():
-                loc = loc_match.group(1).strip()
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        loc_res = LocationResolver.resolve(query_text=clean_obj, explicit_location=explicit_loc)
+        loc = f"{loc_res.name}, Hyderabad" if loc_res else (explicit_loc or "Hyderabad")
 
         # Analytical follow-up query recognition
         is_analytical_followup = any(
@@ -799,11 +844,16 @@ class MockLLMProvider(BaseLLMProvider):
                 "confidence": 0.95,
             }
 
-        loc = "Narayanguda, Hyderabad"
-        for candidate in ["narayanguda", "gachibowli", "hitech city", "nacharam", "financial district", "punjagutta", "secunderabad"]:
-            if candidate in p_lower:
-                loc = f"{candidate.title()}, Hyderabad" if "hyderabad" not in candidate else candidate.title()
-                break
+        # Extract explicit objective and location from prompt fields; NEVER search the entire prompt
+        eval_obj_match = re.search(r'(?:User Natural-Language Objective|Objective):\s*(?:"""|")?([^\n\r"]+)(?:"""|")?', user_prompt, re.IGNORECASE)
+        eval_clean_obj = eval_obj_match.group(1).strip() if eval_obj_match else None
+
+        loc_match = re.search(r'(?:User-Provided Location|Location):\s*(?:"""|")?([^\n\r"]+)(?:"""|")?', user_prompt, re.IGNORECASE)
+        explicit_loc = loc_match.group(1).strip() if loc_match and "not specified" not in loc_match.group(1).lower() else None
+
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        loc_res = LocationResolver.resolve(query_text=eval_clean_obj, explicit_location=explicit_loc)
+        loc = f"{loc_res.name}, Hyderabad" if loc_res else (explicit_loc or "Hyderabad")
 
         if is_purely_diagnostic:
             return {
@@ -1146,11 +1196,16 @@ class MockLLMProvider(BaseLLMProvider):
             cross_rel = "Corridor conditions reflect localized vehicle volume and roadway junction bottlenecks."
             causation = "INDEPENDENT"
 
-        loc = "Narayanguda, Hyderabad"
-        for candidate in ["narayanguda", "gachibowli", "hitech city", "nacharam", "financial district", "punjagutta"]:
-            if candidate in p_lower:
-                loc = f"{candidate.title()}, Hyderabad" if "hyderabad" not in candidate else candidate.title()
-                break
+        # Extract explicit objective and location from prompt fields; NEVER search the entire prompt
+        eval_obj_match = re.search(r'(?:User Natural-Language Objective|Objective):\s*(?:"""|")?([^\n\r"]+)(?:"""|")?', user_prompt, re.IGNORECASE)
+        eval_clean_obj = eval_obj_match.group(1).strip() if eval_obj_match else None
+
+        loc_match = re.search(r'(?:User-Provided Location|Location):\s*(?:"""|")?([^\n\r"]+)(?:"""|")?', user_prompt, re.IGNORECASE)
+        explicit_loc = loc_match.group(1).strip() if loc_match and "not specified" not in loc_match.group(1).lower() else None
+
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        loc_res = LocationResolver.resolve(query_text=eval_clean_obj, explicit_location=explicit_loc)
+        loc = f"{loc_res.name}, Hyderabad" if loc_res else (explicit_loc or "Hyderabad")
 
         sim_findings = None
         assessment = None
@@ -1484,26 +1539,83 @@ class MockLLMProvider(BaseLLMProvider):
 
 
 def _clean_and_parse_json(raw_text: str) -> Dict[str, Any]:
-    """Extract and parse valid JSON from LLM output, handling markdown fences if present."""
-    text = raw_text.strip()
-    if text.startswith("```"):
-        lines = text.splitlines()
-        if lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].startswith("```"):
-            lines = lines[:-1]
-        text = "\n".join(lines).strip()
+    """
+    Extract and parse valid JSON from LLM output with bounded repair.
+    Handles:
+    - Markdown code fences (```json ... ```)
+    - Missing commas between keys (e.g. between 'missing_information' and 'agent_requests')
+    - Trailing commas before } or ]
+    - Unclosed braces/brackets from token cutoffs
+    - Python dict literals (e.g. single quotes, boolean casing)
+    """
+    if not raw_text or not raw_text.strip():
+        raise LLMJsonParsingError("LLM returned empty text response.")
 
+    text = raw_text.strip()
+
+    # 1. Strip markdown code fences if present
+    if "```" in text:
+        fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", text)
+        if fence_match:
+            text = fence_match.group(1).strip()
+        else:
+            lines = [l for l in text.splitlines() if not l.strip().startswith("```")]
+            text = "\n".join(lines).strip()
+
+    # 2. Fast path: standard json.loads
     try:
         return json.loads(text)
-    except json.JSONDecodeError as exc:
-        match = re.search(r"\{.*\}", text, re.DOTALL)
-        if match:
-            try:
-                return json.loads(match.group(0))
-            except json.JSONDecodeError:
-                pass
-        raise LLMJsonParsingError(f"Failed to parse LLM response as JSON: {exc}. Raw response: {raw_text[:200]}")
+    except Exception:
+        pass
+
+    # 3. Extract outermost { ... }
+    match = re.search(r"\{[\s\S]*\}", text)
+    if match:
+        extracted = match.group(0)
+        try:
+            return json.loads(extracted)
+        except Exception:
+            pass
+        text_to_repair = extracted
+    else:
+        text_to_repair = text
+
+    # 4. Repair common JSON malformations:
+    # 4a. Missing comma between closing bracket/brace/literal and following key
+    repaired = re.sub(r'([\]\}])\s*\n?\s*("[\w_-]+"\s*:)', r'\1, \2', text_to_repair)
+    repaired = re.sub(r'(true|false|null|"(?:[^"\\]|\\.)*"|\d+(?:\.\d+)?)\s*\n\s*("[\w_-]+"\s*:)', r'\1, \2', repaired)
+
+    # 4b. Explicit missing comma between missing_information and agent_requests or similar fields
+    repaired = re.sub(r'("missing_information"\s*:\s*\[[^\]]*\])\s*("agent_requests"\s*:)', r'\1, \2', repaired)
+    repaired = re.sub(r'("required_capabilities"\s*:\s*\[[^\]]*\])\s*("agent_requests"\s*:)', r'\1, \2', repaired)
+
+    # 4c. Remove trailing commas before } or ]
+    repaired = re.sub(r',\s*([\]\}])', r'\1', repaired)
+
+    try:
+        return json.loads(repaired)
+    except Exception:
+        pass
+
+    # 4d. Auto-balance unclosed braces / brackets if truncated
+    open_braces = repaired.count("{") - repaired.count("}")
+    open_brackets = repaired.count("[") - repaired.count("]")
+    balanced = repaired + ("]" * max(0, open_brackets)) + ("}" * max(0, open_braces))
+    try:
+        return json.loads(balanced)
+    except Exception:
+        pass
+
+    # 4e. Fallback to ast.literal_eval for python-formatted dicts (e.g. single quotes, True/False)
+    try:
+        import ast
+        py_dict = ast.literal_eval(repaired)
+        if isinstance(py_dict, dict):
+            return py_dict
+    except Exception:
+        pass
+
+    raise LLMJsonParsingError(f"Failed to parse LLM response as JSON. Raw preview: {raw_text[:200]}")
 
 
 def get_llm_provider(

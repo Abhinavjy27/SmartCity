@@ -1,5 +1,5 @@
 """
-Synthetic Traffic Demand Generator for Narayanguda, Hyderabad SUMO Network.
+Synthetic Traffic Demand Generator for Hyderabad SUMO Network.
 Generates reproducible, deterministic, intentionally non-uniform traffic flows
 for baseline traffic simulation and future intervention comparisons.
 """
@@ -158,10 +158,12 @@ class SyntheticDemandGenerator:
         duration_seconds: int = 120,
         seed: Optional[int] = 42,
         custom_rates: Optional[Dict[str, int]] = None,
+        network_path: Optional[str] = None,
+        locality_slug: Optional[str] = None,
     ) -> str:
         """
         Generates and writes a deterministic .rou.xml file for the given scenario,
-        duration, and random seed.
+        duration, and random seed across any specified SUMO network.
         """
         scenario = self.validate_scenario(scenario)
         if seed is None:
@@ -174,6 +176,46 @@ class SyntheticDemandGenerator:
                 seed = int(seed)
             except (ValueError, TypeError):
                 seed = 42
+
+        loc_slug = (locality_slug or "narayanguda").strip().lower()
+        if network_path and not locality_slug:
+            base = os.path.basename(network_path).lower()
+            for cand in ["narayanguda", "tarnaka", "nacharam", "madhapur", "gachibowli"]:
+                if cand in base:
+                    loc_slug = cand
+                    break
+
+        # If network_path is provided for non-narayanguda locality, use dynamic network trips
+        if network_path and loc_slug != "narayanguda":
+            filename = f"{loc_slug}_{scenario}_{duration_seconds}s_seed{seed}.rou.xml"
+            output_path = os.path.join(self.routes_dir, filename)
+            if os.path.exists(output_path) and os.path.getsize(output_path) > 100:
+                return output_path
+
+            rates = dict(SCENARIO_DEMAND_PROFILES.get(scenario, SCENARIO_DEMAND_PROFILES["synthetic_normal"]))
+            total_vph = sum(rates.values()) if rates else 1000
+            period = round(max(0.5, 3600.0 / max(100, total_vph)), 2)
+
+            import subprocess
+            random_trips_tool = os.getenv(
+                "SUMO_RANDOM_TRIPS_TOOL",
+                r"C:\Program Files (x86)\Eclipse\Sumo\tools\randomTrips.py",
+            )
+            cmd = [
+                "python",
+                random_trips_tool,
+                "-n", network_path,
+                "-o", output_path,
+                "-e", str(duration_seconds),
+                "-p", str(period),
+                "-s", str(seed),
+                "--validate",
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            if res.returncode == 0 and os.path.exists(output_path) and os.path.getsize(output_path) > 100:
+                return output_path
+            # If randomTrips failed, log warning and let it fall through or raise
+            raise RuntimeError(f"Dynamic route generation failed for {loc_slug} using {network_path}: {res.stderr}")
 
         filename = f"{scenario}_{duration_seconds}s_seed{seed}.rou.xml"
         output_path = os.path.join(self.routes_dir, filename)

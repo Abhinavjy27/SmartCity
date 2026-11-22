@@ -1,29 +1,28 @@
 """
-SUPADSP Specialist Agent — Traffic Intelligence (Eclipse SUMO Microsimulation Boundary).
-Executes reproducible synthetic traffic demand simulations on the Narayanguda road network
-and returns structured evidence metrics to the LLM Planner without Orchestrator mediation.
+SUPADSP Specialist Agent — Traffic Intelligence (Live TomTom Telemetry).
+Fulfills all real-world traffic monitoring, condition queries, and bottleneck detection
+using the TomTom Traffic API. SUMO simulation is strictly restricted to the Simulation Agent.
 """
 
 from __future__ import annotations
 
 import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, FastAPI, HTTPException, Query, status
 
+from backend.agents.traffic_agent.location_resolver import LocationResolver
+from backend.agents.traffic_agent.network_manager import get_network_manager
 from backend.agents.traffic_agent.schemas import (
-    SignalOptimizationRequest,
-    SignalOptimizationResponse,
     TrafficAnalyzeRequest,
     TrafficEvidenceResponse,
 )
-from backend.agents.traffic_agent.service import TrafficService, get_traffic_service
-from backend.agents.traffic_agent.sumo_runner import SumoExecutionError
+from backend.agents.traffic_agent.service import get_traffic_service
 
 app = FastAPI(
-    title="SUPADSP Traffic Agent (Eclipse SUMO)",
+    title="SUPADSP Traffic Agent (Live TomTom Telemetry)",
     version="2.0.0",
-    description="Specialist Simulation Agent running Eclipse SUMO 1.27.1 on Narayanguda, Hyderabad.",
+    description="Specialist Traffic Agent providing real-time TomTom Traffic Flow and Incidents intelligence for Hyderabad.",
 )
 router = APIRouter()
 
@@ -34,100 +33,71 @@ def health():
     return {
         "agent": "Traffic Agent",
         "status": "ONLINE",
-        "sumo_available": True,
-        "sumo_version": "1.27.1",
-        "network": "narayanguda_network.net.xml",
+        "data_source": "TomTom Traffic API",
+        "traffic_mode": "live",
+        "supported_localities": LocationResolver.get_supported_localities(),
         "supported_scenarios": svc.get_supported_scenarios(),
     }
 
 
 @router.get(
     "/api/v1/traffic/kpis",
-    summary="Get baseline traffic KPIs from Eclipse SUMO simulation",
+    summary="Get real-time live traffic KPIs from TomTom Traffic API",
     response_model=TrafficEvidenceResponse,
 )
 def get_traffic_kpis(
-    location: str = Query("Narayanguda, Hyderabad", description="Target locality"),
-    scenario: str = Query("synthetic_normal", description="Synthetic demand scenario name"),
-    duration_seconds: int = Query(120, description="Simulation duration in seconds"),
-    seed: Optional[int] = Query(None, description="Random seed for deterministic demand generation. If omitted, fresh randomized demand is generated."),
-    purpose: Optional[str] = Query("baseline_traffic_analysis", description="Planner objective context"),
-    force_fresh: bool = Query(False, description="Bypass cache and execute simulation afresh"),
+    location: Optional[str] = Query(None, description="Target locality"),
+    query_text: Optional[str] = Query(None, description="Natural language user query for locality resolution"),
+    scenario: str = Query("live_observed", description="Telemetry mode or scenario context"),
+    duration_seconds: int = Query(120, description="Reference duration in seconds"),
+    seed: Optional[int] = Query(None, description="Optional seed reference"),
+    purpose: Optional[str] = Query("live_traffic_monitoring", description="Planner objective context"),
+    force_fresh: bool = Query(False, description="Bypass cache and query TomTom API freshly"),
 ) -> Dict[str, Any]:
     svc = get_traffic_service()
     try:
-        evidence = svc.run_baseline_simulation(
+        evidence = svc.get_traffic_kpis(
             location=location,
+            query_text=query_text,
             scenario=scenario,
             duration_seconds=duration_seconds,
             seed=seed,
-            purpose=purpose or "baseline_traffic_analysis",
+            purpose=purpose or "live_traffic_monitoring",
             force_fresh=force_fresh,
         )
         return evidence.model_dump()
-    except ValueError as exc:
+    except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "INVALID_SCENARIO", "message": str(exc)},
-        )
-    except SumoExecutionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "SUMO_SIMULATION_ERROR", "message": str(exc), "details": exc.details},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "TRAFFIC_AGENT_ERROR", "message": str(exc)},
         )
 
 
 @router.post(
     "/api/v1/traffic/analyze",
-    summary="Analyze traffic for a scenario via Eclipse SUMO baseline simulation",
+    summary="Analyze live traffic for a locality via TomTom Traffic API",
     response_model=TrafficEvidenceResponse,
 )
 def analyze_traffic(req: Optional[TrafficAnalyzeRequest] = None) -> Dict[str, Any]:
     svc = get_traffic_service()
     req = req or TrafficAnalyzeRequest()
     try:
-        evidence = svc.run_baseline_simulation(
-            location=req.location or "Narayanguda, Hyderabad",
-            scenario=req.scenario or "synthetic_normal",
-            duration_seconds=req.duration_seconds or 120,
-            seed=req.seed,
-            purpose=req.purpose or "baseline_traffic_analysis",
-            force_fresh=req.force_fresh or False,
-        )
+        evidence = svc.analyze_traffic(req)
         return evidence.model_dump()
-    except ValueError as exc:
+    except Exception as exc:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "INVALID_SCENARIO", "message": str(exc)},
-        )
-    except SumoExecutionError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail={"error": "SUMO_SIMULATION_ERROR", "message": str(exc), "details": exc.details},
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"error": "TRAFFIC_AGENT_ERROR", "message": str(exc)},
         )
 
 
-@router.post(
-    "/api/v1/traffic/optimize-signal",
-    summary="Generate and validate signal optimization candidate parameters",
-    response_model=SignalOptimizationResponse,
+@router.get(
+    "/api/v1/traffic/networks",
+    summary="List available authentic OpenStreetMap SUMO road networks",
 )
-def optimize_signal(req: Optional[SignalOptimizationRequest] = None) -> Dict[str, Any]:
-    svc = get_traffic_service()
-    req = req or SignalOptimizationRequest()
-    try:
-        resp = svc.validate_signal_timing(
-            intersection_id=req.intersection_id,
-            target_corridor=req.target_corridor,
-            green_adjustment=req.green_time_adjustment_sec if req.green_time_adjustment_sec is not None else 15.0,
-            cycle_sec=req.current_cycle_sec if req.current_cycle_sec is not None else 120,
-        )
-        return resp.model_dump()
-    except ValueError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail={"error": "INVALID_SIGNAL_PARAMETERS", "message": str(exc)},
-        )
+def list_networks() -> List[Dict[str, Any]]:
+    nm = get_network_manager()
+    return nm.list_available_networks()
 
 
 app.include_router(router)

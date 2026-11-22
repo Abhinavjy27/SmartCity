@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Zap, Battery, TrendingUp, Lightbulb, AlertTriangle,
   ArrowRight, Info, ChevronDown, Activity, ShieldAlert, Cpu
@@ -8,6 +9,7 @@ import {
   AreaChart, Area, Line, BarChart, Bar, XAxis, YAxis, Tooltip,
   ResponsiveContainer, CartesianGrid, ReferenceLine
 } from 'recharts'
+import { energyApi } from '../services/api'
 
 /* ── Data ── */
 const loadCurve = Array.from({ length: 24 }, (_, i) => ({
@@ -63,7 +65,57 @@ const anomalies = [
 ]
 
 export default function Energy() {
+  const navigate = useNavigate()
   const [timeRange, setTimeRange] = useState('24 Hours')
+  const [showAllSubstations, setShowAllSubstations] = useState(false)
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
+  const [showAllAnomalies, setShowAllAnomalies] = useState(false)
+  const [liveTelemetry, setLiveTelemetry] = useState(null)
+
+  useEffect(() => {
+    let isMounted = true
+    const loadGrid = async () => {
+      try {
+        const data = await energyApi.getGridStatus()
+        if (isMounted && data) {
+          setLiveTelemetry(data)
+        }
+      } catch (err) {
+        console.warn('[Energy] Error fetching live grid telemetry:', err)
+      }
+    }
+    loadGrid()
+    const interval = setInterval(loadGrid, 60000)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [])
+
+  // Derive dynamic substations list if live telemetry available
+  const displaySubstations = (liveTelemetry?.substations && liveTelemetry.substations.length > 0)
+    ? liveTelemetry.substations.map(s => ({
+        name: s.name,
+        load: Math.round(s.current_load_mw),
+        capacity: Math.round(s.capacity_mw),
+        util: Math.round(s.utilization_pct),
+        status: s.status,
+      }))
+    : substations
+
+  // Slice loadCurve according to timeRange
+  const displayLoadCurve = (() => {
+    if (timeRange === 'Live' || timeRange === '1 Hour') return loadCurve.slice(0, 3)
+    if (timeRange === '6 Hours') return loadCurve.slice(0, 6)
+    return loadCurve.slice(0, 24)
+  })()
+
+  // Slice demandForecast according to timeRange
+  const displayDemandForecast = (() => {
+    if (timeRange === 'Live' || timeRange === '1 Hour') return demandForecast.slice(0, 3)
+    if (timeRange === '6 Hours') return demandForecast.slice(0, 6)
+    return demandForecast.slice(0, 24)
+  })()
 
   return (
     <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
@@ -147,7 +199,7 @@ export default function Energy() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
-              Load Curve (Today)
+              Load Curve ({timeRange})
             </h3>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '0.65rem' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -161,7 +213,7 @@ export default function Energy() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={loadCurve} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={displayLoadCurve} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <defs>
                 <linearGradient id="loadGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#2F8F72" stopOpacity={0.18} />
@@ -169,9 +221,9 @@ export default function Energy() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={3} axisLine={false} tickLine={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={displayLoadCurve.length <= 6 ? 0 : 3} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit=" MW" />
-              <ReferenceLine y={2842} stroke="#2F8F72" strokeDasharray="3 3" label={{ value: 'Current: 2,842 MW', fill: '#2F8F72', fontSize: 9, position: 'insideTopLeft' }} />
+              <ReferenceLine y={liveTelemetry?.current_load_mw || 2842} stroke="#2F8F72" strokeDasharray="3 3" label={{ value: `Current: ${liveTelemetry?.current_load_mw ? Math.round(liveTelemetry.current_load_mw) : 2842} MW`, fill: '#2F8F72', fontSize: 9, position: 'insideTopLeft' }} />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.72rem', boxShadow: 'var(--shadow-elevated)' }} />
               <Area type="monotone" dataKey="actual" stroke="#2F8F72" strokeWidth={2} fill="url(#loadGrad)" name="Actual Load" />
               <Line type="monotone" dataKey="forecast" stroke="#8F9295" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Forecast" />
@@ -188,7 +240,7 @@ export default function Energy() {
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
               <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
-                Demand Forecast
+                Demand Forecast ({timeRange})
               </h3>
               <Info size={13} color="var(--text-muted)" />
             </div>
@@ -198,9 +250,9 @@ export default function Energy() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={demandForecast} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
+            <AreaChart data={displayDemandForecast} margin={{ top: 10, right: 10, left: -10, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={3} axisLine={false} tickLine={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={displayDemandForecast.length <= 6 ? 0 : 3} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit=" MW" />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.72rem', boxShadow: 'var(--shadow-elevated)' }} />
               <Area type="monotone" dataKey="pessimistic" stroke="transparent" fill="rgba(229,72,63,0.08)" name="Pessimistic Envelope" />
@@ -223,8 +275,11 @@ export default function Energy() {
           <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
             Substation Performance Matrix
           </h3>
-          <span style={{ fontSize: '0.65rem', color: '#F4A62A', fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: 'pointer' }}>
-            VIEW ALL SUBSTATIONS &gt;
+          <span
+            onClick={() => setShowAllSubstations(prev => !prev)}
+            style={{ fontSize: '0.65rem', color: '#F4A62A', fontWeight: 600, fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+          >
+            {showAllSubstations ? 'COLLAPSE <' : `VIEW ALL SUBSTATIONS (${displaySubstations.length}) >`}
           </span>
         </div>
 
@@ -243,7 +298,7 @@ export default function Energy() {
             </tr>
           </thead>
           <tbody>
-            {substations.map(s => (
+            {(showAllSubstations ? displaySubstations : displaySubstations.slice(0, 5)).map(s => (
               <tr key={s.name}>
                 <td style={{ padding: '10px 6px', fontWeight: 600, color: 'var(--text-primary)' }}>{s.name}</td>
                 <td style={{ padding: '10px 6px', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{s.load} MW</td>
@@ -344,10 +399,15 @@ export default function Energy() {
             <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               Active Grid Alerts
             </h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>VIEW ALL &gt;</span>
+            <span
+              onClick={() => setShowAllAlerts(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#F4A62A', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllAlerts ? 'COLLAPSE <' : `VIEW ALL (${alerts.length}) >`}
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {alerts.map((a, i) => (
+            {(showAllAlerts ? alerts : alerts.slice(0, 2)).map((a, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
                 borderRadius: 'var(--radius-sm)', background: 'var(--bg-workspace)', border: '1px solid var(--border-divider)',
@@ -372,10 +432,15 @@ export default function Energy() {
             <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               Telemetry Anomaly Detection
             </h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>VIEW ALL &gt;</span>
+            <span
+              onClick={() => setShowAllAnomalies(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#F4A62A', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllAnomalies ? 'COLLAPSE <' : `VIEW ALL (${anomalies.length}) >`}
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-            {anomalies.map((a, i) => (
+            {(showAllAnomalies ? anomalies : anomalies.slice(0, 2)).map((a, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: '12px', padding: '12px',
                 borderRadius: 'var(--radius-sm)', background: 'var(--bg-workspace)', border: '1px solid var(--border-divider)',
@@ -414,13 +479,16 @@ export default function Energy() {
             </span>
           </div>
         </div>
-        <button style={{
-          padding: '8px 18px', borderRadius: 'var(--radius-md)',
-          border: '1px solid #F4A62A', background: 'transparent',
-          color: '#F4A62A', fontSize: '0.72rem', fontWeight: 600,
-          fontFamily: 'var(--font-mono)', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
-        }}>
+        <button
+          onClick={() => navigate('/planning')}
+          style={{
+            padding: '8px 18px', borderRadius: 'var(--radius-md)',
+            border: '1px solid #F4A62A', background: 'transparent',
+            color: '#F4A62A', fontSize: '0.72rem', fontWeight: 600,
+            fontFamily: 'var(--font-mono)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
+          }}
+        >
           View Detailed Report <ArrowRight size={12} />
         </button>
       </div>

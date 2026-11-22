@@ -1,20 +1,7 @@
-import { CloudSun, Droplets, Wind as WindIcon, CloudRain, Gauge, ArrowRight, Sun, Moon, Cloud } from 'lucide-react'
+import { useState, useEffect } from 'react'
+import { CloudSun, Droplets, Wind as WindIcon, CloudRain, Gauge, ArrowRight, Sun, Moon, Cloud, CloudLightning } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
-
-const forecast = [
-  { time: '11 AM', temp: 30, icon: 'sun' },
-  { time: '2 PM', temp: 31, icon: 'sun' },
-  { time: '5 PM', temp: 29, icon: 'cloud-sun' },
-  { time: '8 PM', temp: 27, icon: 'cloud' },
-  { time: '11 PM', temp: 26, icon: 'moon' },
-]
-
-const weatherDetails = [
-  { icon: Droplets, label: 'Humidity', value: '48%' },
-  { icon: WindIcon, label: 'Wind', value: '12 km/h' },
-  { icon: CloudRain, label: 'Rainfall', value: '0 mm' },
-  { icon: Gauge, label: 'Pressure', value: '1012 hPa' },
-]
+import { weatherApi } from '../../services/api'
 
 function WeatherIcon({ type, size = 20 }) {
   const iconMap = {
@@ -22,6 +9,8 @@ function WeatherIcon({ type, size = 20 }) {
     'cloud-sun': CloudSun,
     'cloud': Cloud,
     'moon': Moon,
+    'cloud-rain': CloudRain,
+    'cloud-lightning': CloudLightning,
   }
   const Icon = iconMap[type] || Sun
   const colorMap = {
@@ -29,12 +18,92 @@ function WeatherIcon({ type, size = 20 }) {
     'cloud-sun': '#F4A62A',
     'cloud': '#8F9295',
     'moon': '#6C8FC5',
+    'cloud-rain': '#6C8FC5',
+    'cloud-lightning': '#E5483F',
   }
   return <Icon size={size} color={colorMap[type] || '#F4A62A'} strokeWidth={1.5} />
 }
 
-export default function WeatherCard() {
+export default function WeatherCard({ timeRange = '24 HOURS' }) {
   const navigate = useNavigate()
+  const [currentWeather, setCurrentWeather] = useState({
+    temp: 29,
+    condition: 'Clear Skies',
+    humidity: '48%',
+    wind: '12 km/h',
+    rainfall: '0.0 mm',
+    pressure: '1012 hPa',
+    isLive: false,
+  })
+  const [forecastItems, setForecastItems] = useState([
+    { time: 'Now', temp: 29, icon: 'sun' },
+    { time: '+2h', temp: 31, icon: 'sun' },
+    { time: '+4h', temp: 29, icon: 'cloud-sun' },
+    { time: '+6h', temp: 27, icon: 'cloud' },
+    { time: '+8h', temp: 26, icon: 'moon' },
+  ])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadWeather = async () => {
+      try {
+        const data = await weatherApi.getCurrent('Hyderabad')
+        if (!isMounted || !data) return
+
+        const t = data.temperature_c ?? 29
+        const cond = data.condition || 'Partly Cloudy'
+        const hum = data.humidity_pct ?? 50
+        const wSpeed = data.wind_speed_kmh ?? 10
+        const pMm = data.precipitation_mm ?? 0.0
+        const pres = data.pressure_hpa ?? 1012
+
+        setCurrentWeather({
+          temp: Math.round(t),
+          condition: cond,
+          humidity: `${hum}%`,
+          wind: `${wSpeed} km/h`,
+          rainfall: `${pMm} mm`,
+          pressure: `${pres} hPa`,
+          isLive: data.is_live ?? true,
+        })
+
+        if (data.hourly_temp && data.hourly_temp.length >= 5) {
+          // Pick 5 points across the hourly forecast
+          const step = timeRange === '1 HOUR' ? 1 : timeRange === '6 HOURS' ? 1 : 4
+          const points = data.hourly_temp.filter((_, idx) => idx % step === 0).slice(0, 5).map(h => {
+            let ic = 'sun'
+            if (h.rain_chance > 40) ic = 'cloud-rain'
+            else if (h.temp > 30) ic = 'sun'
+            else ic = 'cloud-sun'
+
+            return {
+              time: h.h || h.time,
+              temp: Math.round(h.temp),
+              icon: ic,
+            }
+          })
+          if (points.length > 0) setForecastItems(points)
+        }
+      } catch (err) {
+        console.warn('[WeatherCard] Failed to fetch live weather:', err)
+      }
+    }
+
+    loadWeather()
+    const timer = setInterval(loadWeather, 60000)
+    return () => {
+      isMounted = false
+      clearInterval(timer)
+    }
+  }, [timeRange])
+
+  const detailsList = [
+    { icon: Droplets, label: 'Humidity', value: currentWeather.humidity },
+    { icon: WindIcon, label: 'Wind', value: currentWeather.wind },
+    { icon: CloudRain, label: 'Rainfall', value: currentWeather.rainfall },
+    { icon: Gauge, label: 'Pressure', value: currentWeather.pressure },
+  ]
 
   return (
     <div style={{
@@ -58,7 +127,7 @@ export default function WeatherCard() {
             <h3 style={{
               fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.06em',
               fontFamily: 'var(--font-mono)', color: 'var(--text-primary)',
-            }}>WEATHER OVERVIEW</h3>
+            }}>WEATHER OVERVIEW ({timeRange})</h3>
           </div>
         </div>
         <button
@@ -86,15 +155,15 @@ export default function WeatherCard() {
               fontSize: '2.2rem', fontWeight: 700, color: 'var(--text-primary)',
               fontFamily: 'var(--font-heading)', lineHeight: 1.1,
             }}>
-              29°C
+              {currentWeather.temp}°C
             </div>
-            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Clear Skies</div>
+            <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{currentWeather.condition}</div>
           </div>
         </div>
 
         {/* Weather details */}
         <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
-          {weatherDetails.map(detail => {
+          {detailsList.map(detail => {
             const Icon = detail.icon
             return (
               <div key={detail.label} style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -113,7 +182,7 @@ export default function WeatherCard() {
 
         {/* Forecast timeline */}
         <div style={{ display: 'flex', gap: '12px', flex: 1, justifyContent: 'space-around', minWidth: '280px' }}>
-          {forecast.map(f => (
+          {forecastItems.map(f => (
             <div key={f.time} style={{
               display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px',
               padding: '10px 12px',

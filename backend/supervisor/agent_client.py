@@ -42,7 +42,6 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "method": "POST",
         "default_payload": {
             "objective": "Analyze air quality and pollution levels",
-            "location": "Narayanguda, Hyderabad",
         },
         "module_path": "backend.agents.pollution_agent.main",
     },
@@ -53,7 +52,6 @@ AGENT_REGISTRY: Dict[str, Dict[str, Any]] = {
         "method": "POST",
         "default_payload": {
             "scenario_name": "synthetic_normal",
-            "location": "Narayanguda, Hyderabad",
             "duration_seconds": 120,
             "seed": 42,
         },

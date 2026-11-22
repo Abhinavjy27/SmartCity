@@ -4,8 +4,12 @@ const PlannerContext = createContext(null)
 
 const STORAGE_KEY = 'smartcity_planner_session'
 
+export function generateConversationId() {
+  return 'conv_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+}
+
 export function generateSessionId() {
-  return 'planner_sess_' + Date.now() + '_' + Math.random().toString(36).substring(2, 9)
+  return generateConversationId()
 }
 
 function loadInitialSession() {
@@ -14,8 +18,11 @@ function loadInitialSession() {
     if (raw) {
       const data = JSON.parse(raw)
       if (data && typeof data === 'object') {
+        const id = data.conversationId || data.sessionId || generateConversationId()
         return {
-          sessionId: data.sessionId || generateSessionId(),
+          conversationId: id,
+          sessionId: id,
+          lastLocality: data.lastLocality || null,
           conversation: Array.isArray(data.conversation) ? data.conversation : [],
           simulationHistory: Array.isArray(data.simulationHistory) ? data.simulationHistory : [],
           testedScenarios: Array.isArray(data.testedScenarios) ? data.testedScenarios : [],
@@ -29,8 +36,11 @@ function loadInitialSession() {
   } catch (err) {
     console.warn('[PlannerContext] Failed to parse stored session:', err)
   }
+  const id = generateConversationId()
   return {
-    sessionId: generateSessionId(),
+    conversationId: id,
+    sessionId: id,
+    lastLocality: null,
     conversation: [],
     simulationHistory: [],
     testedScenarios: [],
@@ -48,7 +58,9 @@ export function PlannerProvider({ children }) {
   useEffect(() => {
     try {
       sessionStorage.setItem(STORAGE_KEY, JSON.stringify({
-        sessionId: session.sessionId,
+        conversationId: session.conversationId || session.sessionId,
+        sessionId: session.sessionId || session.conversationId,
+        lastLocality: session.lastLocality || null,
         conversation: session.conversation,
         simulationHistory: session.simulationHistory,
         testedScenarios: session.testedScenarios,
@@ -63,8 +75,11 @@ export function PlannerProvider({ children }) {
   }, [session])
 
   const clearSession = () => {
+    const freshId = generateConversationId()
     const freshSession = {
-      sessionId: generateSessionId(),
+      conversationId: freshId,
+      sessionId: freshId,
+      lastLocality: null,
       conversation: [],
       simulationHistory: [],
       testedScenarios: [],

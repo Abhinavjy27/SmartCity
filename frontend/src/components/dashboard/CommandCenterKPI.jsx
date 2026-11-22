@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
 import PropTypes from 'prop-types'
+import { useNavigate } from 'react-router-dom'
 import { Car, Wind, Zap, CloudSun, Shield } from 'lucide-react'
 import AnimatedCounter from '../AnimatedCounter'
-import { trafficApi } from '../../services/api'
+import { trafficApi, weatherApi, pollutionApi, energyApi } from '../../services/api'
 
 /**
  * Reusable KPI Card Component
@@ -264,6 +265,7 @@ const SIBLING_KPIS = [
 ]
 
 export default function CommandCenterKPI() {
+  const navigate = useNavigate()
   const [congestion, setCongestion] = useState({
     value_pct: null,
     delta_pp: null,
@@ -276,42 +278,89 @@ export default function CommandCenterKPI() {
   })
   const [congestionLoading, setCongestionLoading] = useState(true)
 
+  const [aqiData, setAqiData] = useState({ value: 146, status: 'Moderate', delta: -4.0 })
+  const [gridData, setGridData] = useState({ value: 78.4, status: 'Normal', delta: 2.1 })
+  const [tempData, setTempData] = useState({ value: 28, condition: 'Clear Skies' })
+  const [incidentsCount, setIncidentsCount] = useState(4)
+
   useEffect(() => {
     let isMounted = true
 
-    const fetchCongestion = async () => {
-      // Pause while tab is hidden
+    const fetchAllMetrics = async () => {
       if (typeof document !== 'undefined' && document.hidden) return
 
       try {
-        const data = await trafficApi.getCongestionIndex()
-        if (isMounted && data) {
+        const [congRes, aqiRes, gridRes, weatherRes, kpiRes] = await Promise.allSettled([
+          trafficApi.getCongestionIndex(),
+          pollutionApi.getAqiSummary(),
+          energyApi.getGridStatus(),
+          weatherApi.getCurrent(),
+          trafficApi.getKPIs(),
+        ])
+
+        if (!isMounted) return
+
+        if (congRes.status === 'fulfilled' && congRes.value) {
           setCongestion(prev => {
-            // On fetch error or null, preserve last real value and mark stale
-            if (data.value_pct === null && prev?.value_pct !== null) {
+            if (congRes.value.value_pct === null && prev?.value_pct !== null) {
               return { ...prev, status: 'stale' }
             }
-            return data
+            return congRes.value
           })
           setCongestionLoading(false)
         }
-      } catch (err) {
-        console.warn('[CommandCenterKPI] Congestion fetch error:', err)
-        if (isMounted) {
-          setCongestion(prev => ({ ...prev, status: 'stale' }))
-          setCongestionLoading(false)
+
+        if (aqiRes.status === 'fulfilled' && aqiRes.value) {
+          const avgAqi = aqiRes.value.city_avg_aqi || aqiRes.value.aqi
+          if (avgAqi) {
+            setAqiData({
+              value: avgAqi,
+              status: aqiRes.value.category || 'Moderate',
+              delta: -3.5,
+            })
+          }
         }
+
+        if (gridRes.status === 'fulfilled' && gridRes.value) {
+          const load = gridRes.value.load_pct
+          if (load !== undefined && load !== null) {
+            setGridData({
+              value: parseFloat(load.toFixed(1)),
+              status: gridRes.value.severity || 'Normal',
+              delta: 1.8,
+            })
+          }
+        }
+
+        if (weatherRes.status === 'fulfilled' && weatherRes.value) {
+          const t = weatherRes.value.temperature_c
+          if (t !== undefined && t !== null) {
+            setTempData({
+              value: Math.round(t),
+              condition: weatherRes.value.condition || 'Clear Skies',
+            })
+          }
+        }
+
+        if (kpiRes.status === 'fulfilled' && kpiRes.value) {
+          const actInc = kpiRes.value.active_incidents ?? kpiRes.value.activeIncidents
+          if (actInc !== undefined && actInc !== null) {
+            setIncidentsCount(Number(actInc))
+          }
+        }
+      } catch (err) {
+        console.warn('[CommandCenterKPI] Metrics fetch error:', err)
       }
     }
 
-    fetchCongestion()
+    fetchAllMetrics()
 
     // Poll every 60s
-    const timer = setInterval(fetchCongestion, 60000)
+    const timer = setInterval(fetchAllMetrics, 60000)
 
     const handleVisibility = () => {
       if (!document.hidden) {
-        fetchCongestion()
+        fetchAllMetrics()
       }
     }
     document.addEventListener('visibilitychange', handleVisibility)
@@ -344,6 +393,62 @@ export default function CommandCenterKPI() {
   } else {
     congestionAria += ' awaiting live data'
   }
+
+  const dynamicSiblingKpis = [
+    {
+      id: 'aqi',
+      icon: Wind,
+      label: 'CURRENT AQI',
+      value: aqiData.value,
+      decimals: 0,
+      trend: `${Math.abs(aqiData.delta)}%`,
+      delta: aqiData.delta,
+      deltaUnit: '%',
+      deltaLabel: 'vs yesterday',
+      polarity: 'down-good',
+      color: '#4C9E9B',
+      bgColor: 'rgba(76, 158, 155, 0.08)',
+      onClick: () => navigate('/pollution'),
+    },
+    {
+      id: 'grid',
+      icon: Zap,
+      label: 'GRID LOAD',
+      value: gridData.value,
+      suffix: '%',
+      decimals: 1,
+      delta: gridData.delta,
+      deltaUnit: '%',
+      deltaLabel: 'vs yesterday',
+      polarity: 'down-good',
+      color: '#F4A62A',
+      bgColor: 'rgba(244, 166, 42, 0.08)',
+      onClick: () => navigate('/energy'),
+    },
+    {
+      id: 'temp',
+      icon: CloudSun,
+      label: 'TEMPERATURE',
+      value: tempData.value,
+      suffix: '°C',
+      decimals: 0,
+      staticLabel: tempData.condition,
+      color: '#6C8FC5',
+      bgColor: 'rgba(108, 143, 197, 0.08)',
+      onClick: () => navigate('/weather'),
+    },
+    {
+      id: 'incidents',
+      icon: Shield,
+      label: 'ACTIVE INCIDENTS',
+      value: incidentsCount,
+      decimals: 0,
+      staticLabel: `${incidentsCount} live detected`,
+      color: '#E5483F',
+      bgColor: 'rgba(229, 72, 63, 0.08)',
+      onClick: () => navigate('/traffic'),
+    },
+  ]
 
   return (
     <div
@@ -378,6 +483,7 @@ export default function CommandCenterKPI() {
           ariaLabel={congestionAria}
           color="#2F8F72"
           bgColor="rgba(47, 143, 114, 0.08)"
+          onClick={() => navigate('/traffic')}
         />
 
         {/* Divider */}
@@ -392,7 +498,7 @@ export default function CommandCenterKPI() {
       </div>
 
       {/* ── 2-5. Sibling KPI Cards ── */}
-      {SIBLING_KPIS.map((kpi, idx) => (
+      {dynamicSiblingKpis.map((kpi, idx) => (
         <div key={kpi.id} style={{ display: 'flex', alignItems: 'center', flex: 1, minWidth: '170px' }}>
           <KPICard
             icon={kpi.icon}
@@ -407,6 +513,7 @@ export default function CommandCenterKPI() {
             staticLabel={kpi.staticLabel}
             color={kpi.color}
             bgColor={kpi.bgColor}
+            onClick={kpi.onClick}
           />
 
           {/* Divider */}

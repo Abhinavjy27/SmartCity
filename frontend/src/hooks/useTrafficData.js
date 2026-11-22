@@ -83,20 +83,17 @@ function normTrend(raw) {
 
 /**
  * Normalise KPI overview into the 6-card array Traffic.jsx renders.
- * Fields that TomTom cannot provide (Traffic Volume in Lakh vehicles)
- * are kept as an estimated value computed from congestion ratio.
+ * Metrics unavailable from TomTom (Volume, Queue Length) are returned as null.
  */
 function normKPIs(raw) {
   if (!raw) return null
-  const avgSpeed = raw.avg_speed_kmh ?? 0
-  // Estimate volume proxy: lower speed → higher volume (inverse correlation)
-  const estVolume = Math.round((2.0 + (1 - avgSpeed / 60) * 1.5) * 100) / 100
+  const avgSpeed = raw.avg_speed_kmh ?? null
 
   return {
-    avgSpeed:          avgSpeed.toFixed(1),
-    trafficVolume:     estVolume.toFixed(2),
-    travelTimeIndex:   (raw.travel_time_index ?? 1.0).toFixed(2),
-    queueLength:       (raw.queue_length_km ?? 0).toFixed(1),
+    avgSpeed:          avgSpeed !== null ? avgSpeed.toFixed(1) : null,
+    trafficVolume:     null,
+    travelTimeIndex:   raw.travel_time_index !== undefined && raw.travel_time_index !== null ? Number(raw.travel_time_index).toFixed(2) : null,
+    queueLength:       null,
     congestedCorridors: raw.congested_corridors ?? 0,
     activeIncidents:   raw.active_incidents ?? 0,
   }

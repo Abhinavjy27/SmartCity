@@ -20,14 +20,14 @@ class TrafficScenario(str, Enum):
 
 
 class SourceInfo(BaseModel):
-    type: str = "simulation"
-    engine: str = "SUMO"
-    synthetic: bool = True
-    network: str = "narayanguda_network.net.xml"
-    sumo_version: str = "1.27.1"
-    disclaimer: str = (
-        "Synthetic traffic demand executed in Eclipse SUMO microsimulation boundary. "
-        "Does NOT represent real-time live GHMC sensor telemetry."
+    type: str = "observed"
+    engine: str = "TomTom"
+    provider: Optional[str] = "tomtom"
+    synthetic: bool = False
+    network: Optional[str] = None
+    sumo_version: Optional[str] = None
+    disclaimer: Optional[str] = (
+        "Live traffic telemetry observed via TomTom Traffic Flow and Incidents API."
     )
 
 
@@ -148,20 +148,20 @@ class TrafficObservations(BaseModel):
     congestion_index: Optional[float] = Field(
         default=None, description="Dimensionless congestion index [0.0 = free-flow, 1.0 = gridlock]"
     )
-    total_vehicles: int = Field(
-        default=0, description="Total unique simulated vehicles participating in demand"
+    total_vehicles: Optional[int] = Field(
+        default=None, description="Total unique simulated vehicles participating in demand, or None if live telemetry"
     )
-    throughput: int = Field(
-        default=0, description="Completed vehicle trips arriving at destination during simulation"
+    throughput: Optional[int] = Field(
+        default=None, description="Completed vehicle trips arriving at destination, or None if live telemetry"
     )
     max_halting_vehicles: Optional[int] = Field(
-        default=0, description="Peak simultaneous halting vehicles (speed < 0.1 m/s) observed across network"
+        default=None, description="Peak simultaneous halting vehicles, or None if live telemetry"
     )
     teleported_vehicles: Optional[int] = Field(
-        default=0, description="Vehicles teleported due to gridlock/jam timeout threshold"
+        default=None, description="Vehicles teleported due to gridlock timeout, or None if live telemetry"
     )
-    active_vehicles: int = Field(
-        default=0, description="Time-average active concurrent vehicles"
+    active_vehicles: Optional[int] = Field(
+        default=None, description="Time-average active concurrent vehicles, or None if live telemetry"
     )
     peak_active_vehicles: Optional[int] = Field(
         default=0, description="Peak concurrent active vehicles observed"
@@ -226,10 +226,23 @@ class PotentialTradeOff(BaseModel):
 class TrafficEvidenceResponse(BaseModel):
     source: SourceInfo
     location: str
-    scenario: str
+    scenario: str = "live_observed"
     status: str = "completed"
-    metrics: SimulationMetrics
+    metrics: Optional[SimulationMetrics] = None
     metadata: Optional[SimulationMetadata] = None
+
+    # Provenance and telemetry
+    data_source: Optional[str] = "tomtom_traffic_api"
+    source_type: Optional[str] = "observed"
+    source_provider: Optional[str] = "tomtom"
+    current_speed_kmh: Optional[float] = None
+    free_flow_speed_kmh: Optional[float] = None
+    current_travel_time_sec: Optional[int] = None
+    free_flow_travel_time_sec: Optional[int] = None
+    delay_seconds: Optional[int] = None
+    confidence: Optional[float] = None
+    road_closure: Optional[bool] = None
+    reason: Optional[str] = None
 
     # Structured traffic intelligence extensions
     observations: Optional[TrafficObservations] = None
@@ -253,7 +266,7 @@ class TrafficEvidenceResponse(BaseModel):
 
 
 class TrafficAnalyzeRequest(BaseModel):
-    location: Optional[str] = "Narayanguda, Hyderabad"
+    location: Optional[str] = None
     scenario: Optional[str] = "synthetic_normal"
     duration_seconds: Optional[int] = 120
     seed: Optional[int] = None

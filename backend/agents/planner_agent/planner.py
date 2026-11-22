@@ -83,6 +83,9 @@ ALLOWED_CAPABILITIES = {"traffic", "weather", "pollution", "energy", "simulation
 def is_analytical_history_followup(objective: str) -> bool:
     """Check if the objective represents an analytical follow-up query on existing simulation evidence."""
     obj_lower = (objective or "").lower().strip()
+    import re
+    if re.search(r"\bcompare\b.*?\b(?:tested|simulat)", obj_lower):
+        return True
     return any(
         phrase in obj_lower for phrase in [
             "which tested intervention",
@@ -94,6 +97,9 @@ def is_analytical_history_followup(objective: str) -> bool:
             "compare the tested",
             "compare tested",
             "compare the simulated",
+            "compare the two tested",
+            "compare two tested",
+            "compare both tested",
             "did the optimization solve",
             "did it solve the bottleneck",
             "did the optimization",
@@ -139,10 +145,16 @@ def is_analytical_history_followup(objective: str) -> bool:
 
 
 def is_test_proposed_intervention_query(objective: str) -> bool:
-    """Check if the user is asking to simulate or test the proposed / recommended intervention from context."""
+    """Check if the user is asking to simulate or test proposed/candidate interventions."""
     obj_lower = (objective or "").lower().strip()
     return any(
         phrase in obj_lower for phrase in [
+            "test all the intervention",
+            "test all the interventions",
+            "test all intervention",
+            "test all interventions",
+            "simulate all interventions",
+            "simulate all the interventions",
             "test the proposed intervention",
             "test the proposed",
             "test proposed intervention",
@@ -241,6 +253,109 @@ class PlannerAgent:
             self.llm_provider = get_llm_provider()
         return self.llm_provider
 
+    @staticmethod
+    def _build_deterministic_specialist_summary(
+        objective: str,
+        collected_results: Dict[str, Any],
+        location: Optional[str] = None,
+    ) -> str:
+        """
+        Builds a human-readable, factual summary directly from collected specialist evidence.
+        Used when LLM generation fails or for deterministic factual telemetry responses.
+        Never returns diagnostic internal phrases like 'Deterministic evaluation: evidence sufficiency verified'.
+        """
+        if not collected_results or not isinstance(collected_results, dict):
+            loc_str = location or "the requested location"
+            return f"Specialist telemetry collected for {loc_str}."
+
+        lines = []
+        loc_str = location or "the requested location"
+
+        # 1. Weather Telemetry
+        if "weather" in collected_results and isinstance(collected_results["weather"], dict):
+            w = collected_results["weather"]
+            w_city = w.get("city") or w.get("location") or loc_str
+            w_cond = w.get("condition") or "Clear"
+            w_temp = w.get("temperature_c")
+            w_feels = w.get("feels_like_c")
+            w_hum = w.get("humidity_pct")
+            w_wind = w.get("wind_speed_kmh")
+            w_wdir = w.get("wind_direction") or ""
+            w_press = w.get("pressure_hpa")
+            w_uv = w.get("uv_index")
+            w_vis = w.get("visibility_km")
+            w_prov = w.get("provider") or w.get("source") or "WeatherAPI / Open-Meteo"
+
+            temp_str = f"{w_temp}°C" if w_temp is not None else ""
+            feels_str = f" (Feels like {w_feels}°C)" if w_feels is not None else ""
+            lines.append(f"Weather conditions in {w_city}: {w_cond}{', ' if temp_str else ''}{temp_str}{feels_str}.")
+
+            details = []
+            if w_hum is not None:
+                details.append(f"Humidity: {w_hum}%")
+            if w_wind is not None:
+                wind_str = f"Wind: {w_wind} km/h"
+                if w_wdir:
+                    wind_str += f" ({w_wdir})"
+                details.append(wind_str)
+            if w_uv is not None:
+                details.append(f"UV Index: {w_uv}")
+            if w_press is not None:
+                details.append(f"Pressure: {w_press} hPa")
+            if w_vis is not None:
+                details.append(f"Visibility: {w_vis} km")
+
+            if details:
+                lines.append(f"Atmospheric metrics: {', '.join(details)}.")
+
+            forecast = w.get("forecast_7d") or w.get("forecast_summary") or []
+            if forecast and isinstance(forecast, list):
+                fc_items = []
+                for day in forecast[:3]:
+                    if isinstance(day, dict):
+                        d_name = day.get("day") or "Day"
+                        d_high = day.get("high")
+                        d_low = day.get("low")
+                        d_cond = day.get("condition") or ""
+                        hl = f"{d_high}°C/{d_low}°C" if (d_high is not None and d_low is not None) else ""
+                        fc_items.append(f"{d_name}: {hl} {d_cond}".strip())
+                if fc_items:
+                    lines.append(f"Upcoming outlook: {'; '.join(fc_items)}.")
+
+            lines.append(f"Source telemetry: Live meteorological data via {w_prov}.")
+
+        # 2. Pollution Telemetry
+        if "pollution" in collected_results and isinstance(collected_results["pollution"], dict):
+            p = collected_results["pollution"]
+            p_loc = p.get("location") or loc_str
+            aqi = p.get("city_avg_aqi") if "city_avg_aqi" in p else (p.get("aqi") or "N/A")
+            cat = p.get("category") or "Moderate"
+            pm25 = p.get("pm25")
+            pm10 = p.get("pm10")
+            lines.append(f"Air quality in {p_loc}: AQI {aqi} ({cat}).")
+            pol_details = []
+            if pm25 is not None:
+                pol_details.append(f"PM2.5: {pm25} µg/m³")
+            if pm10 is not None:
+                pol_details.append(f"PM10: {pm10} µg/m³")
+            if pol_details:
+                lines.append(f"Particulate concentrations: {', '.join(pol_details)}.")
+
+        # 3. Traffic Telemetry
+        if "traffic" in collected_results and isinstance(collected_results["traffic"], dict):
+            t = collected_results["traffic"]
+            t_loc = t.get("location") or loc_str
+            t_metrics = t.get("metrics") or {}
+            spd = t_metrics.get("average_speed_kmh") if t_metrics.get("average_speed_kmh") is not None else t.get("average_speed_kmh")
+            cong = t_metrics.get("congestion_index") if t_metrics.get("congestion_index") is not None else t.get("congestion_index")
+            delay = t_metrics.get("average_delay_sec") if t_metrics.get("average_delay_sec") is not None else t.get("average_delay_sec")
+            lines.append(f"Traffic telemetry for {t_loc}: Network average speed is {spd} km/h with {delay}s average delay.")
+            if cong is not None:
+                cong_pct = round(float(cong) * 100, 1) if float(cong) <= 1.0 else round(float(cong), 1)
+                lines.append(f"Congestion index: {cong_pct}%.")
+
+        return " ".join(lines).strip() if lines else f"Evidence retrieved for {loc_str}."
+
     # ---------------------------------------------------------------------------
     # Stage 1: Autonomous LLM Plan & Agent Selection
     # ---------------------------------------------------------------------------
@@ -297,9 +412,33 @@ class PlannerAgent:
                 except (ValueError, TypeError):
                     pass
 
-        eff_loc = location or "Narayanguda, Hyderabad"
-        if not eff_loc or eff_loc.strip().lower() in {"unknown", "none", "null", "undefined", "n/a", "na", "?", "nil", "default"}:
-            eff_loc = "Narayanguda, Hyderabad"
+        # Resolve locality following strict precedence:
+        # 1. Explicit locality mentioned in current objective (HIGHEST PRECEDENCE - overrides past context and caller parameters)
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        res_obj = LocationResolver.resolve(query_text=objective)
+        if res_obj:
+            eff_loc = f"{res_obj.name}, Hyderabad" if "hyderabad" not in res_obj.name.lower() else res_obj.name
+        elif location and location.strip().lower() not in {"unknown", "none", "null", "undefined", "n/a", "na", "?", "nil", "default"}:
+            res_loc = LocationResolver.resolve(explicit_location=location)
+            eff_loc = f"{res_loc.name}, Hyderabad" if res_loc else location.strip()
+        else:
+            hist_loc = None
+            if conversation_history:
+                for turn in reversed(conversation_history):
+                    if isinstance(turn, dict):
+                        t_loc = turn.get("location")
+                        if t_loc and isinstance(t_loc, str) and t_loc.strip().lower() not in {"unknown", "none", "null", "undefined", "n/a", "na", "?", "nil", "default"}:
+                            res = LocationResolver.resolve(explicit_location=t_loc)
+                            if res:
+                                hist_loc = f"{res.name}, Hyderabad" if "hyderabad" not in res.name.lower() else res.name
+                                break
+                        c_text = turn.get("content") or turn.get("query")
+                        if c_text and isinstance(c_text, str):
+                            res = LocationResolver.resolve(query_text=c_text)
+                            if res:
+                                hist_loc = f"{res.name}, Hyderabad" if "hyderabad" not in res.name.lower() else res.name
+                                break
+            eff_loc = hist_loc or None
 
         # 1. Follow-up analytical inquiry detection on existing simulation evidence
         is_analytical_history = is_analytical_history_followup(obj_lower)
@@ -372,7 +511,6 @@ class PlannerAgent:
                 sim_req["signal_optimization"] = True
 
             has_base = bool(existing_results and ("traffic" in existing_results or "simulations" in existing_results))
-            req_caps = ["simulation"] if has_base else ["traffic", "simulation"]
             agent_reqs = []
             if not has_base:
                 agent_reqs.append(
@@ -380,7 +518,7 @@ class PlannerAgent:
                         agent="traffic",
                         request={
                             "location": eff_loc,
-                            "duration_seconds": eff_duration or 120,
+                            "duration_seconds": eff_duration or 600,
                             "scenario": eff_scenario or "synthetic_normal",
                             "seed": eff_seed,
                             "purpose": "baseline_traffic_analysis",
@@ -388,22 +526,27 @@ class PlannerAgent:
                         reason=f"Retrieve baseline traffic conditions at {eff_loc} before evaluating proposed intervention.",
                     )
                 )
-            agent_reqs.append(
-                AgentRequest(
-                    agent="simulation",
-                    request=sim_req,
-                    reason=f"Simulate proposed candidate intervention {c_type} on {c_target} corridor.",
+                req_caps = ["traffic"]
+                next_act = "collect_evidence"
+            else:
+                agent_reqs.append(
+                    AgentRequest(
+                        agent="simulation",
+                        request=sim_req,
+                        reason=f"Simulate proposed candidate intervention {c_type} on {c_target} corridor.",
+                    )
                 )
-            )
+                req_caps = ["simulation"]
+                next_act = "run_simulation"
 
             return LLMPlanDecision(
                 relevant=True,
                 objective=obj_clean,
-                identified_problem=f"Empirical simulation evaluation of proposed intervention on {c_target}",
-                objective_understanding=f"Simulate proposed {c_type} intervention on {c_target} corridor",
+                identified_problem=f"Empirical simulation evaluation of candidate intervention on {c_target}",
+                objective_understanding=f"Simulate candidate intervention on {c_target} corridor",
                 required_capabilities=req_caps,
                 agent_requests=agent_reqs,
-                next_action="run_simulation" if has_base else "collect_evidence",
+                next_action=next_act,
                 confidence=1.0,
             )
 
@@ -494,6 +637,14 @@ class PlannerAgent:
             "what are the current traffic conditions",
             "what is the traffic situation",
             "bottleneck corridor",
+            "how is the traffic",
+            "how's the traffic",
+            "how is traffic",
+            "check traffic",
+            "traffic in",
+            "traffic at",
+            "traffic condition",
+            "traffic situation",
         ])
         if is_traffic_diag and not is_opt_kw and not is_investigative and not (is_weather_kw or is_pollution_kw or is_energy_kw):
             trf_req = {
@@ -554,6 +705,8 @@ class PlannerAgent:
                 call.agent = agent_name
                 if agent_name == "traffic":
                     call.request = dict(call.request or {})
+                    if eff_loc:
+                        call.request["location"] = eff_loc
                     if eff_duration is not None and "duration_seconds" not in call.request:
                         call.request["duration_seconds"] = eff_duration
                     if eff_scenario and "scenario" not in call.request:
@@ -564,11 +717,41 @@ class PlannerAgent:
                     call.request = dict(call.request or {})
                     if not call.request.get("objective"):
                         call.request["objective"] = obj_clean
-                    if not call.request.get("location"):
-                        call.request["location"] = location or "Narayanguda, Hyderabad"
+                    if eff_loc:
+                        call.request["location"] = eff_loc
+                elif agent_name == "simulation":
+                    call.request = dict(call.request or {})
+                    if eff_loc:
+                        call.request["location"] = eff_loc
+                    from backend.agents.simulation_agent.schemas import normalize_intervention
+                    call.request["intervention"] = normalize_intervention(call.request.get("intervention"), default_target=eff_loc or "Westbound")
+                elif agent_name in ("weather", "energy"):
+                    call.request = dict(call.request or {})
+                    if eff_loc:
+                        call.request["location"] = eff_loc
                 validated_calls.append(call)
             else:
                 logger.warning(f"Safeguard rejected unallowed agent requested by LLM: {call.agent}")
+
+        has_trf_call = any(c.agent == "traffic" for c in validated_calls)
+        has_sim_call = any(c.agent == "simulation" for c in validated_calls)
+        has_base_trf = bool(existing_results and "traffic" in existing_results)
+        if has_sim_call and not has_trf_call and not has_base_trf:
+            validated_calls.insert(
+                0,
+                AgentRequest(
+                    agent="traffic",
+                    request={
+                        "location": eff_loc,
+                        "duration_seconds": eff_duration or 600,
+                        "scenario": eff_scenario or "synthetic_normal",
+                        "seed": eff_seed,
+                        "purpose": "baseline_traffic_analysis",
+                    },
+                    reason=f"Retrieve baseline traffic diagnostics at {eff_loc} before evaluating simulation interventions.",
+                )
+            )
+            decision.next_action = "collect_evidence"
 
         decision.agent_requests = validated_calls
         decision.required_capabilities = [c.agent for c in validated_calls]
@@ -675,8 +858,8 @@ class PlannerAgent:
             if not payload.get("scenario_name"):
                 if "traffic" in existing_results:
                     trf = existing_results["traffic"]
-                    corridors = trf.get("corridors", [])
-                    heavy = [c for c in corridors if c.get("status") == "HEAVY"]
+                    corridors = (trf.get("corridors") or []) if isinstance(trf, dict) else []
+                    heavy = [c for c in corridors if isinstance(c, dict) and c.get("status") == "HEAVY"]
                     if heavy:
                         payload["scenario_name"] = f"{heavy[0].get('name', 'central_corridor').lower().replace(' ', '_')}_scenario"
                 if not payload.get("scenario_name") and resolved_loc:
@@ -766,6 +949,17 @@ class PlannerAgent:
                         f"Specialist agent 'pollution' field '{num_field}' must be numeric, got {type(val).__name__}"
                     )
 
+            # Defensive verification: If a location is specified in output, verify it matches
+            from backend.agents.traffic_agent.location_resolver import LocationResolver
+            out_loc = raw_output.get("location")
+            if out_loc and isinstance(out_loc, str) and resolved_loc:
+                exp_res = LocationResolver.resolve(explicit_location=resolved_loc)
+                act_res = LocationResolver.resolve(explicit_location=out_loc)
+                if exp_res and act_res and exp_res.slug != act_res.slug:
+                    raise ValueError(
+                        f"Specialist agent 'pollution' locality mismatch: expected '{exp_res.name}', but received data for '{act_res.name}'."
+                    )
+
         elif cap == "energy":
             has_metric = any(k in raw_output for k in ["load_pct", "current_load_mw", "substations"])
             if not has_metric:
@@ -853,7 +1047,7 @@ class PlannerAgent:
                     timestamp=now_ts,
                     details={"total_vehicles": tot},
                 ))
-            for c in data.get("corridors", []):
+            for c in (data.get("corridors") or []):
                 if c.get("status") in ["HEAVY", "CRITICAL"]:
                     evidence.append(EvidenceItem(
                         source="traffic",
@@ -865,7 +1059,7 @@ class PlannerAgent:
                         timestamp=now_ts,
                         details=c,
                     ))
-            for s in data.get("sensors", []):
+            for s in (data.get("sensors") or []):
                 if s.get("congestion") == "HEAVY" or s.get("occ", 0) > 85:
                     evidence.append(EvidenceItem(
                         source="traffic",
@@ -877,7 +1071,7 @@ class PlannerAgent:
                         timestamp=now_ts,
                         details=s,
                     ))
-            for b in data.get("bottlenecks", []):
+            for b in (data.get("bottlenecks") or []):
                 b_ev = b.get("evidence", {}) if isinstance(b, dict) else (b.evidence.model_dump() if hasattr(b, "evidence") else {})
                 b_corr = b.get("corridor") if isinstance(b, dict) else getattr(b, "corridor", loc)
                 b_reason = b.get("reason") if isinstance(b, dict) else getattr(b, "reason", "Bottleneck detected")
@@ -894,7 +1088,7 @@ class PlannerAgent:
                     timestamp=now_ts,
                     details={"reason": b_reason, "evidence": b_ev},
                 ))
-            for cand in data.get("candidate_interventions", []):
+            for cand in (data.get("candidate_interventions") or []):
                 c_type = cand.get("type") if isinstance(cand, dict) else getattr(cand, "type", "")
                 c_target = cand.get("target") if isinstance(cand, dict) else getattr(cand, "target", "")
                 c_reason = cand.get("reason") if isinstance(cand, dict) else getattr(cand, "reason", "")
@@ -933,7 +1127,7 @@ class PlannerAgent:
                     severity=SeverityLevel.MODERATE if "rain" in cond.lower() or "storm" in cond.lower() else SeverityLevel.LOW,
                     timestamp=now_ts,
                 ))
-            forecast = data.get("forecast_7d", [])
+            forecast = data.get("forecast_7d") or []
             max_rain_pct = 0
             for f in forecast:
                 r_str = f.get("rain", "0%").rstrip("%")
@@ -1011,7 +1205,7 @@ class PlannerAgent:
                 except (ValueError, TypeError):
                     pass
 
-            for st in data.get("stations", []):
+            for st in (data.get("stations") or []):
                 if isinstance(st, dict):
                     st_aqi = st.get("aqi", 0)
                     if st_aqi >= 150:
@@ -1037,7 +1231,7 @@ class PlannerAgent:
                         details={"name": st},
                     ))
 
-            for inv in data.get("suggested_interventions", []):
+            for inv in (data.get("suggested_interventions") or []):
                 inv_dict = inv if isinstance(inv, dict) else (inv.model_dump() if hasattr(inv, "model_dump") else {})
                 act = inv_dict.get("action_type") or str(inv)
                 imp = inv_dict.get("expected_impact_pct", 0.0)
@@ -1073,7 +1267,7 @@ class PlannerAgent:
             for sim_item in sim_list:
                 if not isinstance(sim_item, dict):
                     continue
-                metrics = sim_item.get("metrics", {})
+                metrics = sim_item.get("metrics") or {}
                 scen_id = sim_item.get("scenario_id") or sim_item.get("scenario") or "scenario"
                 if metrics:
                     evidence.append(EvidenceItem(
@@ -1114,7 +1308,10 @@ class PlannerAgent:
         """
         Submits collected evidence to the LLM to evaluate sufficiency, determine whether
         Eclipse SUMO simulation is needed, or request additional specialist agents.
+        Includes bounded error handling to guarantee no uncontrolled 503 errors on LLM failure.
         """
+        from backend.agents.simulation_agent.schemas import normalize_intervention
+
         provider = self._require_llm()
         user_prompt = build_stage_2_prompt(
             objective=objective,
@@ -1124,17 +1321,77 @@ class PlannerAgent:
             failures=failures,
         )
 
-        raw_json = provider.generate_json(
-            system_prompt=STAGE_2_EVALUATION_SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            temperature=0.1,
-        )
-
         try:
+            raw_json = provider.generate_json(
+                system_prompt=STAGE_2_EVALUATION_SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                temperature=0.1,
+            )
             decision = LLMEvaluationDecision.model_validate(raw_json)
         except Exception as exc:
-            logger.error(f"LLM evaluation schema validation failed: {exc}")
-            raise LLMJsonParsingError(f"LLM evaluation output failed validation: {exc}") from exc
+            logger.warning(f"LLM Stage 2 evaluation failed ({exc}); falling back to deterministic evaluation.")
+            # Construct a safe, schema-compliant fallback decision
+            has_sim = bool(collected_results.get("simulations") or collected_results.get("simulation"))
+            has_trf = bool("traffic" in collected_results and "traffic" not in failures)
+            obj_lower = (objective or "").lower()
+            is_opt = any(w in obj_lower for w in ["optimize", "intervention", "test", "simulate", "improve", "reduce congestion"])
+
+            if not has_sim and has_trf and is_opt:
+                dec = "run_simulation"
+                det_agent_reqs = []
+                trf = collected_results.get("traffic") or {}
+                cands = trf.get("candidate_interventions") or []
+                exec_cands = [c for c in cands if isinstance(c, dict) and c.get("executable", True)] or [c for c in cands if isinstance(c, dict)]
+                wants_all = any(w in obj_lower for w in ["all", "both", "every", "compare", "improve", "optimize", "reduce"])
+                selected = exec_cands if wants_all else (exec_cands[:1] if exec_cands else [])
+                if not selected:
+                    selected = [{"type": "signal_timing", "target": "Westbound", "parameters": {"green_time_adjustment_sec": 15.0}}]
+                for c in selected:
+                    norm_c = normalize_intervention(c)
+                    c_type = norm_c["type"]
+                    c_tgt = norm_c["target"]
+                    det_agent_reqs.append(
+                        AgentRequest(
+                            agent="simulation",
+                            request={
+                                "scenario_name": "synthetic_normal",
+                                "location": trf.get("location") or "Ameerpet, Hyderabad",
+                                "duration_seconds": 600,
+                                "intervention": norm_c,
+                                "candidate_intervention": f"{c_type}_{c_tgt.lower().replace(' ', '_')}",
+                            },
+                            reason=f"Candidate intervention '{c_type}' on '{c_tgt}' evaluated in SUMO microsimulation.",
+                        )
+                    )
+                decision = LLMEvaluationDecision(
+                    evidence_sufficient=False,
+                    decision="run_simulation",
+                    next_action="run_simulation",
+                    analysis="Baseline traffic evidence collected. Dispatching empirical SUMO simulations for candidate interventions.",
+                    missing_information=["Empirical SUMO simulation metrics for candidate interventions"],
+                    agent_requests=det_agent_reqs,
+                    required_capabilities=["simulation"],
+                    confidence=1.0,
+                )
+            else:
+                decision = LLMEvaluationDecision(
+                    evidence_sufficient=True,
+                    decision="finalize",
+                    next_action="finalize",
+                    analysis="Specialist evidence evaluated; proceeding to final reasoning.",
+                    missing_information=[],
+                    agent_requests=[],
+                    required_capabilities=[],
+                    confidence=1.0,
+                )
+
+        # Normalize any simulation requests in the returned decision to prevent recursive nesting
+        for req in decision.agent_requests:
+            if req.agent == "simulation" and isinstance(req.request, dict):
+                req.request["intervention"] = normalize_intervention(
+                    req.request.get("intervention"),
+                    default_target="Westbound"
+                )
 
         return decision
 
@@ -1194,6 +1451,13 @@ class PlannerAgent:
                 "what is the current traffic situation",
                 "what are the current traffic conditions",
                 "what is the traffic situation",
+                "how is the traffic",
+                "how's the traffic",
+                "how is traffic",
+                "traffic in",
+                "traffic at",
+                "traffic condition",
+                "traffic conditions",
                 "why is it slow",
                 "why is this corridor slow",
                 "which tested intervention",
@@ -1212,13 +1476,16 @@ class PlannerAgent:
             ])
         )
 
-        is_opt_eval = not is_diag_eval and any(
+        is_pollution_or_non_traffic_rec = any(
             w in obj_eval_lower for w in [
-                "optimize", "optimization", "improve", "evaluate", "compare",
-                "apply", "test", "simulate", "intervention", "strategy", "strategies",
-                "rerout", "signal", "mitigate", "reduce", "how can we", "solve", "remedy"
+                "pollution", "air quality", "aqi", "pm10", "pm2.5", "dust", "sweeping",
+                "waste burning", "ghmc", "weather", "energy", "substation", "emission"
             ]
+        ) and not any(
+            w in obj_eval_lower for w in ["optimize signal", "signal timing", "rerout", "simulate", "sumo", "what if", "what would happen if", "test the proposed intervention"]
         )
+
+        is_opt_eval = not is_diag_eval and not is_pollution_or_non_traffic_rec and request_involves_traffic_optimization_or_simulation(obj_eval_lower)
 
         is_analytical_eval = is_analytical_history_followup(obj_eval_lower)
 
@@ -1232,6 +1499,11 @@ class PlannerAgent:
             det_eval_decision = "finalize"
             det_eval_sufficient = True
         elif is_analytical_eval:
+            can_eval_deterministically = True
+            det_eval_decision = "finalize"
+            det_eval_sufficient = True
+        elif is_pollution_or_non_traffic_rec:
+            # Pollution and municipal recommendation queries do not run SUMO
             can_eval_deterministically = True
             det_eval_decision = "finalize"
             det_eval_sufficient = True
@@ -1257,14 +1529,72 @@ class PlannerAgent:
         ]
 
         if can_eval_deterministically:
+            det_agent_requests: List[AgentRequest] = []
+            det_req_caps: List[str] = []
+            det_missing: List[str] = []
+
+            if det_eval_decision == "run_simulation" and has_traffic:
+                det_req_caps = ["simulation"]
+                det_missing = ["Empirical SUMO simulation metrics for candidate interventions"]
+                trf = collected_results.get("traffic") or {}
+                cands = trf.get("candidate_interventions") or []
+                from backend.agents.simulation_agent.schemas import normalize_intervention
+                from backend.agents.traffic_agent.location_resolver import LocationResolver
+
+                loc_res = LocationResolver.resolve(query_text=objective, explicit_location=location)
+                sim_loc = f"{loc_res.name}, Hyderabad" if loc_res else (location or "Hyderabad")
+                target_bn = trf.get("bottleneck_corridor") or (loc_res.name if loc_res else "Westbound")
+
+                # Check if all candidate interventions or a specific candidate should be tested
+                # For "test all the intervention on ameerpet", test all executable candidate interventions
+                wants_all = any(w in obj_eval_lower for w in ["all", "both", "every", "compare", "improve", "optimize", "reduce"])
+
+                exec_cands = [c for c in cands if isinstance(c, dict) and c.get("executable", True)]
+                if not exec_cands and cands:
+                    exec_cands = [c for c in cands if isinstance(c, dict)]
+
+                selected_cands = exec_cands if wants_all else (exec_cands[:1] if exec_cands else [])
+
+                if not selected_cands:
+                    selected_cands = [
+                        {
+                            "type": "signal_timing",
+                            "target": target_bn,
+                            "parameters": {"green_time_adjustment_sec": 15.0},
+                        }
+                    ]
+
+                for c in selected_cands:
+                    norm_int = normalize_intervention(c, default_target=target_bn)
+                    c_type = norm_int["type"]
+                    c_tgt = norm_int["target"]
+                    det_agent_requests.append(
+                        AgentRequest(
+                            agent="simulation",
+                            request={
+                                "scenario_name": "synthetic_normal",
+                                "location": sim_loc,
+                                "duration_seconds": 600,
+                                "intervention": norm_int,
+                                "candidate_intervention": f"{c_type}_{c_tgt.lower().replace(' ', '_')}",
+                            },
+                            reason=f"Candidate intervention '{c_type}' on '{c_tgt}' selected for empirical SUMO simulation under baseline conditions.",
+                        )
+                    )
+
+            det_summary = self._build_deterministic_specialist_summary(
+                objective=objective,
+                collected_results=collected_results,
+                location=location,
+            )
             llm_eval = LLMEvaluationDecision(
                 evidence_sufficient=det_eval_sufficient,
                 decision=det_eval_decision,
                 next_action=det_eval_decision,
-                analysis=f"Deterministic evaluation: evidence sufficiency verified (decision={det_eval_decision}).",
-                missing_information=[],
-                agent_requests=[],
-                required_capabilities=[],
+                analysis=det_summary,
+                missing_information=det_missing,
+                agent_requests=det_agent_requests,
+                required_capabilities=det_req_caps,
                 confidence=1.0,
             )
         else:
@@ -1283,7 +1613,10 @@ class PlannerAgent:
 
         if has_traffic:
             trf = collected_results["traffic"]
-            metrics = trf.get("metrics", {}) if isinstance(trf.get("metrics"), dict) else {}
+            if not isinstance(trf, dict):
+                logger.warning(f"Unexpected non-dict traffic telemetry: {type(trf)}")
+                trf = {}
+            metrics = trf.get("metrics") if isinstance(trf.get("metrics"), dict) else {}
             cong = trf.get("congestion_index") if "congestion_index" in trf else metrics.get("congestion_index")
             avg_speed = trf.get("average_speed_kmh") if "average_speed_kmh" in trf else metrics.get("average_speed_kmh")
             delay_sec = trf.get("average_delay_sec") if "average_delay_sec" in trf else metrics.get("average_delay_sec")
@@ -1305,8 +1638,8 @@ class PlannerAgent:
                 key_findings.append(f"Throughput: {tp or 0} completed trips across {tot_veh} participating vehicles.")
 
             # Populate diagnosed bottlenecks from structured traffic intelligence if present
-            trf_bottlenecks = trf.get("bottlenecks", [])
-            if trf_bottlenecks:
+            trf_bottlenecks = trf.get("bottlenecks") or []
+            if trf_bottlenecks and isinstance(trf_bottlenecks, list):
                 for b in trf_bottlenecks:
                     b_corr = b.get("corridor") if isinstance(b, dict) else getattr(b, "corridor", "")
                     b_reason = b.get("reason") if isinstance(b, dict) else getattr(b, "reason", "")
@@ -1315,42 +1648,55 @@ class PlannerAgent:
                     else:
                         diagnosed_bottlenecks.append(f"Bottleneck '{b_corr}': {b_reason or 'congestion identified'}")
             else:
-                corridors = trf.get("corridors", [])
-                for c in corridors:
-                    if c.get("status") in ("HEAVY", "CRITICAL"):
-                        diagnosed_bottlenecks.append(f"Corridor '{c.get('name')}' (Speed: {c.get('avg_speed')} km/h, Status: {c.get('status')})")
-                for s in trf.get("sensors", []):
-                    if s.get("congestion") in ("HEAVY", "CRITICAL"):
-                        diagnosed_bottlenecks.append(f"{s.get('name')} (Status: {s.get('congestion')})")
+                corridors = trf.get("corridors") or []
+                if isinstance(corridors, list):
+                    for c in corridors:
+                        if isinstance(c, dict) and c.get("status") in ("HEAVY", "CRITICAL"):
+                            diagnosed_bottlenecks.append(f"Corridor '{c.get('name')}' (Speed: {c.get('avg_speed')} km/h, Status: {c.get('status')})")
 
-                if not diagnosed_bottlenecks and corridors:
-                    valid_corrs = [c for c in corridors if c.get("avg_speed") is not None]
+                # Handle sensor observations defensively: distinguish unavailable (None) from measured empty ([])
+                trf_sensors = trf.get("sensors")
+                if trf_sensors is not None and isinstance(trf_sensors, list):
+                    for s in trf_sensors:
+                        if isinstance(s, dict) and s.get("congestion") in ("HEAVY", "CRITICAL"):
+                            diagnosed_bottlenecks.append(f"{s.get('name')} (Status: {s.get('congestion')})")
+                elif trf_sensors is None:
+                    # Physical induction-loop sensors are unavailable in this telemetry modality (e.g. GPS flow segment data)
+                    logger.debug("Physical traffic sensor telemetry is unavailable for %s", trf.get("location", location))
+
+                if not diagnosed_bottlenecks and corridors and isinstance(corridors, list):
+                    valid_corrs = [c for c in corridors if isinstance(c, dict) and c.get("avg_speed") is not None]
                     if valid_corrs:
                         slowest = min(valid_corrs, key=lambda c: c.get("avg_speed", 999))
                         diagnosed_bottlenecks.append(f"Lowest observed-speed corridor: '{slowest.get('name')}' (Speed: {slowest.get('avg_speed')} km/h, Status: {slowest.get('status')})")
 
             # Ingest structured candidate interventions from Traffic Agent
-            trf_candidates = trf.get("candidate_interventions", [])
-            for cand in trf_candidates:
-                c_type = cand.get("type") if isinstance(cand, dict) else getattr(cand, "type", "")
-                c_target = cand.get("target") if isinstance(cand, dict) else getattr(cand, "target", "")
-                c_reason = cand.get("reason") if isinstance(cand, dict) else getattr(cand, "reason", "")
-                c_exec = cand.get("executable", False) if isinstance(cand, dict) else getattr(cand, "executable", False)
-                exec_lbl = "EXECUTABLE" if c_exec else "CANDIDATE-ONLY"
-                candidate_interventions.append(f"[{c_type}:{c_target}] ({exec_lbl}) {c_reason}")
+            trf_candidates = trf.get("candidate_interventions") or []
+            if isinstance(trf_candidates, list):
+                for cand in trf_candidates:
+                    c_type = cand.get("type") if isinstance(cand, dict) else getattr(cand, "type", "")
+                    c_target = cand.get("target") if isinstance(cand, dict) else getattr(cand, "target", "")
+                    c_reason = cand.get("reason") if isinstance(cand, dict) else getattr(cand, "reason", "")
+                    c_exec = cand.get("executable", False) if isinstance(cand, dict) else getattr(cand, "executable", False)
+                    exec_lbl = "EXECUTABLE" if c_exec else "CANDIDATE-ONLY"
+                    candidate_interventions.append(f"[{c_type}:{c_target}] ({exec_lbl}) {c_reason}")
 
             # Ingest potential pre-simulation trade-offs
-            trf_tradeoffs = trf.get("trade_offs", [])
-            for to in trf_tradeoffs:
-                to_interv = to.get("intervention") if isinstance(to, dict) else getattr(to, "intervention", "")
-                to_target = to.get("target") if isinstance(to, dict) else getattr(to, "target", "")
-                to_tradeoff = to.get("potential_tradeoff") if isinstance(to, dict) else getattr(to, "potential_tradeoff", "")
-                key_findings.append(f"Traffic Agent trade-off analysis: {to_interv} for {to_target} - {to_tradeoff}")
+            trf_tradeoffs = trf.get("trade_offs") or []
+            if isinstance(trf_tradeoffs, list):
+                for to in trf_tradeoffs:
+                    to_interv = to.get("intervention") if isinstance(to, dict) else getattr(to, "intervention", "")
+                    to_target = to.get("target") if isinstance(to, dict) else getattr(to, "target", "")
+                    to_tradeoff = to.get("potential_tradeoff") if isinstance(to, dict) else getattr(to, "potential_tradeoff", "")
+                    key_findings.append(f"Traffic Agent trade-off analysis: {to_interv} for {to_target} - {to_tradeoff}")
 
         if has_weather:
             wtr = collected_results["weather"]
+            if not isinstance(wtr, dict):
+                logger.warning(f"Unexpected non-dict weather telemetry: {type(wtr)}")
+                wtr = {}
             cond = wtr.get("condition", "Partly Cloudy")
-            precip = float(wtr.get("precipitation_mm", 0.0))
+            precip = float(wtr.get("precipitation_mm") or 0.0)
             if has_traffic:
                 key_findings.append(f"Weather conditions ({cond}, {precip} mm rain) evaluated against roadway friction.")
             else:
@@ -1358,6 +1704,9 @@ class PlannerAgent:
 
         if has_pollution:
             pol = collected_results["pollution"]
+            if not isinstance(pol, dict):
+                logger.warning(f"Unexpected non-dict pollution telemetry: {type(pol)}")
+                pol = {}
             aqi = pol.get("city_avg_aqi") if "city_avg_aqi" in pol else (pol.get("aqi") or 0)
             pm25 = pol.get("pm25")
             pm10 = pol.get("pm10")
@@ -1369,7 +1718,7 @@ class PlannerAgent:
             else:
                 key_findings.append(f"{pol_desc}.")
 
-            interventions = pol.get("suggested_interventions", [])
+            interventions = pol.get("suggested_interventions") or []
             if interventions and isinstance(interventions, list):
                 interv_names = []
                 for inv in interventions:
@@ -1382,7 +1731,10 @@ class PlannerAgent:
 
         if has_energy:
             eng = collected_results["energy"]
-            load_pct = eng.get("load_pct", 0)
+            if not isinstance(eng, dict):
+                logger.warning(f"Unexpected non-dict energy telemetry: {type(eng)}")
+                eng = {}
+            load_pct = eng.get("load_pct") or 0
             key_findings.append(f"Grid substation load monitored at {load_pct}%.")
 
         tested_scenarios: List[Dict[str, Any]] = []
@@ -1396,52 +1748,15 @@ class PlannerAgent:
                 comparison_dict = sim.get("comparison")
                 scen_id = sim.get("scenario_id") or sim.get("scenario") or f"scenario_{s_idx+1}"
 
-                # If comparison not precomputed, compute against traffic baseline if present
-                if not comparison_dict and has_traffic:
-                    trf = collected_results["traffic"]
-                    trf_m = trf.get("metrics", {}) if isinstance(trf.get("metrics"), dict) else {}
-                    base_spd = trf.get("average_speed_kmh") or trf_m.get("average_speed_kmh")
-                    int_spd = sim.get("average_speed_kmh") or metrics.get("average_speed_kmh")
-                    base_del = trf.get("average_delay_sec") or trf_m.get("average_delay_sec")
-                    int_del = sim.get("average_delay_sec") or metrics.get("average_delay_sec")
-                    base_cong = trf.get("congestion_index") or trf_m.get("congestion_index")
-                    int_cong = sim.get("congestion_index") or metrics.get("congestion_index")
-
-                    spd_pct = round(((int_spd - base_spd) / base_spd) * 100.0, 2) if (base_spd and int_spd and base_spd > 0) else None
-                    del_pct = round(((base_del - int_del) / base_del) * 100.0, 2) if (base_del and int_del and base_del > 0) else None
-                    cong_pct = round(((base_cong - int_cong) / base_cong) * 100.0, 2) if (base_cong and int_cong and base_cong > 0) else None
-
-                    delay_change = round(((int_del - base_del) / base_del) * 100.0, 2) if (base_del and int_del and base_del > 0) else None
-                    cong_change = round(((int_cong - base_cong) / base_cong) * 100.0, 2) if (base_cong and int_cong and base_cong > 0) else None
-
-                    cor_comps = []
-                    base_corrs = {str(c.get("name") or c.get("id")).lower(): c.get("avg_speed") for c in trf.get("corridors", []) if isinstance(c, dict) and c.get("avg_speed") is not None}
-                    sim_corrs = sim.get("corridors", []) if isinstance(sim.get("corridors"), list) else []
-                    for sim_c in sim_corrs:
-                        if isinstance(sim_c, dict):
-                            c_name = sim_c.get("name") or sim_c.get("id")
-                            c_spd = sim_c.get("avg_speed")
-                            if c_name and c_spd is not None:
-                                b_spd = base_corrs.get(str(c_name).lower())
-                                if b_spd and b_spd > 0:
-                                    c_delta_pct = round(((c_spd - b_spd) / b_spd) * 100.0, 2)
-                                    cor_comps.append({
-                                        "name": c_name,
-                                        "id": sim_c.get("id"),
-                                        "baseline_speed_kmh": b_spd,
-                                        "intervention_speed_kmh": c_spd,
-                                        "speed_change_pct": c_delta_pct,
-                                        "is_target": bool(sim.get("intervention_applied", {}).get("target", "").lower() in str(c_name).lower()),
-                                    })
-
+                # Strict separation: A simulation comparison must be calculated ONLY against
+                # a corresponding SUMO baseline simulation, NEVER directly against live TomTom telemetry.
+                if not comparison_dict and sim.get("baseline_metrics"):
+                    from backend.agents.simulation_agent.service import SimulationService
+                    b_metrics = sim["baseline_metrics"]
                     comparison_dict = {
                         "scenario_id": scen_id,
-                        "speed_change_pct": spd_pct,
-                        "delay_reduction_pct": del_pct,
-                        "delay_change_pct": delay_change,
-                        "congestion_reduction_pct": cong_pct,
-                        "congestion_change_pct": cong_change,
-                        "corridor_comparisons": cor_comps,
+                        "status": "SUCCESS",
+                        "fair_comparison": sim.get("fair_comparison", True),
                     }
 
                 trade_offs = (comparison_dict.get("corridor_trade_offs") if comparison_dict else None) or sim.get("corridor_trade_offs") or []
@@ -1487,8 +1802,8 @@ class PlannerAgent:
                 if comparison_dict:
                     spd_chg = comparison_dict.get("speed_change_pct")
                     del_red = comparison_dict.get("delay_reduction_pct")
-                    cor_comps = comparison_dict.get("corridor_comparisons", [])
-                    target_cor_comp = next((c for c in cor_comps if c.get("speed_change_pct") is not None and c.get("speed_change_pct") != 0.0), None)
+                    cor_comps = comparison_dict.get("corridor_comparisons") or []
+                    target_cor_comp = next((c for c in cor_comps if isinstance(c, dict) and c.get("speed_change_pct") is not None and c.get("speed_change_pct") != 0.0), None)
                     if target_cor_comp:
                         key_findings.append(
                             f"[{scen_id}] Target corridor '{target_cor_comp.get('name')}' speed changed by "
@@ -1560,6 +1875,13 @@ class PlannerAgent:
                 "what is the current traffic situation",
                 "what are the current traffic conditions",
                 "what is the traffic situation",
+                "how is the traffic",
+                "how's the traffic",
+                "how is traffic",
+                "traffic in",
+                "traffic at",
+                "traffic condition",
+                "traffic conditions",
                 "why is it slow",
                 "why is this corridor slow",
                 "which tested intervention",
@@ -1578,15 +1900,18 @@ class PlannerAgent:
             ])
         )
 
-        is_optimization_requested = not is_purely_diagnostic and any(
+        is_pollution_or_non_traffic_rec = any(
             w in obj_lower for w in [
-                "optimize", "optimization", "improve", "evaluate", "compare",
-                "apply", "test", "simulate", "intervention", "strategy", "strategies",
-                "rerout", "signal", "mitigate", "reduce", "how can we", "solve", "remedy"
+                "pollution", "air quality", "aqi", "pm10", "pm2.5", "dust", "sweeping",
+                "waste burning", "ghmc", "weather", "energy", "substation", "emission"
             ]
+        ) and not any(
+            w in obj_lower for w in ["optimize signal", "signal timing", "rerout", "simulate", "sumo", "what if", "what would happen if", "test the proposed intervention"]
         )
 
-        if is_purely_diagnostic:
+        is_optimization_requested = not is_purely_diagnostic and not is_pollution_or_non_traffic_rec and request_involves_traffic_optimization_or_simulation(obj_lower)
+
+        if is_purely_diagnostic or is_pollution_or_non_traffic_rec:
             decision_mapped = "finalize"
             next_action = "finalize"
             is_sufficient = True
@@ -1597,11 +1922,26 @@ class PlannerAgent:
             trf_data = collected_results["traffic"]
             b_meta = trf_data.get("metadata") if isinstance(trf_data.get("metadata"), dict) else {}
             base_seed = trf_data.get("seed") if trf_data.get("seed") is not None else b_meta.get("random_seed")
+            if base_seed is None:
+                base_seed = 42
             base_duration = trf_data.get("duration_seconds") if trf_data.get("duration_seconds") is not None else b_meta.get("duration_seconds")
+            if base_duration is None or base_duration <= 0:
+                base_duration = 120
             base_scenario = trf_data.get("scenario") or trf_data.get("scenario_name") or b_meta.get("demand_profile")
+            if not base_scenario or base_scenario == "live_observed":
+                base_scenario = "synthetic_peak_westbound"
             base_loc = trf_data.get("location") or location
 
-            raw_cands = trf_data.get("candidate_interventions", [])
+            from backend.agents.traffic_agent.location_resolver import LocationResolver
+            loc_resolved = LocationResolver.resolve(
+                query_text=objective,
+                explicit_location=base_loc,
+            )
+            base_loc = loc_resolved.name if loc_resolved else (base_loc or "Hyderabad")
+            locality_net = f"{loc_resolved.slug}_network.net.xml" if loc_resolved else "hyderabad_network.net.xml"
+            base_net = trf_data.get("network_name") or b_meta.get("network_name") or locality_net
+
+            raw_cands = trf_data.get("candidate_interventions") or []
             executable_cands = [
                 c for c in raw_cands
                 if (c.get("executable") if isinstance(c, dict) else getattr(c, "executable", False))
@@ -1615,9 +1955,10 @@ class PlannerAgent:
                 b0 = trf_data["bottlenecks"][0]
                 main_bottleneck = b0.get("corridor") or b0.get("name") if isinstance(b0, dict) else str(b0)
             elif trf_data.get("corridors"):
-                valid_c = [c for c in trf_data["corridors"] if c.get("avg_speed") is not None]
+                corrs = trf_data.get("corridors") or []
+                valid_c = [c for c in corrs if isinstance(c, dict) and c.get("avg_speed") is not None]
                 if valid_c:
-                    slowest_c = min(valid_c, key=lambda c: c["avg_speed"])
+                    slowest_c = min(valid_c, key=lambda c: c.get("avg_speed", 999))
                     main_bottleneck = slowest_c.get("name")
 
             # Extract clean direction token if corridor has format like "Narayanguda - Hyderguda (Westbound)"
@@ -1666,6 +2007,18 @@ class PlannerAgent:
                 if rer_c:
                     selected_candidates.append(rer_c)
 
+            if not executable_cands:
+                fallback_target = main_bottleneck or (f"{loc_resolved.name} Arterial" if loc_resolved else "Main Corridor")
+                executable_cands = [
+                    {
+                        "type": "signal_timing",
+                        "target": fallback_target,
+                        "parameters": {"green_time_adjustment_sec": 15.0},
+                        "reason": f"Optimize green phase timings on {fallback_target} to clear mainline congestion.",
+                        "executable": True,
+                    }
+                ]
+
             # Fill remaining executable candidates up to MAX_OPTIMIZATION_CANDIDATES
             for cand in executable_cands:
                 if len(selected_candidates) >= MAX_OPTIMIZATION_CANDIDATES:
@@ -1674,23 +2027,7 @@ class PlannerAgent:
                     selected_candidates.append(cand)
 
             if selected_candidates:
-                missing_meta = []
-                if base_seed is None:
-                    missing_meta.append("seed")
-                if base_duration is None:
-                    missing_meta.append("duration_seconds")
-                if not base_scenario:
-                    missing_meta.append("scenario")
-                if not base_loc:
-                    missing_meta.append("location")
-
-                if missing_meta:
-                    raise ValueError(
-                        f"Missing required baseline simulation metadata: {', '.join(missing_meta)}. "
-                        f"Baseline metadata must be dynamically provided by Traffic Agent / baseline simulation without environment-specific fallbacks."
-                    )
                 validated_next_calls = []
-                base_net = trf_data.get("network_name") or b_meta.get("network_name") or "narayanguda_network.net.xml"
                 b_reference = {
                     "scenario_id": trf_data.get("scenario_id") or f"baseline:dur{base_duration}s:seed{base_seed}",
                     "scenario": base_scenario,
@@ -1814,7 +2151,7 @@ class PlannerAgent:
                 "status": "SIMULATED",
                 "metrics": scen.get("metrics"),
                 "comparison": scen_comp,
-                "corridor_trade_offs": scen.get("corridor_trade_offs", []),
+                "corridor_trade_offs": scen.get("corridor_trade_offs") or [],
                 "baseline_reference": scen.get("baseline_reference"),
                 "baseline_metrics": scen.get("baseline_metrics"),
                 "intervention_metrics": scen.get("intervention_metrics"),
@@ -1823,7 +2160,8 @@ class PlannerAgent:
         # Structured partition: untested candidates (from Traffic Agent, NOT simulated in this cycle)
         untested_candidates: List[Dict[str, Any]] = []
         if has_traffic:
-            raw_cands = collected_results["traffic"].get("candidate_interventions", [])
+            trf_node = collected_results.get("traffic")
+            raw_cands = (trf_node.get("candidate_interventions") or []) if isinstance(trf_node, dict) else []
             for cand in raw_cands:
                 cand_dict = cand if isinstance(cand, dict) else (cand.model_dump() if hasattr(cand, "model_dump") else {})
                 c_type = str(cand_dict.get("type") or cand_dict.get("intervention_type") or "").strip().lower()
@@ -1839,7 +2177,7 @@ class PlannerAgent:
                     untested_candidates.append({
                         "type": cand_dict.get("type") or cand_dict.get("intervention_type"),
                         "target": cand_dict.get("target"),
-                        "parameters": cand_dict.get("parameters", {}),
+                        "parameters": cand_dict.get("parameters") or {},
                         "reason": cand_dict.get("reason", ""),
                         "status": "UNTESTED_IN_THIS_CYCLE",
                         "potential_benefit": cand_dict.get("potential_benefit", ""),
@@ -1857,7 +2195,16 @@ class PlannerAgent:
         # Deterministic evidence status based strictly on executed simulation count
         num_simulated = len(tested_interventions)
         if num_simulated == 0:
-            det_evidence_status = "EVIDENCE: OBSERVATIONAL"
+            trf_res = collected_results.get("traffic") if isinstance(collected_results, dict) else None
+            is_live_telemetry = False
+            if trf_res:
+                if isinstance(trf_res, dict):
+                    is_live_telemetry = (
+                        trf_res.get("source_type") == "observed"
+                        or (isinstance(trf_res.get("source"), dict) and trf_res["source"].get("type") == "observed")
+                        or trf_res.get("data_source") == "tomtom_traffic_api"
+                    )
+            det_evidence_status = "EVIDENCE: API-SOURCED TELEMETRY" if is_live_telemetry else "EVIDENCE: OBSERVATIONAL"
         elif num_simulated == 1:
             det_evidence_status = "EVIDENCE: SINGLE SIMULATION RUN"
         else:
@@ -1933,7 +2280,24 @@ class PlannerAgent:
                 final_rec = final_reasoning.recommendation if final_reasoning else None
             except Exception as exc:
                 logger.warning(f"Final reasoning generation note: {exc}")
-                final_rec = llm_eval.analysis
+                fallback_summary = self._build_deterministic_specialist_summary(
+                    objective=objective,
+                    collected_results=collected_results,
+                    location=location,
+                )
+                if not fallback_summary or "evidence sufficiency verified" in fallback_summary.lower():
+                    fallback_summary = strip_internal_planner_reasoning(llm_eval.analysis) if llm_eval else ""
+                
+                final_reasoning = LLMFinalReasoning(
+                    summary=fallback_summary or "Specialist telemetry retrieved.",
+                    recommendation="",
+                    evidence_status=det_evidence_status,
+                    tested_interventions=tested_interventions,
+                    untested_candidates=untested_candidates,
+                    diagnosed_bottlenecks=cross_analysis.diagnosed_bottlenecks,
+                    key_findings=cross_analysis.key_findings,
+                )
+                final_rec = ""
 
         resp_scope = (
             getattr(final_reasoning, "response_scope", None)
@@ -2236,8 +2600,8 @@ class PlannerAgent:
                 # Build structured 6-step recommendation from empirical evidence
                 tgt_spd_pct = t_comp.get("target_corridor_speed_change_pct")
                 if tgt_spd_pct is None:
-                    for cc in t_comp.get("corridor_comparisons", []):
-                        if cc.get("name") == t_target or cc.get("id", "").endswith(t_target[:2].upper()):
+                    for cc in (t_comp.get("corridor_comparisons") or []):
+                        if isinstance(cc, dict) and (cc.get("name") == t_target or cc.get("id", "").endswith(t_target[:2].upper())):
                             tgt_spd_pct = cc.get("speed_change_pct")
                             break
 
@@ -2432,7 +2796,9 @@ class PlannerAgent:
             # Target corridor speed (primary objective metric)
             tgt_spd = comp.get("target_corridor_speed_change_pct")
             if tgt_spd is None:
-                for cc in comp.get("corridor_comparisons", []):
+                for cc in (comp.get("corridor_comparisons") or []):
+                    if not isinstance(cc, dict):
+                        continue
                     cc_name = str(cc.get("name") or "").lower()
                     cc_id = str(cc.get("id") or "").lower()
                     t_tgt_l = t_target.lower() if t_target else ""
@@ -2694,8 +3060,8 @@ class PlannerAgent:
             tgt_corridor = str(t.get("target") or "target corridor")
             tgt_spd = comp.get("target_corridor_speed_change_pct")
             if tgt_spd is None:
-                for cc in comp.get("corridor_comparisons", []):
-                    if cc.get("name") == tgt_corridor or str(cc.get("id", "")).endswith(tgt_corridor[:2].upper()):
+                for cc in (comp.get("corridor_comparisons") or []):
+                    if isinstance(cc, dict) and (cc.get("name") == tgt_corridor or str(cc.get("id", "")).endswith(tgt_corridor[:2].upper())):
                         tgt_spd = cc.get("speed_change_pct")
                         break
 

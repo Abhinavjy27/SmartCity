@@ -99,7 +99,8 @@ def generate_weather_alerts(weather_data: Dict[str, Any]) -> Dict[str, Any]:
         primary_risk = "None"
 
     return {
-        "source": "SUPADSP Meteorological Risk Engine",
+        "source": "Derived metric (SUPADSP Meteorological Risk Engine)",
+        "provenance": "Derived metric (Threshold-based evaluation of live telemetry)",
         "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "alerts": alerts,
         "risk_level": risk_level,
@@ -110,11 +111,14 @@ def generate_weather_alerts(weather_data: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def compute_air_comfort(weather_data: Dict[str, Any]) -> Dict[str, Any]:
-    """Compute pollen, heat index, and outdoor comfort indicators."""
+    """
+    Compute thermal comfort indicators and acknowledge sensor telemetry boundaries.
+    Note: In-situ pollen telemetry is unavailable for India from global weather APIs.
+    """
     temp_c = float(weather_data.get("temperature_c", 30.0))
     humidity = int(weather_data.get("humidity_pct", 50))
 
-    # Basic thermal comfort classification
+    # Basic thermal comfort classification (Derived from temperature & humidity)
     if 20.0 <= temp_c <= 28.0 and 30 <= humidity <= 60:
         comfort = "Optimal"
         comfort_color = "#2F8F72"
@@ -128,15 +132,27 @@ def compute_air_comfort(weather_data: Dict[str, Any]) -> Dict[str, Any]:
         comfort_color = "#2F8F72"
         outdoor = "Good"
 
-    # Pollen approximation based on humidity & season
-    pollen_count = 28 if humidity > 60 else (45 if temp_c > 32 else 32)
-    pollen_level = "Low" if pollen_count < 40 else "Moderate"
+    # Pollen: In-situ sensor coverage for India is excluded by WeatherAPI and Open-Meteo.
+    # Preserve authentic distinction: do NOT fabricate synthetic numbers.
+    pollen_count = None
+    pollen_level = "Unavailable"
+    pollen_status = "No regional sensor coverage (India excluded)"
+
+    # Asthma sensitivity proxy derived from ambient humidity and thermal stress
+    asthma_risk = "Low" if (20.0 <= temp_c <= 32.0 and humidity < 70) else "Moderate"
 
     return {
         "pollen_count": pollen_count,
         "pollen_level": pollen_level,
+        "pollen_status": pollen_status,
         "air_comfort": comfort,
         "air_comfort_color": comfort_color,
         "outdoor_activity": outdoor,
-        "asthma_risk": "Low" if pollen_count < 40 and humidity < 75 else "Moderate",
+        "asthma_risk": asthma_risk,
+        "provenance": {
+            "pollen": "Unavailable (No in-situ pollen telemetry for India)",
+            "air_comfort": "Derived metric (Thermal comfort index from temperature & relative humidity)",
+            "outdoor_activity": "Derived metric (Activity suitability from thermal conditions)",
+            "asthma_risk": "Derived metric (Environmental humidity & thermal sensitivity proxy)",
+        },
     }

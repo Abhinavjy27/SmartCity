@@ -9,6 +9,7 @@ prediction and aerosol transport models, not physical ground monitoring-station 
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional, Tuple
 
@@ -18,18 +19,39 @@ logger = logging.getLogger(__name__)
 
 OPEN_METEO_AIR_QUALITY_URL = "https://air-quality-api.open-meteo.com/v1/air-quality"
 
-# Canonical Hyderabad / Narayanguda coordinates
+# Canonical Hyderabad coordinates
 HYDERABAD_COORDINATES: Tuple[float, float] = (17.3850, 78.4867)
 
-# Known supported location coordinates (extensible)
+# Known supported location coordinates (complete coverage of Hyderabad metropolitan localities)
 LOCATION_COORDINATES: Dict[str, Tuple[float, float]] = {
     "hyderabad": (17.3850, 78.4867),
-    "narayanguda": (17.3850, 78.4867),
-    "narayanguda, hyderabad": (17.3850, 78.4867),
+    "narayanguda": (17.3978, 78.4907),
+    "tarnaka": (17.4290, 78.5320),
+    "nacharam": (17.4320, 78.5600),
+    "madhapur": (17.4480, 78.3912),
     "gachibowli": (17.4401, 78.3489),
-    "gachibowli, hyderabad": (17.4401, 78.3489),
+    "hitec city": (17.4435, 78.3772),
     "hitech city": (17.4435, 78.3772),
     "secunderabad": (17.4399, 78.4983),
+    "begumpet": (17.4448, 78.4664),
+    "jubilee hills": (17.4318, 78.4073),
+    "banjara hills": (17.4239, 78.4238),
+    "charminar": (17.3616, 78.4747),
+    "sanathnagar": (17.4589, 78.4428),
+    "bollaram": (17.5510, 78.3580),
+    "patancheru": (17.5284, 78.2676),
+    "uppal": (17.4022, 78.5600),
+    "kukatpally": (17.4849, 78.4138),
+    "miyapur": (17.4968, 78.3614),
+    "ameerpet": (17.4375, 78.4482),
+    "dilsukhnagar": (17.3688, 78.5247),
+    "lb nagar": (17.3457, 78.5522),
+    "shamshabad": (17.2403, 78.4294),
+    "malakpet": (17.3736, 78.4983),
+    "kondapur": (17.4608, 78.3647),
+    "mehdipatnam": (17.3916, 78.4414),
+    "alwal": (17.5023, 78.5134),
+    "lingampally": (17.4870, 78.3180),
 }
 
 
@@ -64,16 +86,29 @@ class OpenMeteoCurrentClient:
         if not loc_clean:
             return HYDERABAD_COORDINATES[0], HYDERABAD_COORDINATES[1], "Hyderabad"
 
-        for key, coords in LOCATION_COORDINATES.items():
-            if key in loc_clean:
-                return coords[0], coords[1], location.strip()
+        # Check LocationResolver first for canonical Hyderabad localities and aliases
+        try:
+            from backend.agents.traffic_agent.location_resolver import LocationResolver
+            loc_res = LocationResolver.resolve(explicit_location=location, query_text=location)
+            if loc_res:
+                return loc_res.lat, loc_res.lon, f"{loc_res.name}, Hyderabad" if "hyderabad" not in loc_res.name.lower() else loc_res.name
+        except Exception:
+            pass
+
+        # Match specific locality keys first (excluding generic 'hyderabad')
+        specific_keys = [k for k in LOCATION_COORDINATES.keys() if k != "hyderabad"]
+        for key in sorted(specific_keys, key=len, reverse=True):
+            if re.search(r"\b" + re.escape(key) + r"\b", loc_clean):
+                coords = LOCATION_COORDINATES[key]
+                canonical_name = key.title()
+                return coords[0], coords[1], f"{canonical_name}, Hyderabad"
 
         if "hyderabad" in loc_clean or "telangana" in loc_clean:
-            return HYDERABAD_COORDINATES[0], HYDERABAD_COORDINATES[1], location.strip()
+            return HYDERABAD_COORDINATES[0], HYDERABAD_COORDINATES[1], "Hyderabad"
 
         raise PollutionLocationNotSupportedError(
             f"Location '{location}' is not currently configured for current air quality coordinates. "
-            f"Supported locations include Hyderabad, Narayanguda, Gachibowli, Hitech City, and Secunderabad."
+            f"Supported locations include Narayanguda, Tarnaka, Nacharam, Madhapur, Gachibowli, Secunderabad, and greater Hyderabad."
         )
 
     def fetch_current_pollution(self, location: str) -> Dict[str, Any]:
@@ -186,6 +221,10 @@ class OpenMeteoCurrentClient:
         return {
             "data_mode": "current",
             "data_source": "open-meteo-air-quality-current",
+            "source_type": "modelled",
+            "source_provider": "open-meteo",
+            "modality": "modelled_atmospheric_estimate",
+            "freshness": "live_model_output",
             "data_timestamp": str(raw_time) if raw_time else retrieved_at,
             "retrieved_at": retrieved_at,
             "location": resolved_loc,
@@ -195,7 +234,16 @@ class OpenMeteoCurrentClient:
             "pm25": pm25_val,
             "pm10": pm10_val,
             "category": category,
-            "stations": [],  # Open-Meteo is numerical atmospheric modelling, not physical stations
+            "stations": [],  # Open-Meteo is numerical atmospheric modelling, not physical ground monitoring stations
             "is_modelled": True,
             "pollutants": pollutants,
+            "units": {
+                "aqi": "US AQI",
+                "pm25": "µg/m³",
+                "pm10": "µg/m³",
+                "carbon_monoxide": "µg/m³",
+                "nitrogen_dioxide": "µg/m³",
+                "sulphur_dioxide": "µg/m³",
+                "ozone": "µg/m³"
+            },
         }

@@ -30,13 +30,13 @@ const defaultWeekForecast = [
 ]
 
 const defaultRainfallWeek = [
-  { day: 'Mon', rain: 0, thisWeek: 0, lastWeek: 2 },
-  { day: 'Tue', rain: 2, thisWeek: 2, lastWeek: 4 },
-  { day: 'Wed', rain: 0, thisWeek: 0, lastWeek: 1 },
-  { day: 'Thu', rain: 8, thisWeek: 8, lastWeek: 5 },
-  { day: 'Fri', rain: 5, thisWeek: 5, lastWeek: 3 },
-  { day: 'Sat', rain: 12, thisWeek: 12, lastWeek: 8 },
-  { day: 'Sun', rain: 0, thisWeek: 0, lastWeek: 2 },
+  { day: 'Mon', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Tue', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Wed', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Thu', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Fri', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Sat', rain: 0, thisWeek: 0, lastWeek: 0 },
+  { day: 'Sun', rain: 0, thisWeek: 0, lastWeek: 0 },
 ]
 
 const defaultHumidityPressure = Array.from({ length: 24 }, (_, i) => ({
@@ -140,14 +140,38 @@ export default function Weather() {
   const providerName = weatherData?.provider ?? 'Live Telemetry'
   const resolvedLocalityName = weatherData?.city || selectedLocality
 
+  // Current hour index alignment
+  const getCurrentHourIndex = (items) => {
+    if (!items || items.length === 0) return 0
+    let targetHour = new Date().getHours()
+    if (weatherData?.localtime) {
+      const parts = weatherData.localtime.split(' ')
+      if (parts.length > 1) {
+        const hPart = parseInt(parts[1].split(':')[0], 10)
+        if (!isNaN(hPart)) targetHour = hPart
+      }
+    }
+    const targetHourStr = targetHour < 10 ? `0${targetHour}:00` : `${targetHour}:00`
+
+    const todayDateStr = weatherData?.localtime ? weatherData.localtime.split(' ')[0] : new Date().toISOString().split('T')[0]
+    const fullMatchIdx = items.findIndex(h => h.full_time && h.full_time.includes(todayDateStr) && h.full_time.includes(` ${targetHourStr}`))
+    if (fullMatchIdx >= 0) return fullMatchIdx
+
+    const idx = items.findIndex(h => (h.h === targetHourStr || h.time === targetHourStr || (h.full_time && h.full_time.endsWith(targetHourStr))))
+    return idx >= 0 ? idx : 0
+  }
+
   // Hourly chart data from live API
   const hourlyData = weatherData?.hourly_temp && weatherData.hourly_temp.length > 0
     ? weatherData.hourly_temp.map(h => ({
         time: h.h || h.time,
+        full_time: h.full_time,
         temp: h.temp,
         humidity: h.humidity,
         pressure: h.pressure || pressure,
         rain: h.rain_chance || 0,
+        precip_mm: h.precip_mm || 0,
+        provenance: h.provenance || 'Forecast',
       }))
     : defaultHourly
 
@@ -162,19 +186,80 @@ export default function Weather() {
         else if (cLower.includes('overcast') || cLower.includes('cloud')) emoji = '☁️'
         return {
           day: f.day,
+          date: f.date,
           weather: emoji,
+          high: f.high,
+          low: f.low,
           maxMin: `${f.high}° / ${f.low}°`,
           rain: f.rain || '0%',
+          avg_humidity: f.avg_humidity || 55,
+          provenance: f.provenance || 'Forecast',
         }
       })
     : defaultWeekForecast
+
+  const curHourIdx = getCurrentHourIndex(hourlyData)
+
+  // Dynamically slice and adapt chart data based on selected time range
+  const displayedHourlyData = (() => {
+    if (timeRange === '7 Days') {
+      return forecastDays.map(f => ({
+        time: f.day,
+        date: f.date,
+        temp: f.high,
+        lowTemp: f.low,
+        rain: parseInt(f.rain) || 0,
+        humidity: f.avg_humidity || 55,
+        pressure: pressure,
+        provenance: f.provenance,
+      }))
+    }
+    if (timeRange === 'Now') {
+      const slice = hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 3))
+      return slice.map((item, i) => i === 0 ? { ...item, time: `Now (${item.time})`, temp: temp } : item)
+    }
+    if (timeRange === '1 Hour') {
+      const slice = hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 2))
+      return slice.map((item, i) => i === 0 ? { ...item, time: `Now (${item.time})`, temp: temp } : item)
+    }
+    if (timeRange === '6 Hours') {
+      const slice = hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 6))
+      return slice.map((item, i) => i === 0 ? { ...item, time: `Now (${item.time})`, temp: temp } : item)
+    }
+    const slice24 = hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 24))
+    return slice24.map((item, i) => i === 0 ? { ...item, time: `Now (${item.time})`, temp: temp } : item)
+  })()
+
+  const chartTitle = (() => {
+    if (timeRange === 'Now') return `Immediate Temperature & Rain (${resolvedLocalityName})`
+    if (timeRange === '1 Hour') return `Next 1-2 Hours Temperature & Rain (${resolvedLocalityName})`
+    if (timeRange === '6 Hours') return `6-Hour Temperature & Rain Trend (${resolvedLocalityName})`
+    if (timeRange === '7 Days') return `7-Day Daily Highs & Rain Forecast (${resolvedLocalityName})`
+    return `24-Hour Forward Temperature & Rain Curve (${resolvedLocalityName})`
+  })()
+
+  const displayedHumidityPressure = (() => {
+    if (timeRange === '7 Days') {
+      return forecastDays.map(f => ({
+        time: f.day,
+        humidity: f.avg_humidity || 55,
+        pressure: pressure,
+      }))
+    }
+    if (timeRange === 'Now') return hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 3))
+    if (timeRange === '1 Hour') return hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 2))
+    if (timeRange === '6 Hours') return hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 6))
+    return hourlyData.slice(curHourIdx, Math.min(hourlyData.length, curHourIdx + 24))
+  })()
 
   // Live 7-day rainfall data from API
   const rainfallData = weatherData?.weekly_precipitation && weatherData.weekly_precipitation.length > 0
     ? weatherData.weekly_precipitation.map(r => ({
         day: r.day,
+        date: r.date,
         thisWeek: r.rain ?? r.thisWeek ?? 0,
-        lastWeek: r.lastWeek ?? Math.round(Math.max(0, (r.rain || 0) * 0.7)),
+        lastWeek: r.lastWeek ?? 0,
+        provenance: r.provenance || 'Forecast',
       }))
     : defaultRainfallWeek
 
@@ -194,8 +279,9 @@ export default function Weather() {
   const primaryRisk = alertsData?.primary_risk ?? 'None'
   const riskProb = alertsData?.probability_pct ?? 10
   const timeWindow = alertsData?.time_window ?? 'All Day'
-  const pollenCount = alertsData?.pollen_count ?? 32
-  const pollenLevel = alertsData?.pollen_level ?? 'Low'
+  const pollenCount = alertsData?.pollen_count ?? null
+  const pollenLevel = alertsData?.pollen_level ?? 'Unavailable'
+  const pollenStatus = alertsData?.pollen_status ?? 'No regional sensor coverage (India excluded)'
   const airComfort = alertsData?.air_comfort ?? 'Good'
   const outdoorActivity = alertsData?.outdoor_activity ?? 'Good'
   const asthmaRisk = alertsData?.asthma_risk ?? 'Low'
@@ -312,7 +398,7 @@ export default function Weather() {
             border: `1px solid ${isLive ? 'rgba(47, 143, 114, 0.3)' : 'rgba(244, 166, 42, 0.3)'}`
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: isLive ? '#2F8F72' : '#F4A62A', display: 'inline-block' }} />
-            {isLive ? `LIVE API: ${providerName}` : 'OFFLINE BASELINE'}
+            {isLive ? `Live API (${providerName})` : 'Offline Baseline'}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', color: 'var(--text-muted)' }}>
@@ -332,8 +418,8 @@ export default function Weather() {
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               Current Weather — {resolvedLocalityName}
             </h3>
-            <span style={{ fontSize: '0.62rem', color: isLive ? '#2F8F72' : 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              {isLive ? '100% Live Telemetry' : 'Cached Baseline'}
+            <span style={{ fontSize: '0.62rem', color: isLive ? '#2F8F72' : 'var(--text-muted)', fontFamily: 'var(--font-mono)', background: isLive ? 'rgba(47, 143, 114, 0.1)' : 'transparent', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              {isLive ? 'Live API (Current Conditions)' : 'Cached Baseline'}
             </span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '16px' }}>
@@ -369,7 +455,12 @@ export default function Weather() {
 
         {/* Today's Summary Card */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '24px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '16px' }}>Today's Summary</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Today's Summary</h3>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Forecast (Daily Summary)
+            </span>
+          </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: '16px' }}>
             {[
               { label: 'Max Temp', value: `${todayHigh}°C`, sub: 'Peak Day', icon: '🌡️', color: '#E5483F' },
@@ -391,7 +482,9 @@ export default function Weather() {
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '14px' }}>
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Weather Alerts</h3>
-            <span style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)' }}>LIVE</span>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Derived (Risk Engine)
+            </span>
           </div>
           {alertsList.map((a, i) => (
             <div key={i} style={{ display: 'flex', gap: '10px', padding: '12px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-workspace)', border: '1px solid var(--border-divider)', marginBottom: '10px' }}>
@@ -408,13 +501,18 @@ export default function Weather() {
 
       {/* Middle Row: 24h Forecast + 7-Day Forecast + Rainfall Overview */}
       <div style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1fr', gap: 'var(--space-lg)', marginBottom: 'var(--space-lg)' }}>
-        {/* 24-Hour Forecast Chart */}
+        {/* Temperature & Precipitation Forecast Chart */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>
-            24-Hour Live Temperature & Precipitation Curve
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
+              {chartTitle}
+            </h3>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Forecast ({timeRange})
+            </span>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
-            <ComposedChart data={hourlyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+            <ComposedChart data={displayedHourlyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="tempGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#E5483F" stopOpacity={0.15} />
@@ -422,20 +520,26 @@ export default function Weather() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={2} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit="°" />
+              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={timeRange === '7 Days' || timeRange === '6 Hours' || timeRange === '1 Hour' || timeRange === 'Now' ? 0 : 2} axisLine={false} tickLine={false} />
+              <YAxis yAxisId="temp" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit="°" domain={['dataMin - 2', 'dataMax + 2']} />
+              <YAxis yAxisId="rain" orientation="right" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit="%" domain={[0, 100]} />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.7rem' }} />
-              <Area type="monotone" dataKey="temp" stroke="#E5483F" strokeWidth={2} fill="url(#tempGrad)" name="Temperature (°C)" />
-              <Bar dataKey="rain" fill="#6C8FC5" radius={[3, 3, 0, 0]} name="Rain Probability (%)" opacity={0.6} />
+              <Area yAxisId="temp" type="monotone" dataKey="temp" stroke="#E5483F" strokeWidth={2} fill="url(#tempGrad)" name="Temperature (°C)" />
+              <Bar yAxisId="rain" dataKey="rain" fill="#6C8FC5" radius={[3, 3, 0, 0]} name="Rain Probability (%)" opacity={0.6} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
 
         {/* 7-Day Forecast */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>
-            7-Day Outlook ({resolvedLocalityName})
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
+              7-Day Outlook ({resolvedLocalityName})
+            </h3>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Forecast (7-Day Outlook)
+            </span>
+          </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             {forecastDays.map((d, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 8px', borderRadius: 'var(--radius-sm)', background: i === 0 ? 'rgba(108,143,197,0.08)' : 'transparent', fontSize: '0.72rem' }}>
@@ -450,9 +554,11 @@ export default function Weather() {
 
         {/* 7-Day Rainfall Overview from live API */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '12px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Rainfall Overview</h3>
-            <span style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)' }}>LIVE API</span>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Forecast (Accumulation)
+            </span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
             <div style={{ padding: '10px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-workspace)' }}>
@@ -473,7 +579,7 @@ export default function Weather() {
           <ResponsiveContainer width="100%" height={120}>
             <BarChart data={rainfallData} margin={{ top: 5, right: 5, left: -20, bottom: 0 }}>
               <XAxis dataKey="day" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} domain={[0, 'auto']} />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.7rem' }} />
               <Bar dataKey="thisWeek" fill="#6C8FC5" radius={[3, 3, 0, 0]} name="Precipitation (mm)" />
             </BarChart>
@@ -485,7 +591,12 @@ export default function Weather() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1.3fr 1fr 1fr', gap: 'var(--space-lg)', marginBottom: 'var(--space-lg)' }}>
         {/* Wind Overview */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>Wind Vectors</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Wind Vectors</h3>
+            <span style={{ fontSize: '0.62rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', background: 'rgba(47,143,114,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Live API & Derived
+            </span>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
             <div style={{ position: 'relative', width: 100, height: 100 }}>
               <svg width="100" height="100" viewBox="0 0 100 100">
@@ -518,7 +629,7 @@ export default function Weather() {
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px' }}>
                 <span style={{ color: 'var(--text-muted)' }}>Dispersion</span>
                 <span style={{ fontWeight: 600, fontFamily: 'var(--font-mono)', color: windSpeed > 10 ? '#2F8F72' : '#F4A62A' }}>
-                  {windSpeed > 10 ? 'Advective' : 'Low'}
+                  {windSpeed > 10 ? 'Advective' : 'Low'} (Derived)
                 </span>
               </div>
             </div>
@@ -527,13 +638,18 @@ export default function Weather() {
 
         {/* Humidity & Pressure Trend using live hourly API data */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>
-            Humidity & Surface Pressure Trend (Live)
-          </h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
+              Humidity & Pressure Trend
+            </h3>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Forecast ({timeRange})
+            </span>
+          </div>
           <ResponsiveContainer width="100%" height={200}>
-            <ComposedChart data={hourlyData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+            <ComposedChart data={displayedHumidityPressure} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 7, fill: '#8F9295' }} interval={4} axisLine={false} tickLine={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 7, fill: '#8F9295' }} interval={timeRange === '7 Days' || timeRange === '6 Hours' || timeRange === '1 Hour' || timeRange === 'Now' ? 0 : 4} axisLine={false} tickLine={false} />
               <YAxis yAxisId="hum" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit="%" domain={[20, 100]} />
               <YAxis yAxisId="pres" orientation="right" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} unit=" hPa" domain={['auto', 'auto']} />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.7rem' }} />
@@ -545,7 +661,12 @@ export default function Weather() {
 
         {/* Severe Weather Risk */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>Severe Weather Risk</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Severe Weather Risk</h3>
+            <span style={{ fontSize: '0.62rem', color: '#6C8FC5', fontFamily: 'var(--font-mono)', background: 'rgba(108,143,197,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Derived (Risk Engine)
+            </span>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '16px' }}>
             <div style={{ position: 'relative', width: 110, height: 110 }}>
               <svg width="110" height="110" viewBox="0 0 110 110">
@@ -570,21 +691,35 @@ export default function Weather() {
 
         {/* Pollen & Air Comfort */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>Pollen & Air Comfort</h3>
-          <div style={{ textAlign: 'center', marginBottom: '16px' }}>
-            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Pollen Count</div>
-            <div style={{ fontSize: '2rem', fontWeight: 700, fontFamily: 'var(--font-heading)', color: '#2F8F72' }}>{pollenCount}</div>
-            <div style={{ fontSize: '0.65rem', color: '#2F8F72', fontWeight: 600 }}>{pollenLevel}</div>
-            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)' }}>(Grasses & Trees)</div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Pollen & Air Comfort</h3>
+            <span style={{ fontSize: '0.62rem', color: '#F4A62A', fontFamily: 'var(--font-mono)', background: 'rgba(244,166,42,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Unavailable / Derived
+            </span>
+          </div>
+          <div style={{ textAlign: 'center', marginBottom: '16px', background: 'var(--bg-workspace)', borderRadius: 'var(--radius-md)', padding: '12px 8px' }}>
+            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Pollen Telemetry</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'var(--font-heading)', color: 'var(--text-muted)', marginTop: '2px' }}>
+              {pollenCount !== null && pollenCount !== undefined ? pollenCount : 'Unavailable'}
+            </div>
+            <div style={{ fontSize: '0.65rem', color: '#F4A62A', fontWeight: 600, marginTop: '2px' }}>
+              {pollenLevel === 'Unavailable' ? 'No Regional Sensors' : pollenLevel}
+            </div>
+            <div style={{ fontSize: '0.52rem', color: 'var(--text-muted)', marginTop: '2px' }}>
+              India coverage excluded by provider
+            </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.68rem' }}>
             {[
-              { label: 'Air Comfort', value: airComfort, color: '#2F8F72' },
-              { label: 'Outdoor Activity', value: outdoorActivity, color: '#2F8F72' },
-              { label: 'Asthma Risk', value: asthmaRisk, color: '#2F8F72' },
+              { label: 'Air Comfort', value: airComfort, color: '#2F8F72', prov: 'Derived (Thermal Index)' },
+              { label: 'Outdoor Activity', value: outdoorActivity, color: '#2F8F72', prov: 'Derived (Suitability)' },
+              { label: 'Asthma Sensitivity', value: asthmaRisk, color: '#2F8F72', prov: 'Derived (Humidity/Temp)' },
             ].map(item => (
-              <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between' }}>
-                <span style={{ color: 'var(--text-secondary)' }}>{item.label}</span>
+              <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div>
+                  <div style={{ color: 'var(--text-secondary)' }}>{item.label}</div>
+                  <div style={{ fontSize: '0.5rem', color: 'var(--text-muted)' }}>{item.prov}</div>
+                </div>
                 <span style={{ fontWeight: 600, color: item.color }}>{item.value}</span>
               </div>
             ))}

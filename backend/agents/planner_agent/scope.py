@@ -65,6 +65,11 @@ def strip_internal_planner_reasoning(text: str) -> str:
     cleaned_sentences = []
 
     removal_patterns = [
+        # Deterministic / internal evaluation diagnostics
+        r"\bdeterministic\s+evaluation\b",
+        r"\bevidence\s+sufficiency\s+verified\b",
+        r"\bdecision\s*=\s*finalize\b",
+        r"\bdecision\s*=\s*[a-zA-Z_]+\b",
         # Rule citations or rules
         r"\b(?:according to|under|per|following|as per)?\s*rule\s+\d+\b",
         # Purely diagnostic query explanations
@@ -94,6 +99,8 @@ def strip_internal_planner_reasoning(text: str) -> str:
 
     # 2. In-clause fragment cleanup for cases without punctuation boundaries
     clause_patterns = [
+        r"(?:Deterministic\s+evaluation:[^.]*(?:\.|$))",
+        r"(?:Evidence\s+sufficiency\s+verified[^.]*(?:\.|$))",
         r"(?:According to|Under|Per|Following|As per)\s+Rule\s+\d+[^,.:;]*[,.:;]?",
         r"(?:The|This)\s+objective\s+is\s+(?:a\s+)?purely\s+diagnostic\s+query[^.]*\.?",
         r"(?:The|This)\s+query\s+is\s+(?:a\s+)?purely\s+diagnostic\s*(?:query|request)?[^.]*\.?",
@@ -143,6 +150,40 @@ def request_involves_traffic_optimization_or_simulation(
 
     obj = (objective or "").lower().strip()
 
+    # Guard 1: If query is seeking pollution, environmental, road dust, weather, or energy recommendations,
+    # it must NOT be treated as a traffic simulation or SUMO optimization request.
+    is_pollution_or_dust_rec = any(
+        w in obj for w in [
+            "pollution", "air quality", "aqi", "pm10", "pm2.5", "dust", "sweeping",
+            "waste burning", "ghmc", "weather", "energy", "substation", "emission", "vehicle emissions"
+        ]
+    ) and not any(
+        w in obj for w in ["optimize signal", "signal timing", "rerout", "simulate", "sumo", "what if", "what would happen if", "test the proposed intervention"]
+    )
+    if is_pollution_or_dust_rec:
+        return False
+
+    # Guard 2: Purely diagnostic/factual traffic queries where no optimization is sought
+    is_purely_diagnostic = any(
+        w in obj for w in [
+            "which corridor is the bottleneck", "which corridor is currently the bottleneck",
+            "where is the bottleneck", "identify the bottleneck", "identify main bottlenecks",
+            "diagnose current traffic", "what is the current traffic situation",
+            "what are the current traffic conditions", "what is the traffic situation",
+            "what is the current traffic", "current traffic in", "traffic conditions in",
+            "why is it slow", "why is this corridor slow"
+        ]
+    ) and not any(
+        w in obj for w in [
+            "how can i improve", "how to improve", "how can we improve",
+            "how can i reduce", "how to reduce", "how can we reduce",
+            "how can i optimize", "how to optimize", "how can we optimize",
+            "optimize", "optimization", "apply", "test", "simulate", "rerout", "signal timing", "intervention"
+        ]
+    )
+    if is_purely_diagnostic:
+        return False
+
     # 1. Explicit simulation keywords / comparison inquiries
     sim_keywords = [
         "which tested intervention", "which tested", "performed better", "perform better",
@@ -150,7 +191,8 @@ def request_involves_traffic_optimization_or_simulation(
         "was the intervention effective", "why did the tested", "why did tested",
         "did the optimization solve", "did it solve the bottleneck", "was the bottleneck solved",
         "simulate", "simulation", "sumo", "run simulation", "test in simulation",
-        "test the intervention", "synthetic demand"
+        "test the intervention", "synthetic demand", "test the proposed intervention",
+        "what would happen if"
     ]
     if any(k in obj for k in sim_keywords):
         return True
@@ -162,22 +204,25 @@ def request_involves_traffic_optimization_or_simulation(
         "candidate intervention", "candidate interventions", "bottleneck resolution",
         "solve the bottleneck", "solve bottleneck", "alleviate the bottleneck",
         "reduce traffic congestion", "alleviate traffic", "mitigate traffic",
-        "traffic mitigation", "improve traffic flow"
+        "traffic mitigation", "improve traffic flow", "optimize traffic flow",
+        "how can i improve traffic", "how to improve traffic", "how can we improve traffic", "improve traffic",
+        "how can i reduce traffic", "how to reduce traffic", "how can we reduce traffic",
+        "how can i reduce congestion", "how to reduce congestion", "how can we reduce congestion", "reduce congestion",
+        "how can i reduce traffic delays", "how to reduce traffic delays", "how can we reduce traffic delays", "reduce traffic delays",
+        "how to improve a congested corridor", "improve corridor", "improve signal timings", "improve signals"
     ]
     if any(p in obj for p in traffic_opt_phrases):
         return True
 
     # 3. Combination of optimization action verb + explicit traffic concept
     opt_verbs = [
-        "optimize", "optimization", "how can we reduce", "how to reduce",
-        "how can we improve", "how to improve", "how can we alleviate", "how to alleviate",
-        "how can we fix", "how to fix", "how to mitigate", "how can we mitigate",
-        "recommend an intervention", "suggest an intervention", "propose an intervention",
-        "mitigation strategy", "how to solve", "how can we solve"
+        "optimize", "optimization", "improve", "reducing", "reduce", "alleviate",
+        "fix", "mitigate", "recommend an intervention", "suggest an intervention",
+        "propose an intervention", "mitigation strategy", "solve", "relieve", "address"
     ]
     traffic_nouns = [
-        "traffic", "congestion", "bottleneck", "corridor", "delay",
-        "signal", "intersection", "junction", "vehicle queue", "queuing"
+        "traffic", "congestion", "bottleneck", "corridor", "delay", "delays",
+        "signal", "signals", "intersection", "junction", "vehicle queue", "queuing", "flow", "timing"
     ]
     if any(v in obj for v in opt_verbs) and any(n in obj for n in traffic_nouns):
         return True
@@ -223,6 +268,19 @@ def determine_response_scope(objective: str) -> ResponseScope:
     the LLM Planner produces a properly bounded response scope.
     """
     obj = (objective or "").lower().strip()
+
+    # Guard: If query is seeking pollution, environmental, road dust, or municipal recommendations,
+    # return an appropriate analysis scope focused on air quality and recommendations (NOT simulation).
+    is_pollution_or_dust_rec = any(
+        w in obj for w in ["pollution", "air quality", "aqi", "pm10", "pm2.5", "dust", "sweeping", "ghmc", "emission", "vehicle emissions"]
+    ) and not any(
+        w in obj for w in ["optimize signal", "signal timing", "rerout", "simulate", "sumo", "what if", "what would happen if", "test the proposed intervention"]
+    )
+    if is_pollution_or_dust_rec:
+        return ResponseScope(
+            fields=["pollution", "air_quality", "aqi", "pm10", "pm25", "recommendations", "suggested_interventions"],
+            detail_level="analysis",
+        )
 
     # 1. Analytical simulation follow-up / comparison queries
     analytical_followup_phrases = [

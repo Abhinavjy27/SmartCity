@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Wind, Droplets, Flame, CloudRain, Factory, Thermometer,
   AlertTriangle, ArrowRight, Info, CheckCircle2, Shield
@@ -24,7 +25,11 @@ const TIME_RANGE_MAP = {
 }
 
 export default function Pollution() {
+  const navigate = useNavigate()
   const [timeRange, setTimeRange] = useState('24 Hours')
+  const [showAllHotspots, setShowAllHotspots] = useState(false)
+  const [showAllPollutants, setShowAllPollutants] = useState(false)
+  const [showAllAlerts, setShowAllAlerts] = useState(false)
 
   // Data state — all from backend, no hardcoded values
   const [current, setCurrent] = useState(null)
@@ -125,9 +130,9 @@ export default function Pollution() {
   const coveragePct = quality?.coverage_percent ?? 0
 
   // Top pollutants (sorted by value/limit ratio)
-  const topPollutants = [...pollutants]
-    .sort((a, b) => (b.value / b.limit) - (a.value / a.limit))
-    .slice(0, 5)
+  const allSortedPollutants = [...pollutants]
+    .sort((a, b) => (b.value / (b.limit || 1)) - (a.value / (a.limit || 1)))
+  const topPollutants = showAllPollutants ? allSortedPollutants : allSortedPollutants.slice(0, 5)
 
   // AQI gauge
   const aqiGaugeValue = aqi != null ? Math.min(aqi, 300) : 0
@@ -484,13 +489,16 @@ export default function Pollution() {
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               AQI Hotspots (Current)
             </h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', cursor: 'pointer' }}>
-              VIEW ALL
+            <span
+              onClick={() => setShowAllHotspots(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#4C9E9B', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllHotspots ? 'COLLAPSE <' : `VIEW ALL (${hotspots.length}) >`}
             </span>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '7px' }}>
-            {hotspots.length > 0 ? hotspots.map((h, i) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '7px', maxHeight: showAllHotspots ? '320px' : 'none', overflowY: showAllHotspots ? 'auto' : 'visible' }}>
+            {hotspots.length > 0 ? (showAllHotspots ? hotspots : hotspots.slice(0, 4)).map((h, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'center', gap: '10px',
                 padding: '7px 10px', borderRadius: 'var(--radius-sm)',
@@ -608,7 +616,12 @@ export default function Pollution() {
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               Top Pollutants (Observed)
             </h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>VIEW ALL</span>
+            <span
+              onClick={() => setShowAllPollutants(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#4C9E9B', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllPollutants ? 'COLLAPSE <' : `VIEW ALL (${allSortedPollutants.length}) >`}
+            </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
             {topPollutants.map(p => (
@@ -933,10 +946,15 @@ export default function Pollution() {
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>
               Alerts & Advisories
             </h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>VIEW ALL</span>
+            <span
+              onClick={() => setShowAllAlerts(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#4C9E9B', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllAlerts ? 'COLLAPSE <' : `VIEW ALL (${alerts.length}) >`}
+            </span>
           </div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {alerts.length > 0 ? alerts.slice(0, 3).map((a, i) => (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: showAllAlerts ? '320px' : 'none', overflowY: showAllAlerts ? 'auto' : 'visible' }}>
+            {alerts.length > 0 ? (showAllAlerts ? alerts : alerts.slice(0, 3)).map((a, i) => (
               <div key={i} style={{ display: 'flex', gap: '8px', padding: '9px', borderRadius: 'var(--radius-sm)', background: 'var(--bg-workspace)', border: '1px solid var(--border-divider)' }}>
                 <AlertTriangle size={15} color={a.color} style={{ flexShrink: 0, marginTop: '2px' }} />
                 <div style={{ flex: 1 }}>
@@ -976,13 +994,16 @@ export default function Pollution() {
             </span>
           </div>
         </div>
-        <button style={{
-          padding: '8px 18px', borderRadius: 'var(--radius-md)',
-          border: '1px solid #4C9E9B', background: 'transparent',
-          color: '#4C9E9B', fontSize: '0.72rem', fontWeight: 600,
-          fontFamily: 'var(--font-mono)', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
-        }}>
+        <button
+          onClick={() => navigate('/planning')}
+          style={{
+            padding: '8px 18px', borderRadius: 'var(--radius-md)',
+            border: '1px solid #4C9E9B', background: 'transparent',
+            color: '#4C9E9B', fontSize: '0.72rem', fontWeight: 600,
+            fontFamily: 'var(--font-mono)', cursor: 'pointer',
+            display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap',
+          }}
+        >
           View Recommendations <ArrowRight size={12} />
         </button>
       </div>

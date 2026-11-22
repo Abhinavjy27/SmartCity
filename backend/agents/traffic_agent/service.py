@@ -1,616 +1,296 @@
 """
-Traffic Agent Application Service.
-Coordinates demand generation, SUMO execution, metrics extraction, and structured evidence packaging.
-Explicitly distinguishes synthetic demand assumptions, empirical TraCI simulation results,
-and derived presentation data for the frontend dashboard.
+Traffic Agent Application Service — Live TomTom Traffic Intelligence.
+Fulfills all live traffic monitoring, condition analysis, bottleneck diagnosis,
+and factual traffic queries using real-time TomTom Traffic Flow and Incidents telemetry.
+SUMO is strictly excluded from this service.
 """
 
 from __future__ import annotations
 
+import asyncio
 import datetime
 import logging
-import os
 from typing import Any, Dict, List, Optional
 
-from backend.agents.traffic_agent.demand_generator import SyntheticDemandGenerator
+from backend.agents.traffic_agent.location_resolver import LocationResolver, ResolvedLocation
 from backend.agents.traffic_agent.schemas import (
     BottleneckEvidence,
     BottleneckInfo,
     CandidateIntervention,
+    CorridorMetric,
     PotentialTradeOff,
-    SignalOptimizationCandidate,
-    SignalOptimizationRequest,
-    SignalOptimizationResponse,
     SimulationMetadata,
     SimulationMetrics,
     SourceInfo,
+    TrafficAnalyzeRequest,
     TrafficEvidenceResponse,
     TrafficObservations,
 )
-from backend.agents.traffic_agent.sumo_runner import SumoExecutionError, SumoRunner
+from backend.services.tomtom import (
+    FlowSegmentData,
+    fetch_all_corridor_flows,
+    fetch_flow_segment,
+    fetch_incidents,
+)
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("traffic_agent.service")
+
+
+def _run_async(coro):
+    """Safely executes an async coroutine from synchronous FastAPI route handlers."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Inside an existing event loop thread
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
 
 
 class TrafficService:
     """
-    Traffic Intelligence service orchestrating Eclipse SUMO baseline simulations
-    over the Narayanguda road network with reproducible synthetic demand.
+    Live Traffic Intelligence service powered exclusively by the TomTom Traffic API.
+    Zero SUMO simulation and zero synthetic data fabrication.
     """
 
-    def __init__(
-        self,
-        network_path: Optional[str] = None,
-        routes_dir: Optional[str] = None,
-        sumo_binary: Optional[str] = None,
-    ):
-        pkg_dir = os.path.dirname(os.path.abspath(__file__))
-        smartcity_root = os.path.abspath(os.path.join(pkg_dir, "..", "..", ".."))
-
-        self.network_path = network_path or os.getenv(
-            "SUMO_NETWORK_PATH",
-            os.path.join(smartcity_root, "simulations", "networks", "narayanguda_network.net.xml"),
-        )
-        self.routes_dir = routes_dir or os.getenv(
-            "SUMO_ROUTES_DIR",
-            os.path.join(smartcity_root, "simulations", "routes"),
-        )
-
-        self.demand_generator = SyntheticDemandGenerator(routes_dir=self.routes_dir)
-        self.sumo_runner = SumoRunner(sumo_binary=sumo_binary)
-        self._cache: Dict[str, TrafficEvidenceResponse] = {}
+    def __init__(self):
+        self._cache: Dict[str, Dict[str, Any]] = {}
 
     def get_supported_scenarios(self) -> List[str]:
-        return self.demand_generator.get_supported_scenarios()
+        return ["live_observed", "synthetic_normal", "synthetic_peak_westbound"]
 
-    def run_baseline_simulation(
+    def get_traffic_kpis(
         self,
-        location: str = "Narayanguda, Hyderabad",
-        scenario: str = "synthetic_normal",
+        location: Optional[str] = None,
+        query_text: Optional[str] = None,
+        scenario: str = "live_observed",
         duration_seconds: int = 120,
         seed: Optional[int] = None,
-        purpose: str = "baseline_traffic_analysis",
+        purpose: str = "live_traffic_monitoring",
         force_fresh: bool = False,
     ) -> TrafficEvidenceResponse:
         """
-        Runs an authentic Eclipse SUMO microsimulation for the requested scenario
-        and returns structured evidence conforming to the contract.
+        Retrieves real-time observed traffic KPIs from TomTom for the resolved locality.
+        Never runs SUMO or generates synthetic data.
         """
-        clean_scenario = self.demand_generator.validate_scenario(scenario)
+        # 1. Resolve locality
+        loc = LocationResolver.resolve(
+            query_text=query_text,
+            explicit_location=location,
+        )
 
-        if not os.path.isfile(self.network_path):
-            raise SumoExecutionError(
-                f"Narayanguda SUMO network file not found at: {self.network_path}",
-                {"network_path": self.network_path},
+        if not loc or not loc.is_within_hyderabad():
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            return TrafficEvidenceResponse(
+                source=SourceInfo(
+                    type="observed",
+                    engine="TomTom",
+                    provider="tomtom",
+                    synthetic=False,
+                    disclaimer=f"No live TomTom monitoring coverage for '{location}'.",
+                ),
+                location=location or "Unknown",
+                scenario=scenario or "live_observed",
+                status="unavailable",
+                reason=f"Locality '{location}' is outside monitored Hyderabad coverage.",
+                data_source="tomtom_traffic_api",
+                source_type="observed",
+                source_provider="tomtom",
+                timestamp=now_iso,
             )
 
-        duration_seconds = max(10, min(1800, int(duration_seconds or 120)))
-        is_random_seed = (seed is None)
-        if seed is None:
-            try:
-                import random
-                seed = random.randint(1000, 99999)
-            except Exception as exc:
-                logger.warning(f"Random seed generation failed: {exc}. Falling back to 42.")
-                seed = 42
-                is_random_seed = False
-        else:
-            try:
-                seed = int(seed)
-            except (ValueError, TypeError):
-                seed = 42
-
-        cache_key = f"{clean_scenario}_{duration_seconds}_{seed}_{location}"
-        if not force_fresh and cache_key in self._cache:
-            logger.info(f"Returning cached baseline simulation for {cache_key}")
-            return self._cache[cache_key]
-
-        # 1. Generate deterministic synthetic demand route file (with safe fallback for random seed)
+        # 2. Query TomTom Flow and Incidents
         try:
-            route_file = self.demand_generator.generate_route_file(
-                scenario=clean_scenario,
-                duration_seconds=duration_seconds,
-                seed=seed,
+            flow: FlowSegmentData = _run_async(
+                fetch_flow_segment(
+                    point=loc.point,
+                    corridor_id=loc.slug,
+                    corridor_name=loc.name,
+                )
             )
         except Exception as exc:
-            if is_random_seed and seed != 42:
-                logger.warning(
-                    f"Failed to generate route file for random seed={seed}: {exc}. "
-                    "Falling back to default seed=42 working simulation path."
-                )
-                seed = 42
-                is_random_seed = False
-                route_file = self.demand_generator.generate_route_file(
-                    scenario=clean_scenario,
-                    duration_seconds=duration_seconds,
-                    seed=42,
-                )
-            else:
-                raise
-
-        # 2. Execute SUMO microsimulation via TraCI (with safe fallback for random seed)
-        try:
-            metrics, corridors = self.sumo_runner.run_simulation(
-                net_file=self.network_path,
-                route_file=route_file,
-                duration_seconds=duration_seconds,
+            logger.error(f"TomTom API flow fetch failed for {loc.name}: {exc}")
+            now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            return TrafficEvidenceResponse(
+                source=SourceInfo(
+                    type="observed",
+                    engine="TomTom",
+                    provider="tomtom",
+                    synthetic=False,
+                    disclaimer="TomTom Traffic API is temporarily unreachable.",
+                ),
+                location=loc.name,
+                scenario=scenario or "live_observed",
+                status="unavailable",
+                reason=f"TomTom Live Traffic API error: {exc}",
+                data_source="tomtom_traffic_api",
+                source_type="observed",
+                source_provider="tomtom",
+                timestamp=now_iso,
             )
-        except SumoExecutionError as exc:
-            if is_random_seed and seed != 42:
-                logger.warning(
-                    f"SUMO simulation failed for random seed={seed}: {exc}. "
-                    "Falling back to default seed=42 route and simulation."
-                )
-                seed = 42
-                is_random_seed = False
-                route_file = self.demand_generator.generate_route_file(
-                    scenario=clean_scenario,
-                    duration_seconds=duration_seconds,
-                    seed=42,
-                )
-                metrics, corridors = self.sumo_runner.run_simulation(
-                    net_file=self.network_path,
-                    route_file=route_file,
-                    duration_seconds=duration_seconds,
-                )
-            else:
-                raise
 
-        # Re-derive cache_key with final simulated seed
-        cache_key = f"{clean_scenario}_{duration_seconds}_{seed}_{location}"
+        # 3. Query Hyderabad Incidents
+        incident_count = 0
+        try:
+            incidents_data = _run_async(fetch_incidents())
+            if incidents_data and hasattr(incidents_data, "features"):
+                incident_count = len(incidents_data.features)
+        except Exception as exc:
+            logger.warning(f"Could not fetch incidents: {exc}")
 
-        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        metadata = SimulationMetadata(
-            duration_seconds=duration_seconds,
-            steps_simulated=duration_seconds,
-            random_seed=seed,
-            demand_profile=clean_scenario,
-            network_name=os.path.basename(self.network_path),
-            timestamp=now_utc,
-            step_length_sec=1.0,
-        )
+        now_iso = datetime.datetime.now(datetime.timezone.utc).isoformat()
 
-        # 3. Derived UI presentation layers (explicitly distinguished from empirical telemetry)
-        hourly_data = self._generate_compatible_hourly_data(metrics, duration_seconds)
-        sensors = self._generate_compatible_sensors(corridors, metrics, duration_seconds)
-
-        # 4. Traffic Intelligence: Observations, dynamic bottleneck detection, candidate interventions, and trade-offs
-        observations, bottlenecks, candidate_interventions, trade_offs = self.analyze_traffic_conditions(
-            metrics=metrics, corridors=corridors, duration_seconds=duration_seconds
-        )
-
-        # Build structured evidence response with consistent internal scale [0.0 - 1.0]
-        response = TrafficEvidenceResponse(
-            source=SourceInfo(
-                type="simulation",
-                engine="SUMO",
-                synthetic=True,
-                network=os.path.basename(self.network_path),
-            ),
-            location=location or "Narayanguda, Hyderabad",
-            scenario=clean_scenario,
-            status="completed",
-            seed=seed,
-            metrics=metrics,
-            metadata=metadata,
-            observations=observations,
-            bottlenecks=bottlenecks,
-            candidate_interventions=candidate_interventions,
-            trade_offs=trade_offs,
-            active_vehicles=metrics.active_vehicles,
-            peak_active_vehicles=metrics.peak_active_vehicles,
-            total_vehicles=metrics.total_vehicles,
-            average_speed_kmh=metrics.average_speed_kmh,
-            average_delay_sec=metrics.average_delay_sec,
-            average_waiting_time_sec=metrics.average_waiting_time_sec,
-            congestion_index=metrics.congestion_index,
-            timestamp=now_utc,
-            corridors=corridors,
-            hourly_data=hourly_data,
-            sensors=sensors,
-        )
-
-        self._cache[cache_key] = response
-        return response
-
-    @staticmethod
-    def _generate_compatible_hourly_data(
-        metrics: SimulationMetrics, duration_seconds: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Derived presentation data: Synthesizes a 24-hour diurnal profile curve anchored
-        on the measured simulation speed. Scaled using actual duration_seconds.
-        Not to be interpreted as real historical multi-day sensor telemetry.
-        If no speed observations exist (metrics.average_speed_kmh is None), preserves
-        None rather than fabricating a default speed.
-        """
-        base_speed = metrics.average_speed_kmh
-        scale_factor = 3600.0 / max(1.0, float(duration_seconds))
-        data = []
-        for h in range(24):
-            if base_speed is not None:
-                factor = 1.3 if (h <= 5 or h >= 22) else (0.75 if (8 <= h <= 10 or 17 <= h <= 19) else 1.0)
-                spd = round(max(8.0, min(55.0, base_speed * factor)), 1)
-                vol = int(round(metrics.total_vehicles * scale_factor * (1.6 if factor < 1.0 else 0.4)))
-            else:
-                spd = None
-                vol = 0
-            data.append({"h": f"{h:02d}:00", "speed": spd, "volume": vol})
-        return data
-
-    @staticmethod
-    def _generate_compatible_sensors(
-        corridors: List[Dict[str, Any]], metrics: SimulationMetrics, duration_seconds: int
-    ) -> List[Dict[str, Any]]:
-        """
-        Derived presentation data: Maps corridor simulation performance into junction sensor format
-        for the dashboard UI table. Preserves NO_DATA status when a corridor has no observations.
-
-        NOTE: `occ` is a legacy/derived UI compatibility field populated from corridor congestion
-        percentage; it is NOT measured SUMO occupancy and must NOT be interpreted as real sensor occupancy.
-        When a corridor has no vehicle observations (status = 'NO_DATA'), `occ` is set to None.
-        """
-        scale_factor = 3600.0 / max(1.0, float(duration_seconds))
-        sensors = []
-        for idx, c in enumerate(corridors):
-            avg_spd = c["avg_speed"]
-            vol = int(metrics.total_vehicles * scale_factor // max(1, len(corridors))) if metrics.total_vehicles else 0
-            # occ is derived from corridor congestion percentage; preserves None on NO_DATA
-            occ = round(min(98.0, c["value"]), 1) if c["value"] is not None else None
-            sensors.append({
-                "id": f"SENSOR_0{idx + 1}",
-                "name": c["name"],
-                "speed": avg_spd,
-                "volume": vol,
-                "occ": occ,
-                "congestion": c["status"],
-            })
-        return sensors
-
-    def analyze_traffic_conditions(
-        self,
-        metrics: SimulationMetrics,
-        corridors: List[Dict[str, Any]],
-        duration_seconds: int = 120,
-    ) -> Tuple[
-        TrafficObservations,
-        List[BottleneckInfo],
-        List[CandidateIntervention],
-        List[PotentialTradeOff],
-    ]:
-        """
-        Analyzes empirical SUMO simulation observations, diagnoses corridor bottlenecks dynamically,
-        generates structured candidate interventions across categories, and identifies potential trade-offs.
-        """
+        # 4. Construct TrafficObservations
+        # Note: TomTom Flow Segment measures speed, free-flow speed, and travel time delay (flow.delay_seconds).
+        # It does NOT measure intersection waiting time (stopped vehicles) or vehicle counts.
         observations = TrafficObservations(
-            network_average_speed_kmh=metrics.average_speed_kmh,
-            average_delay_sec=metrics.average_delay_sec,
-            average_waiting_time_sec=metrics.average_waiting_time_sec,
-            congestion_index=metrics.congestion_index,
-            total_vehicles=metrics.total_vehicles,
-            throughput=metrics.throughput,
-            max_halting_vehicles=metrics.max_halting_vehicles,
-            teleported_vehicles=metrics.teleported_vehicles,
-            active_vehicles=metrics.active_vehicles,
-            peak_active_vehicles=metrics.peak_active_vehicles,
-            free_flow_speed_kmh=metrics.free_flow_speed_kmh,
+            network_average_speed_kmh=flow.current_speed,
+            average_delay_sec=float(flow.delay_seconds),
+            average_waiting_time_sec=None,  # Not directly measured by TomTom flow segments
+            congestion_index=flow.congestion_ratio,
+            free_flow_speed_kmh=flow.free_flow_speed,
+            total_vehicles=None,
+            throughput=None,
+            active_vehicles=None,
         )
 
+        # 5. Build Corridor Metrics
+        corridors: List[CorridorMetric] = [
+            CorridorMetric(
+                id=f"cor_{loc.slug}",
+                name=f"{loc.name} Main Corridor",
+                avg_speed=flow.current_speed,
+                status=flow.status.upper(),
+                value=round(flow.congestion_ratio * 100.0, 1),
+                color="#E5483F" if flow.congestion_ratio > 0.4 else ("#F4A62A" if flow.congestion_ratio > 0.2 else "#22C55E"),
+            )
+        ]
+
+        # 6. Build Bottlenecks if congested
         bottlenecks: List[BottleneckInfo] = []
-        valid_corrs = [c for c in corridors if c.get("avg_speed") is not None]
-
-        # 1. Evidence-Based Bottleneck Detection
-        if valid_corrs:
-            congested = [c for c in valid_corrs if c.get("status") in ("CRITICAL", "HEAVY")]
-            if congested:
-                for c in congested:
-                    spd = c["avg_speed"]
-                    deficit = (
-                        round(((metrics.average_speed_kmh - spd) / metrics.average_speed_kmh) * 100, 1)
-                        if metrics.average_speed_kmh and metrics.average_speed_kmh > 0
-                        else None
-                    )
-                    bottlenecks.append(
-                        BottleneckInfo(
-                            corridor=c["name"],
-                            corridor_id=c.get("id"),
-                            severity=c.get("status", "HEAVY"),
-                            reason=f"Severe speed degradation on {c['name']} ({spd} km/h, status: {c.get('status')})",
-                            evidence=BottleneckEvidence(
-                                speed_kmh=spd,
-                                network_average_speed_kmh=metrics.average_speed_kmh,
-                                speed_deficit_pct=deficit,
-                                delay_sec=metrics.average_delay_sec,
-                                waiting_time_sec=metrics.average_waiting_time_sec,
-                                congestion_index=metrics.congestion_index,
-                                halting_vehicles=metrics.max_halting_vehicles,
-                            ),
-                        )
-                    )
-            else:
-                # Dynamically diagnose the lowest observed-speed corridor
-                slowest = min(valid_corrs, key=lambda c: c["avg_speed"])
-                spd = slowest["avg_speed"]
-                deficit = (
-                    round(((metrics.average_speed_kmh - spd) / metrics.average_speed_kmh) * 100, 1)
-                    if metrics.average_speed_kmh and metrics.average_speed_kmh > 0
-                    else None
-                )
-                bottlenecks.append(
-                    BottleneckInfo(
-                        corridor=slowest["name"],
-                        corridor_id=slowest.get("id"),
-                        severity="MODERATE" if spd >= 22.0 else "HEAVY",
-                        reason=f"Lowest observed-speed corridor ({spd} km/h vs network average {metrics.average_speed_kmh or 'N/A'} km/h)",
-                        evidence=BottleneckEvidence(
-                            speed_kmh=spd,
-                            network_average_speed_kmh=metrics.average_speed_kmh,
-                            speed_deficit_pct=deficit,
-                            delay_sec=metrics.average_delay_sec,
-                            waiting_time_sec=metrics.average_waiting_time_sec,
-                            congestion_index=metrics.congestion_index,
-                            halting_vehicles=metrics.max_halting_vehicles,
-                        ),
-                    )
-                )
-
-        if metrics.teleported_vehicles and metrics.teleported_vehicles > 0:
+        if flow.congestion_ratio >= 0.20:
+            severity = "CRITICAL" if flow.congestion_ratio >= 0.50 else ("HEAVY" if flow.congestion_ratio >= 0.35 else "MODERATE")
+            deficit_pct = round(max(0.0, (1.0 - flow.current_speed / max(1.0, flow.free_flow_speed)) * 100.0), 1)
             bottlenecks.append(
                 BottleneckInfo(
-                    corridor="Narayanguda Network Junction",
-                    corridor_id="NET_GRIDLOCK",
-                    severity="CRITICAL",
-                    reason=f"{metrics.teleported_vehicles} vehicles encountered gridlock teleportation timeout",
+                    corridor=f"{loc.name} Arterial",
+                    corridor_id=f"cor_{loc.slug}",
+                    severity=severity,
+                    reason=f"Live TomTom speed is {flow.current_speed:.1f} km/h compared to free-flow {flow.free_flow_speed:.1f} km/h (delay +{flow.delay_seconds}s).",
                     evidence=BottleneckEvidence(
-                        speed_kmh=metrics.average_speed_kmh,
-                        network_average_speed_kmh=metrics.average_speed_kmh,
-                        delay_sec=metrics.average_delay_sec,
-                        congestion_index=metrics.congestion_index,
-                        halting_vehicles=metrics.max_halting_vehicles,
+                        speed_kmh=flow.current_speed,
+                        network_average_speed_kmh=flow.free_flow_speed,
+                        speed_deficit_pct=deficit_pct,
+                        delay_sec=float(flow.delay_seconds),
+                        waiting_time_sec=None,  # Not measured by TomTom flow segments
+                        congestion_index=flow.congestion_ratio,
                     ),
                 )
             )
 
-        candidates: List[CandidateIntervention] = []
+        # 7. Candidate Interventions (domain options testable via SUMO simulation agent)
+        candidate_interventions: List[CandidateIntervention] = []
         trade_offs: List[PotentialTradeOff] = []
-
-        if not valid_corrs:
-            return observations, bottlenecks, candidates, trade_offs
-
-        primary_target_name = bottlenecks[0].corridor if bottlenecks else valid_corrs[0]["name"]
-        target_dir = "Westbound"
-        for d in ["Westbound", "Southbound", "Northbound", "Eastbound"]:
-            if d.lower() in primary_target_name.lower():
-                target_dir = d
-                break
-
-        target_spd = bottlenecks[0].evidence.speed_kmh if bottlenecks and bottlenecks[0].evidence.speed_kmh is not None else 35.0
-        opposing_map = {
-            "Westbound": "Southbound",
-            "Southbound": "Westbound",
-            "Northbound": "Southbound",
-            "Eastbound": "Westbound",
-        }
-        opposing_dir = opposing_map.get(target_dir, "Southbound")
-
-        # Category 1: Signal Timing (Executable)
-        candidates.append(
-            CandidateIntervention(
-                type="signal_timing",
-                target=target_dir,
-                parameters={
-                    "green_time_adjustment_sec": 10.0,
-                    "min_green_sec": 10.0,
-                    "max_green_sec": 60.0,
-                    "cycle_sec": 120,
-                },
-                reason=f"Empirical baseline identifies {target_dir} as lowest observed-speed corridor ({target_spd} km/h). Moderate green extension clears accumulated queues while limiting opposing phase degradation.",
-                evidence=[
-                    f"Corridor speed: {target_spd} km/h",
-                    f"Network average speed: {metrics.average_speed_kmh or 'N/A'} km/h",
-                    f"Average vehicle delay: {metrics.average_delay_sec or 0.0}s",
-                ],
-                executable=True,
-                execution_notes="Executable in real SUMO microsimulation via TraCI dynamic TLS in-memory program modification.",
-                potential_benefit=f"Increases green split for {target_dir}, improving progression speed and clearing queues.",
-                potential_tradeoff=f"Reduces green allocation for conflicting/opposing phase ({opposing_dir}), potentially increasing queue delay.",
-            )
-        )
-
-        candidates.append(
-            CandidateIntervention(
-                type="signal_timing",
-                target=target_dir,
-                parameters={
-                    "green_time_adjustment_sec": 19.0,
-                    "min_green_sec": 10.0,
-                    "max_green_sec": 60.0,
-                    "cycle_sec": 120,
-                },
-                reason=f"Aggressive green extension for {target_dir} to maximize bottleneck throughput during peak directional demand.",
-                evidence=[
-                    f"Corridor speed: {target_spd} km/h",
-                    f"Network congestion index: {metrics.congestion_index or 0.0}",
-                ],
-                executable=True,
-                execution_notes="Executable in real SUMO microsimulation via TraCI dynamic TLS in-memory program modification.",
-                potential_benefit=f"Maximizes queue discharge on {target_dir} approach.",
-                potential_tradeoff=f"Significant green time penalty on opposing phase ({opposing_dir}), risking secondary queue spillback.",
-            )
-        )
-
-        # Category 2: Rerouting (Executable in real SUMO via TraCI)
-        candidates.append(
-            CandidateIntervention(
-                type="rerouting",
-                target=target_dir,
-                parameters={
-                    "diversion_fraction": 0.15,
-                    "reroute_mode": "alternative_route",
-                    "alternative_arterial": "Perimeter Ring Corridor",
-                },
-                reason=f"Diverting a fraction of traffic destined for {target_dir} upstream prevents bottleneck oversaturation.",
-                evidence=[f"Corridor volume concentration on {target_dir}"],
-                executable=True,
-                execution_notes="Executable in real SUMO microsimulation via TraCI dynamic route re-assignment and network alternative path selection.",
-                potential_benefit=f"Directly reduces vehicle arrival rate entering the {target_dir} bottleneck corridor.",
-                potential_tradeoff="May shift congestion onto secondary perimeter streets and increase trip circuity.",
-            )
-        )
-
-        # Category 3: Lane Use (Candidate-Only, executable=False)
-        candidates.append(
-            CandidateIntervention(
-                type="lane_use",
-                target=f"{target_dir} Approach",
-                parameters={
-                    "reversible_lane": True,
-                    "dynamic_lane_allocation": "inbound_priority",
-                },
-                reason=f"Temporarily reassigning an opposing lane to {target_dir} increases corridor capacity during directional peak.",
-                evidence=[f"Directional imbalance: {target_dir} speed {target_spd} km/h vs opposing corridors"],
-                executable=False,
-                execution_notes="Fixed OSM multi-lane geometry in narayanguda_network.net.xml does not currently support dynamic TraCI reversible lane switching without modifying the base network.",
-                potential_benefit=f"Expands physical lane capacity on the congested {target_dir} corridor.",
-                potential_tradeoff=f"Reduces opposing {opposing_dir} lane capacity and requires physical or dynamic gantry signage.",
-            )
-        )
-
-        # Category 4: Incident Response (Candidate-Only, executable=False)
-        candidates.append(
-            CandidateIntervention(
-                type="incident_response",
-                target=f"{target_dir} Corridor",
-                parameters={
-                    "speed_harmonization_kmh": 30.0,
-                    "rapid_clearance_protocol": True,
-                },
-                reason="Deploy rapid roadside clearance and upstream variable speed warnings to prevent shockwave propagation.",
-                evidence=[
-                    f"Peak halting vehicles: {metrics.max_halting_vehicles or 0}",
-                    f"Average delay: {metrics.average_delay_sec or 0.0}s",
-                ],
-                executable=False,
-                execution_notes="Incident response requires dynamic obstruction injection or lane closure via TraCI, maintained as candidate specification.",
-                potential_benefit="Quickly restores nominal roadway capacity following obstructions or halts.",
-                potential_tradeoff="Upstream speed harmonization slightly increases travel time for free-flowing vehicles.",
-            )
-        )
-
-        # 3. Derive potential trade-offs
-        trade_offs.append(
-            PotentialTradeOff(
-                intervention="signal_timing",
-                target=target_dir,
-                potential_benefit=f"Extends green duration to clear queued vehicles on {target_dir}",
-                potential_tradeoff=f"Reduces cycle split and increases delay for conflicting {opposing_dir} movements",
-                affected_corridors=[opposing_dir, "Cross movements at Narayanguda junction"],
-            )
-        )
-        trade_offs.append(
-            PotentialTradeOff(
-                intervention="rerouting",
-                target=target_dir,
-                potential_benefit=f"Lowers incoming traffic volume on {target_dir}",
-                potential_tradeoff="Transfers delay and vehicle volume to secondary diversion routes",
-                affected_corridors=["Perimeter corridors", "Secondary connectors"],
-            )
-        )
-        trade_offs.append(
-            PotentialTradeOff(
-                intervention="lane_use",
-                target=target_dir,
-                potential_benefit=f"Increases number of active travel lanes for {target_dir}",
-                potential_tradeoff=f"Reduces travel lanes in opposing direction ({opposing_dir}), creating reverse bottleneck",
-                affected_corridors=[opposing_dir],
-            )
-        )
-
-        return observations, bottlenecks, candidates, trade_offs
-
-    @staticmethod
-    def validate_signal_timing(
-        intersection_id: Optional[str] = None,
-        target_corridor: Optional[str] = "Westbound",
-        green_adjustment: float = 15.0,
-        cycle_sec: int = 120,
-    ) -> SignalOptimizationResponse:
-        """
-        Defensive parameter validation and candidate generator for signal optimization.
-        Enforces safety bounds (min green >= 10s, max adjustment <= 45s, cycle 30-240s).
-        """
-        tls_id = intersection_id or "cluster_308783170_3158879059_3217073805_4433969588"
-        target = target_corridor or "Westbound"
-
-        if not (1.0 <= green_adjustment <= 45.0):
-            raise ValueError(f"Green time adjustment {green_adjustment}s outside safe range [1.0, 45.0]s")
-        if not (30 <= cycle_sec <= 240):
-            raise ValueError(f"Cycle duration {cycle_sec}s outside safe range [30, 240]s")
-
-        candidates = [
-            SignalOptimizationCandidate(
-                intersection_id=tls_id,
-                target_corridor=target,
-                green_time_adjustment_sec=5.0,
-                min_green_sec=10.0,
-                max_green_sec=60.0,
-                cycle_sec=cycle_sec,
-                executable=True,
-                rationale="Conservative green extension (+5s) for slight queue clearance with minimal cross-street impact.",
-            ),
-            SignalOptimizationCandidate(
-                intersection_id=tls_id,
-                target_corridor=target,
-                green_time_adjustment_sec=10.0,
-                min_green_sec=10.0,
-                max_green_sec=60.0,
-                cycle_sec=cycle_sec,
-                executable=True,
-                rationale="Balanced green extension (+10s) clearing peak queues while maintaining opposing corridor stability.",
-            ),
-            SignalOptimizationCandidate(
-                intersection_id=tls_id,
-                target_corridor=target,
-                green_time_adjustment_sec=15.0,
-                min_green_sec=10.0,
-                max_green_sec=60.0,
-                cycle_sec=cycle_sec,
-                executable=True,
-                rationale="Moderate-high green extension (+15s) for significant bottleneck relief.",
-            ),
-        ]
-
-        if green_adjustment not in [5.0, 10.0, 15.0]:
-            candidates.append(
-                SignalOptimizationCandidate(
-                    intersection_id=tls_id,
-                    target_corridor=target,
-                    green_time_adjustment_sec=round(green_adjustment, 1),
-                    min_green_sec=10.0,
-                    max_green_sec=60.0,
-                    cycle_sec=cycle_sec,
+        if bottlenecks:
+            candidate_interventions.append(
+                CandidateIntervention(
+                    type="signal_timing",
+                    target=loc.name,
+                    parameters={"green_time_adjustment_sec": 15.0},
+                    reason=f"Extend green phase on {loc.name} arterial to clear queue build-up.",
+                    evidence=[f"Current TomTom speed: {flow.current_speed} km/h (free-flow: {flow.free_flow_speed} km/h)"],
                     executable=True,
-                    rationale=f"Custom requested green extension (+{green_adjustment}s) validated within safe bounds.",
+                    execution_notes=f"Can be validated in Eclipse SUMO on the authentic {loc.name} network.",
+                    potential_benefit=f"Design hypothesis for queue reduction on {loc.name} arterial. Must be verified in SUMO simulation.",
+                    potential_tradeoff="Possible secondary delay on intersecting cross-streets.",
+                )
+            )
+            candidate_interventions.append(
+                CandidateIntervention(
+                    type="rerouting",
+                    target=loc.name,
+                    parameters={"diversion_fraction": 0.15, "reroute_mode": "alternative_route"},
+                    reason=f"Divert fraction of through-traffic from {loc.name} onto parallel arterials.",
+                    evidence=[f"Observed congestion ratio {flow.congestion_ratio:.2f}"],
+                    executable=True,
+                    execution_notes="Testable in SUMO microsimulation.",
+                    potential_benefit="Design hypothesis to reduce mainline volume. Requires SUMO simulation to assess network-wide diversion impact.",
+                    potential_tradeoff="Adds volume to neighboring secondary roads.",
+                )
+            )
+            trade_offs.append(
+                PotentialTradeOff(
+                    intervention="signal_timing",
+                    target=loc.name,
+                    potential_benefit="Green extension clears mainline queue.",
+                    potential_tradeoff="May slightly increase wait times on cross-street traffic.",
+                    affected_corridors=["Cross-street approach"],
                 )
             )
 
-        now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        return SignalOptimizationResponse(
-            status="CANDIDATES_GENERATED",
-            intersection_id=tls_id,
-            target_corridor=target,
-            candidates=candidates,
-            validation_status="VALID",
-            timestamp=now_utc,
-            message=f"Generated {len(candidates)} bounded signal timing candidates for {target} at {tls_id}.",
+        # 8. Source Provenance
+        source_info = SourceInfo(
+            type="observed",
+            engine="TomTom",
+            provider="tomtom",
+            synthetic=False,
+            disclaimer="Real-time live traffic telemetry observed from TomTom Flow Segment & Incidents API.",
+        )
+
+        # For live observed TomTom telemetry, do NOT fabricate simulation metadata (seed, duration, net.xml)
+        metadata = None
+
+        return TrafficEvidenceResponse(
+            source=source_info,
+            location=loc.name,
+            scenario="live_observed",
+            status="completed",
+            metadata=metadata,
+            data_source="tomtom_traffic_api",
+            source_type="observed",
+            source_provider="tomtom",
+            current_speed_kmh=flow.current_speed,
+            free_flow_speed_kmh=flow.free_flow_speed,
+            current_travel_time_sec=flow.current_travel_time,
+            free_flow_travel_time_sec=flow.free_flow_travel_time,
+            delay_seconds=flow.delay_seconds,
+            congestion_ratio=flow.congestion_ratio,
+            confidence=flow.confidence,
+            road_closure=flow.road_closure,
+            average_speed_kmh=flow.current_speed,
+            average_delay_sec=float(flow.delay_seconds),
+            average_waiting_time_sec=None,  # Not measured by TomTom flow segments
+            congestion_index=flow.congestion_ratio,
+            timestamp=now_iso,
+            observations=observations,
+            corridors=[c.model_dump() for c in corridors],
+            bottlenecks=bottlenecks,
+            candidate_interventions=candidate_interventions,
+            trade_offs=trade_offs,
+        )
+
+    def analyze_traffic(self, req: TrafficAnalyzeRequest) -> TrafficEvidenceResponse:
+        """Fulfills diagnostic traffic analysis requests using real-time TomTom data."""
+        return self.get_traffic_kpis(
+            location=req.location,
+            query_text=getattr(req, "objective", None),
+            scenario=req.scenario or "live_observed",
+            duration_seconds=req.duration_seconds or 120,
+            seed=req.seed,
+            purpose=req.purpose or "traffic_analysis",
+            force_fresh=req.force_fresh or False,
         )
 
 
-_service_instance: Optional[TrafficService] = None
-
+_default_traffic_service: Optional[TrafficService] = None
 
 def get_traffic_service() -> TrafficService:
-    global _service_instance
-    if _service_instance is None:
-        _service_instance = TrafficService()
-    return _service_instance
+    global _default_traffic_service
+    if _default_traffic_service is None:
+        _default_traffic_service = TrafficService()
+    return _default_traffic_service

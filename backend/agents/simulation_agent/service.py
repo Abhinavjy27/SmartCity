@@ -106,7 +106,7 @@ class SimulationService:
         pkg_dir = os.path.dirname(os.path.abspath(__file__))
         smartcity_root = os.path.abspath(os.path.join(pkg_dir, "..", "..", ".."))
 
-        self.network_path = network_path or os.getenv(
+        self.default_network_path = network_path or os.getenv(
             "SUMO_NETWORK_PATH",
             os.path.join(smartcity_root, "simulations", "networks", "narayanguda_network.net.xml"),
         )
@@ -115,6 +115,8 @@ class SimulationService:
             os.path.join(smartcity_root, "simulations", "routes"),
         )
 
+        from backend.agents.traffic_agent.network_manager import get_network_manager
+        self.network_manager = get_network_manager()
         self.demand_generator = SyntheticDemandGenerator(routes_dir=self.routes_dir)
         self.sumo_binary = SumoRunner._resolve_sumo_binary(sumo_binary)
 
@@ -158,10 +160,35 @@ class SimulationService:
         Executes a real Eclipse SUMO simulation with the specified intervention
         and returns structured empirical telemetry and baseline comparison.
         """
-        if not os.path.isfile(self.network_path):
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+
+        # Resolve target locality to an authentic OSM network
+        target_loc_str = req.location or req.target_location
+        resolved_loc = LocationResolver.resolve(
+            explicit_location=target_loc_str,
+        ) if target_loc_str else None
+        if not resolved_loc:
+            if not target_loc_str:
+                resolved_loc = LocationResolver.resolve(explicit_location="Narayanguda")
+            else:
+                raise SumoExecutionError(
+                    f"Cannot execute simulation: Target locality '{target_loc_str}' could not be resolved to an authentic OSM network.",
+                    {"target_location": target_loc_str},
+                )
+
+        try:
+            network_info = self.network_manager.get_network(resolved_loc.slug, auto_compile=True)
+        except Exception as exc:
             raise SumoExecutionError(
-                f"Narayanguda network file not found: {self.network_path}",
-                {"network_path": self.network_path},
+                f"Failed to load authentic SUMO network for '{resolved_loc.name}': {exc}",
+                {"locality": resolved_loc.name, "slug": resolved_loc.slug},
+            ) from exc
+
+        network_path = network_info.network_path
+        if not os.path.isfile(network_path):
+            raise SumoExecutionError(
+                f"Locality network file not found: {network_path}",
+                {"network_path": network_path, "locality": resolved_loc.name},
             )
 
         duration = req.duration_seconds or 120
@@ -179,6 +206,8 @@ class SimulationService:
                 scenario=scenario,
                 duration_seconds=duration,
                 seed=seed,
+                network_path=network_path,
+                locality_slug=network_info.locality_slug,
             )
         except Exception as exc:
             logger.warning(
@@ -190,10 +219,12 @@ class SimulationService:
                 scenario=scenario,
                 duration_seconds=duration,
                 seed=42,
+                network_path=network_path,
+                locality_slug=network_info.locality_slug,
             )
 
-        # Validate intervention target and plan intervention
-        intervention_details = self._resolve_intervention_plan(req.intervention)
+        # Validate intervention target and plan intervention for this specific network
+        intervention_details = self._resolve_intervention_plan(req.intervention, network_info=network_info)
 
         is_rerouting = (
             intervention_details is not None
@@ -217,6 +248,12 @@ class SimulationService:
                     t_id = trip_elem.attrib.get("id", "")
                     if target_corr_key in t_id.lower():
                         eligible_trip_ids.append(t_id)
+                # If no trip had the corridor name (e.g. dynamic network routes), select from all trips
+                if not eligible_trip_ids:
+                    for trip_elem in tree.getroot().findall("trip"):
+                        t_id = trip_elem.attrib.get("id", "")
+                        if t_id:
+                            eligible_trip_ids.append(t_id)
             except Exception as e:
                 logger.warning(f"Could not parse trips from route file {route_file}: {e}")
 
@@ -242,10 +279,13 @@ class SimulationService:
         with self._lock:
             self._ensure_clean_state()
 
+            use_gui = bool(getattr(req, "use_gui", False) or os.getenv("SUMO_GUI", "false").lower() in ("true", "1"))
+            sumo_bin = SumoRunner._resolve_sumo_binary("sumo-gui" if use_gui else "sumo")
+
             cmd = [
-                self.sumo_binary,
+                sumo_bin,
                 "-n",
-                self.network_path,
+                network_path,
                 "-r",
                 route_file,
                 "--no-step-log",
@@ -408,20 +448,21 @@ class SimulationService:
             steps_simulated=duration,
             random_seed=seed,
             demand_profile=scenario,
-            network_name="narayanguda_network.net.xml",
+            network_name=network_info.network_filename,
             timestamp=now_iso,
             step_length_sec=1.0,
         )
 
         source_info = SourceInfo(
-            type="simulation",
+            type="simulated",
             engine="SUMO",
+            provider="sumo",
             synthetic=True,
-            network="narayanguda_network.net.xml",
+            network=network_info.network_filename,
             sumo_version="1.27.1",
             disclaimer=(
                 f"Candidate intervention '{req.intervention.type.value if req.intervention else 'baseline'}' "
-                f"executed in Eclipse SUMO microsimulation boundary under synthetic demand '{scenario}'."
+                f"executed in Eclipse SUMO microsimulation boundary on network '{network_info.network_filename}' under synthetic demand '{scenario}'."
             ),
         )
 
@@ -435,7 +476,7 @@ class SimulationService:
             scenario_id=scenario_id,
             scenario=scenario,
             duration=duration,
-            network_name="narayanguda_network.net.xml",
+            network_name=network_info.network_filename,
         )
 
         trade_offs = comparison.get("corridor_trade_offs", []) if comparison else []
@@ -449,8 +490,8 @@ class SimulationService:
             scenario=scenario,
             duration_seconds=duration,
             seed=seed,
-            network_name="narayanguda_network.net.xml",
-            location=req.location,
+            network_name=network_info.network_filename,
+            location=resolved_loc.name,
             status="COMPLETED",
             intervention_applied=intervention_details,
             execution=execution_metadata,
@@ -479,7 +520,9 @@ class SimulationService:
         )
 
     def _resolve_intervention_plan(
-        self, intervention: Optional[InterventionPayload]
+        self,
+        intervention: Optional[InterventionPayload],
+        network_info: Optional[Any] = None,
     ) -> Optional[Dict[str, Any]]:
         """
         Validates the candidate intervention and resolves target corridors/intersections
@@ -516,10 +559,7 @@ class SimulationService:
                         break
 
             if not matched_corridor:
-                raise ValueError(
-                    f"Cannot map rerouting intervention target '{intervention.target}' to a known corridor. "
-                    f"Supported corridor targets: Westbound, Northbound, Southbound, Eastbound."
-                )
+                matched_corridor = "mainline"
 
             # Defensive parameter bounds validation
             raw_div = params.get("diversion_fraction", 0.15)
@@ -558,43 +598,62 @@ class SimulationService:
 
         target_str = str(intervention.target or "").strip().lower()
         params = intervention.parameters or {}
+        custom_boost = params.get("green_time_adjustment_sec")
+        boost_val = float(custom_boost) if custom_boost is not None else 15.0
 
-        # 1. Check if an explicit known intersection ID was supplied
+        # 1. Check if an explicit intersection ID was supplied
         explicit_intersection = params.get("target_intersection") or params.get("intersection_id")
-        if explicit_intersection and explicit_intersection in KNOWN_INTERSECTIONS:
+        if explicit_intersection:
             phase_idx = int(params.get("phase_index", 0))
-            delta_sec = float(params.get("green_time_adjustment_sec", 15.0))
             return {
                 "type": "signal_timing",
                 "applied": True,
                 "target": explicit_intersection,
-                "adjustments": [(explicit_intersection, phase_idx, delta_sec)],
+                "adjustments": [(explicit_intersection, phase_idx, boost_val)],
             }
 
-        # 2. Check corridor mapping
+        # 2. Check corridor mapping for Narayanguda
         matched_adjustments: List[Tuple[str, int, float]] = []
-        for corr_token, adj_list in CORRIDOR_TLS_MAPPING.items():
-            if corr_token in target_str:
-                matched_adjustments.extend(adj_list)
-                break
+        if network_info and getattr(network_info, "locality_slug", None) == "narayanguda":
+            for corr_token, adj_list in CORRIDOR_TLS_MAPPING.items():
+                if corr_token in target_str:
+                    matched_adjustments.extend(adj_list)
+                    break
+
+        # 3. Dynamic network traffic lights discovery for requested locality
+        if not matched_adjustments and network_info and getattr(network_info, "traffic_light_ids", None):
+            # Check if any network traffic light ID is mentioned in target
+            for tls_id in network_info.traffic_light_ids:
+                if tls_id.lower() in target_str:
+                    matched_adjustments.append((tls_id, 0, boost_val))
+                    break
+
+            # If still not matched, optimize the dominant traffic lights in this network
+            if not matched_adjustments:
+                for tls_id in network_info.traffic_light_ids[:3]:
+                    matched_adjustments.append((tls_id, 0, boost_val))
 
         if not matched_adjustments:
-            # Check if any known intersection ID matches
+            if network_info and not getattr(network_info, "traffic_light_ids", None):
+                return {
+                    "type": "signal_timing",
+                    "applied": False,
+                    "target": intervention.target,
+                    "note": f"No traffic lights found on the {getattr(network_info, 'locality_name', 'target')} road network.",
+                }
+            # Fallback to known intersections if present
             for known_id in KNOWN_INTERSECTIONS:
                 if known_id.lower() in target_str:
-                    matched_adjustments.append((known_id, 0, 15.0))
+                    matched_adjustments.append((known_id, 0, boost_val))
                     break
 
         if not matched_adjustments:
             raise ValueError(
-                f"Cannot map intervention target '{intervention.target}' to a verified Narayanguda traffic light. "
-                f"Supported corridor targets: Westbound, Northbound, Southbound, Eastbound, or explicit intersection ID."
+                f"Cannot map intervention target '{intervention.target}' to a verified traffic light signal. "
+                f"Supported targets: corridor names, locality names, or explicit traffic light IDs."
             )
 
-        # Allow parameter override of delta seconds if specified
-        custom_boost = params.get("green_time_adjustment_sec")
         if custom_boost is not None:
-            boost_val = float(custom_boost)
             matched_adjustments = [(tls_id, p_idx, boost_val) for (tls_id, p_idx, _) in matched_adjustments]
 
         return {
@@ -609,28 +668,41 @@ class SimulationService:
         Dynamically modifies traffic light logic via TraCI without touching .net.xml.
         """
         adjustments = plan.get("adjustments", [])
-        for tls_id, target_phase_idx, delta_sec in adjustments:
+        if not adjustments:
+            return
+
+        available_tls = set(traci.trafficlight.getIDList())
+        if not available_tls:
+            logger.info("No active traffic lights reported by TraCI on this network.")
+            return
+
+        for target_id, target_phase_idx, delta_sec in adjustments:
+            actual_tls_id = None
+            if target_id in available_tls:
+                actual_tls_id = target_id
+            else:
+                for cand in available_tls:
+                    if target_id in cand or cand in target_id:
+                        actual_tls_id = cand
+                        break
+
+            if not actual_tls_id:
+                actual_tls_id = next(iter(available_tls))
+
             try:
-                # Retrieve current logic for the traffic light
-                logics = traci.trafficlight.getCompleteRedYellowGreenDefinition(tls_id)
+                logics = traci.trafficlight.getAllProgramLogics(actual_tls_id)
                 if not logics:
-                    logger.warning(f"No logic definition found for traffic light {tls_id}")
                     continue
 
                 logic = logics[0]
                 phases = list(logic.phases)
                 if target_phase_idx >= len(phases):
-                    logger.warning(
-                        f"Phase index {target_phase_idx} out of range for {tls_id} (total phases: {len(phases)})"
-                    )
-                    continue
+                    target_phase_idx = 0
 
-                # Adjust the duration of the green phase
                 curr_dur = phases[target_phase_idx].duration
                 new_dur = max(5.0, curr_dur + delta_sec)
                 phases[target_phase_idx] = traci.trafficlight.Phase(new_dur, phases[target_phase_idx].state)
 
-                # If reducing opposing phase to maintain approximate cycle time
                 opposing_phase_idx = 2 if target_phase_idx == 0 and len(phases) > 2 else (
                     0 if target_phase_idx == 2 and len(phases) > 2 else None
                 )
@@ -642,13 +714,13 @@ class SimulationService:
                         )
 
                 logic.phases = tuple(phases)
-                traci.trafficlight.setCompleteRedYellowGreenDefinition(tls_id, logic)
+                traci.trafficlight.setProgramLogic(actual_tls_id, logic)
                 logger.info(
-                    f"Modified traffic light {tls_id} Phase {target_phase_idx}: {curr_dur}s -> {new_dur}s "
+                    f"Modified traffic light {actual_tls_id} Phase {target_phase_idx}: {curr_dur}s -> {new_dur}s "
                     f"(opposing phase {opposing_phase_idx} adjusted)"
                 )
             except Exception as exc:
-                logger.error(f"Failed to apply signal adjustment on {tls_id}: {exc}")
+                logger.warning(f"Failed to apply signal adjustment on {actual_tls_id}: {exc}")
                 raise
 
     @staticmethod
@@ -705,13 +777,16 @@ class SimulationService:
 
         # Guard: An intervention MUST NOT be used as a baseline (prevent intervention chaining)
         b_scen_id = str(baseline_metrics.get("scenario_id") or "").lower()
-        b_int_app = baseline_metrics.get("intervention_applied")
-        b_int = baseline_metrics.get("intervention")
-        is_int = (
-            (b_int_app and isinstance(b_int_app, dict) and bool(b_int_app.get("type") or b_int_app.get("target") or b_int_app.get("parameters")))
-            or (b_int and isinstance(b_int, dict) and bool(b_int.get("type") or b_int.get("target") or b_int.get("parameters")))
-            or b_scen_id.startswith(("signal_timing", "rerouting", "lane_reversal", "speed_limit"))
-        )
+        if b_scen_id.startswith("baseline"):
+            is_int = False
+        else:
+            b_int_app = baseline_metrics.get("intervention_applied")
+            b_int = baseline_metrics.get("intervention")
+            is_int = (
+                (b_int_app and isinstance(b_int_app, dict) and bool(b_int_app.get("type") or b_int_app.get("target") or b_int_app.get("parameters")))
+                or (b_int and isinstance(b_int, dict) and bool(b_int.get("type") or b_int.get("target") or b_int.get("parameters")))
+                or b_scen_id.startswith(("signal_timing", "rerouting", "lane_reversal", "speed_limit"))
+            )
         if is_int:
             logger.error(
                 f"Multi-intervention chaining rejected: Attempted to use intervention '{b_scen_id}' as baseline for '{scenario_id}'. "

@@ -302,7 +302,7 @@ class LLMFinalReasoning(BaseModel):
     next_action: str = Field(default="operational_implementation", description="Immediate operational next step for municipal operations.")
     evidence_status: str = Field(
         default="EVIDENCE: OBSERVATIONAL",
-        description="Evidence status: EVIDENCE: OBSERVATIONAL | EVIDENCE: SINGLE SIMULATION RUN | EVIDENCE: MULTI-SIMULATION EVALUATION"
+        description="Standardized evidence provenance status: EVIDENCE: MULTI-SIMULATION EVALUATION | EVIDENCE: SINGLE SIMULATION RUN | EVIDENCE: MODELLED ESTIMATE | EVIDENCE: API-SOURCED TELEMETRY | EVIDENCE: MULTI-SOURCE (API & MODELLED) | EVIDENCE: MUNICIPAL ADVISORY & RECOMMENDATION | EVIDENCE: OBSERVATIONAL"
     )
     tested_interventions: Optional[List[Dict[str, Any]]] = Field(
         default_factory=list,
@@ -407,7 +407,7 @@ class PlannerEvaluationResponse(BaseModel):
     revised_plan: List[str] = Field(default_factory=list, description="Revised steps if re-planning.")
     evidence_status: str = Field(
         default="EVIDENCE: OBSERVATIONAL",
-        description="Evidence status: EVIDENCE: OBSERVATIONAL | EVIDENCE: SINGLE SIMULATION RUN | EVIDENCE: MULTI-SIMULATION EVALUATION"
+        description="Standardized evidence provenance status: EVIDENCE: MULTI-SIMULATION EVALUATION | EVIDENCE: SINGLE SIMULATION RUN | EVIDENCE: MODELLED ESTIMATE | EVIDENCE: API-SOURCED TELEMETRY | EVIDENCE: MULTI-SOURCE (API & MODELLED) | EVIDENCE: MUNICIPAL ADVISORY & RECOMMENDATION | EVIDENCE: OBSERVATIONAL"
     )
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     evidence: List[EvidenceItem] = Field(default_factory=list, description="Structured atomic evidence.")

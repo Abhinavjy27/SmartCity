@@ -53,7 +53,7 @@ function DonutChart({ data, total }) {
   )
 }
 
-export default function TrafficFlowCard() {
+export default function TrafficFlowCard({ timeRange = '24 HOURS' }) {
   const navigate = useNavigate()
   const [congestion, setCongestion] = useState({
     value_pct: null,
@@ -71,14 +71,22 @@ export default function TrafficFlowCard() {
   useEffect(() => {
     let isMounted = true
 
+    const getHoursFromRange = (tr) => {
+      if (tr === '1 HOUR') return 1
+      if (tr === '6 HOURS') return 6
+      if (tr === '7 DAYS') return 168
+      return 24
+    }
+
     const loadData = async () => {
       if (typeof document !== 'undefined' && document.hidden) return
 
       try {
+        const hours = getHoursFromRange(timeRange)
         const [congData, corrData, histData] = await Promise.allSettled([
           trafficApi.getCongestionIndex(),
           trafficApi.getCorridors(),
-          trafficApi.getCongestionHistory(24),
+          trafficApi.getCongestionHistory(hours),
         ])
 
         if (!isMounted) return
@@ -117,7 +125,7 @@ export default function TrafficFlowCard() {
       clearInterval(interval)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [])
+  }, [timeRange])
 
   // Derive corridor donut metrics
   const totalCorridors = corridors.length
@@ -189,7 +197,7 @@ export default function TrafficFlowCard() {
             <h3 style={{
               fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.06em',
               fontFamily: 'var(--font-mono)', color: 'var(--text-primary)',
-            }}>TRAFFIC FLOW OVERVIEW</h3>
+            }}>TRAFFIC FLOW OVERVIEW ({timeRange})</h3>
           </div>
         </div>
         <button

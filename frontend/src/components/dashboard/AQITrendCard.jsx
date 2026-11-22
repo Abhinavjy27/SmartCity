@@ -1,17 +1,90 @@
+import { useState, useEffect } from 'react'
 import { Wind, ArrowRight } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import AnimatedCounter from '../AnimatedCounter'
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine
 } from 'recharts'
+import { pollutionApi } from '../../services/api'
 
-const aqiData = Array.from({ length: 24 }, (_, i) => ({
-  time: `${i % 12 === 0 ? 12 : i % 12} ${i < 12 ? 'AM' : 'PM'}`,
-  aqi: Math.round(80 + 60 * Math.exp(-((i - 8) ** 2) / 8) + 45 * Math.exp(-((i - 20) ** 2) / 6) + (Math.random() - 0.5) * 15),
-}))
-
-export default function AQITrendCard() {
+export default function AQITrendCard({ timeRange = '24 HOURS' }) {
   const navigate = useNavigate()
+  const [aqiValue, setAqiValue] = useState(146)
+  const [category, setCategory] = useState('Moderate')
+  const [chartData, setChartData] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadAQI = async () => {
+      try {
+        const [summary, trendRes] = await Promise.allSettled([
+          pollutionApi.getAqiSummary(),
+          pollutionApi.getCurrent(),
+        ])
+
+        if (!isMounted) return
+
+        if (summary.status === 'fulfilled' && summary.value) {
+          const val = summary.value.city_avg_aqi || summary.value.aqi
+          if (val) setAqiValue(val)
+          if (summary.value.category) setCategory(summary.value.category)
+
+          if (summary.value.forecast_24h && summary.value.forecast_24h.length > 0) {
+            setChartData(summary.value.forecast_24h.map(f => ({
+              time: f.hour || f.time,
+              aqi: f.aqi,
+            })))
+          }
+        }
+
+        if (trendRes.status === 'fulfilled' && trendRes.value?.hourly && chartData.length === 0) {
+          setChartData(trendRes.value.hourly.map(h => ({
+            time: h.time || h.hour,
+            aqi: h.aqi,
+          })))
+        }
+      } catch (err) {
+        console.warn('[AQITrendCard] Failed to fetch live AQI:', err)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadAQI()
+    const timer = setInterval(loadAQI, 60000)
+    return () => {
+      isMounted = false
+      clearInterval(timer)
+    }
+  }, [])
+
+  // Sliced points based on timeRange
+  const displayData = (() => {
+    if (chartData.length === 0) {
+      // Deterministic fallback based on current live aqiValue without Math.random()
+      return Array.from({ length: 24 }, (_, i) => ({
+        time: `${i % 12 === 0 ? 12 : i % 12} ${i < 12 ? 'AM' : 'PM'}`,
+        aqi: Math.round(aqiValue * (0.8 + 0.3 * Math.sin((i - 6) * Math.PI / 12))),
+      }))
+    }
+    if (timeRange === '1 HOUR') return chartData.slice(0, 2)
+    if (timeRange === '6 HOURS') return chartData.slice(0, 6)
+    return chartData.slice(0, 24)
+  })()
+
+  const getCategoryColor = (cat) => {
+    switch (cat?.toLowerCase()) {
+      case 'good': return '#2F8F72'
+      case 'satisfactory': return '#4C9E9B'
+      case 'moderate': return '#B8860B'
+      case 'poor': return '#F4A62A'
+      case 'very poor':
+      case 'severe': return '#E5483F'
+      default: return '#B8860B'
+    }
+  }
 
   return (
     <div style={{
@@ -35,7 +108,7 @@ export default function AQITrendCard() {
             <h3 style={{
               fontSize: '0.8rem', fontWeight: 700, letterSpacing: '0.06em',
               fontFamily: 'var(--font-mono)', color: 'var(--text-primary)',
-            }}>AQI TREND (24 HOURS)</h3>
+            }}>AQI TREND ({timeRange})</h3>
           </div>
         </div>
         <button
@@ -61,23 +134,23 @@ export default function AQITrendCard() {
             fontSize: '2.4rem', fontWeight: 700, color: 'var(--text-primary)',
             fontFamily: 'var(--font-heading)', lineHeight: 1.1,
           }}>
-            <AnimatedCounter value={136} />
+            <AnimatedCounter value={aqiValue} />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
             <span style={{
               padding: '2px 10px', borderRadius: 'var(--radius-full)',
               fontSize: '0.65rem', fontWeight: 600,
-              background: 'var(--accent-energy-dim)', color: '#B8860B',
+              background: 'var(--accent-energy-dim)', color: getCategoryColor(category),
               border: '1px solid rgba(244,166,42,0.2)',
-            }}>Moderate</span>
+            }}>{category}</span>
           </div>
-          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>US AQI</div>
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '4px' }}>City-Wide AQI</div>
         </div>
 
         {/* Right - Area chart */}
         <div style={{ height: 140 }}>
           <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={aqiData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={displayData} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="aqiGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#4C9E9B" stopOpacity={0.15} />
@@ -85,7 +158,7 @@ export default function AQITrendCard() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8F9295' }} interval={3} axisLine={false} tickLine={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 9, fill: '#8F9295' }} interval={displayData.length <= 6 ? 0 : 3} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontSize: 9, fill: '#8F9295' }} axisLine={false} tickLine={false} domain={[0, 300]} />
               <ReferenceLine y={100} stroke="rgba(0,0,0,0.08)" strokeDasharray="4 4" label={{ value: '', position: 'right' }} />
               <ReferenceLine y={200} stroke="rgba(0,0,0,0.08)" strokeDasharray="4 4" />

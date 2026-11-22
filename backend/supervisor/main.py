@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import logging
 import os
+import re
 import time
 from datetime import datetime, timezone
 from enum import Enum
@@ -49,59 +50,194 @@ KNOWN_HYDERABAD_LOCALITIES = [
 ]
 
 
+CONTEXTUAL_REFERENCE_PATTERNS = [
+    r"\bthere\b",
+    r"\bsame\s+(?:location|area|corridor|place|spot|zone|intersection|junction)\b",
+    r"\bthat\s+(?:corridor|area|location|place|spot|zone|intersection|junction)\b",
+    r"\b(?:test|simulate|run)\s+(?:it|that|this)\b",
+    r"\b(?:in|at|near|around)\s+(?:that|the\s+same)\s+(?:area|corridor|location|place|spot)\b",
+    r"\baround\s+there\b",
+    r"\bnear\s+there\b",
+]
+
+
+def has_contextual_reference(text: Optional[str]) -> bool:
+    """Detect whether user query contains anaphoric references pointing to previous conversation context."""
+    if not text or not isinstance(text, str):
+        return False
+    lower = text.lower()
+    for pat in CONTEXTUAL_REFERENCE_PATTERNS:
+        if re.search(pat, lower):
+            return True
+    return False
+
+
+def extract_locality_from_history(conversation_history: Optional[List[Dict[str, Any]]]) -> Optional[str]:
+    """
+    Search conversation history turns in reverse order to find the last resolved locality.
+    Inspects:
+    1. turn.get("location")
+    2. specialist evidence in collected_results / traffic_evidence / pollution_evidence
+    3. natural language query content of user turns (e.g., 'What is the traffic in Tarnaka?')
+    """
+    if not conversation_history:
+        return None
+    from backend.agents.traffic_agent.location_resolver import LocationResolver
+
+    for turn in reversed(conversation_history):
+        if not isinstance(turn, dict):
+            continue
+
+        turn_loc = turn.get("location")
+        if turn_loc and isinstance(turn_loc, str):
+            t_norm = turn_loc.strip().lower()
+            if t_norm and t_norm not in INVALID_LOCATION_TOKENS:
+                resolved_t = LocationResolver.resolve(explicit_location=turn_loc)
+                if resolved_t:
+                    return f"{resolved_t.name}, Hyderabad" if "hyderabad" not in resolved_t.name.lower() else resolved_t.name
+                return turn_loc.strip()
+
+        for ev_key in [
+            "traffic_evidence", "trafficEvidence",
+            "pollution_evidence", "pollutionEvidence",
+            "simulation_evidence", "simulationEvidence",
+        ]:
+            ev = turn.get(ev_key)
+            if isinstance(ev, dict):
+                ev_loc = ev.get("location")
+                if ev_loc and isinstance(ev_loc, str) and ev_loc.strip().lower() not in INVALID_LOCATION_TOKENS:
+                    resolved_ev = LocationResolver.resolve(explicit_location=ev_loc)
+                    if resolved_ev:
+                        return f"{resolved_ev.name}, Hyderabad" if "hyderabad" not in resolved_ev.name.lower() else resolved_ev.name
+
+        col = turn.get("collected_results") or turn.get("agent_results") or {}
+        if isinstance(col, dict):
+            for agent_key in ["traffic", "pollution", "weather", "energy", "simulation"]:
+                agent_data = col.get(agent_key)
+                if isinstance(agent_data, dict):
+                    a_loc = agent_data.get("location")
+                    if a_loc and isinstance(a_loc, str) and a_loc.strip().lower() not in INVALID_LOCATION_TOKENS:
+                        resolved_a = LocationResolver.resolve(explicit_location=a_loc)
+                        if resolved_a:
+                            return f"{resolved_a.name}, Hyderabad" if "hyderabad" not in resolved_a.name.lower() else resolved_a.name
+                        return a_loc.strip()
+
+        content = turn.get("content") or turn.get("query")
+        if content and isinstance(content, str):
+            resolved_c = LocationResolver.resolve(query_text=content)
+            if resolved_c:
+                return f"{resolved_c.name}, Hyderabad" if "hyderabad" not in resolved_c.name.lower() else resolved_c.name
+
+    return None
+
+
 def sanitize_location(
     location: Optional[str],
     query_text: Optional[str] = None,
     conversation_history: Optional[List[Dict[str, Any]]] = None,
+    conversation_id: Optional[str] = None,
     default_location: str = "Narayanguda, Hyderabad",
 ) -> str:
     """
-    Sanitize location string following strict fallback hierarchy:
-    1. Prefer explicit, valid location parameter (if not blank/unknown/invalid).
-    2. Extract explicit known locality from query text if present.
-    3. Inherit valid location from prior conversation history turns.
-    4. Fallback to documented system default ('Narayanguda, Hyderabad').
-    Never silently resolves 'unknown' to an unrelated location.
+    Sanitize location string following strict precedence hierarchy:
+    1. Explicit locality mentioned in current query text (HIGHEST PRECEDENCE - overrides past context).
+    2. Explicit caller-provided locality parameter (if not blank/unknown/invalid and not an anaphoric query).
+    3. Conversation context:
+       - If query contains anaphoric references ('there', 'same location', 'that corridor', 'test it')
+         OR if no explicit request parameter was provided:
+         look up last resolved locality in conversation session or conversation history.
+    4. Default fallback ('Narayanguda, Hyderabad') ONLY when no context exists.
     """
-    # 1. Check explicit location argument
+    from backend.agents.traffic_agent.location_resolver import LocationResolver
+
+    # Step 1: Explicit locality mentioned in current query text (HIGHEST PRECEDENCE)
+    if query_text and isinstance(query_text, str) and query_text.strip():
+        resolved_q = LocationResolver.resolve(query_text=query_text)
+        if resolved_q:
+            loc_str = f"{resolved_q.name}, Hyderabad" if "hyderabad" not in resolved_q.name.lower() else resolved_q.name
+            if conversation_id and conversation_id in _PLANNER_SESSIONS:
+                _PLANNER_SESSIONS[conversation_id]["last_locality"] = loc_str
+            return loc_str
+
+    # Determine whether current query is anaphoric / context-referencing
+    is_anaphoric = has_contextual_reference(query_text)
+
+    # Lookup conversation context from isolated session store or conversation history
+    context_loc = None
+    if conversation_id and conversation_id in _PLANNER_SESSIONS:
+        context_loc = _PLANNER_SESSIONS[conversation_id].get("last_locality")
+    if not context_loc:
+        context_loc = extract_locality_from_history(conversation_history)
+
+    # If query contains explicit anaphora ('there', 'same location', 'that corridor', 'test it')
+    # and we have conversation context, resolve directly to the context!
+    if is_anaphoric and context_loc:
+        logger.info(
+            f"[Locality Resolution] Anaphoric reference in query '{query_text}' resolved to conversation context: {context_loc}"
+        )
+        return context_loc
+
+    # Step 2: Explicit caller-provided locality parameter
     if location and isinstance(location, str):
         norm = location.strip().lower()
         if norm and norm not in INVALID_LOCATION_TOKENS:
+            resolved_loc = LocationResolver.resolve(explicit_location=location)
+            if resolved_loc:
+                loc_str = f"{resolved_loc.name}, Hyderabad" if "hyderabad" not in resolved_loc.name.lower() else resolved_loc.name
+                if conversation_id and conversation_id in _PLANNER_SESSIONS:
+                    _PLANNER_SESSIONS[conversation_id]["last_locality"] = loc_str
+                return loc_str
             return location.strip()
 
-    # 2. Extract explicit locality from query text
-    if query_text and isinstance(query_text, str):
-        import re
-        q_lower = query_text.lower()
-        for loc_token in KNOWN_HYDERABAD_LOCALITIES:
-            if re.search(rf"\b{re.escape(loc_token)}\b", q_lower):
-                if "hyderabad" not in loc_token:
-                    return f"{loc_token.title()}, Hyderabad"
-                return loc_token.title()
+    # Step 3: Inherit from conversation context for follow-up questions
+    if context_loc:
+        logger.info(f"[Locality Resolution] Inherited locality from conversation context: {context_loc}")
+        return context_loc
 
-    # 3. Inherit from prior conversation history
-    if conversation_history:
-        for turn in reversed(conversation_history):
-            if not isinstance(turn, dict):
-                continue
-            turn_loc = turn.get("location")
-            if turn_loc and isinstance(turn_loc, str):
-                t_norm = turn_loc.strip().lower()
-                if t_norm and t_norm not in INVALID_LOCATION_TOKENS:
-                    return turn_loc.strip()
-            col = turn.get("collected_results") or {}
-            if isinstance(col, dict):
-                for agent_key in ["traffic", "weather", "pollution", "energy"]:
-                    agent_data = col.get(agent_key)
-                    if isinstance(agent_data, dict):
-                        a_loc = agent_data.get("location")
-                        if a_loc and isinstance(a_loc, str):
-                            a_norm = a_loc.strip().lower()
-                            if a_norm and a_norm not in INVALID_LOCATION_TOKENS:
-                                return a_loc.strip()
-
-    # 4. Fallback to default
+    # Step 4: Fallback to default ONLY when no context exists
     return default_location
+
+
+def validate_agent_locality(
+    expected_locality: str,
+    agent_res: Any,
+    agent_cap: str,
+) -> bool:
+    """
+    Validate that the returned specialist agent response corresponds to the expected locality.
+    Prevents silent substitution of another locality.
+    """
+    if not isinstance(agent_res, dict):
+        return True
+
+    from backend.agents.traffic_agent.location_resolver import LocationResolver
+    expected_resolved = LocationResolver.resolve(explicit_location=expected_locality)
+    if not expected_resolved:
+        return True
+
+    # Check various location fields returned by agents
+    ret_loc_str = (
+        agent_res.get("location")
+        or agent_res.get("locality")
+        or (agent_res.get("metadata", {}) or {}).get("locality")
+        or (agent_res.get("metrics", {}) or {}).get("location")
+        or agent_res.get("city")
+    )
+    if not ret_loc_str or not isinstance(ret_loc_str, str):
+        return True
+
+    actual_resolved = LocationResolver.resolve(explicit_location=ret_loc_str)
+    if not actual_resolved:
+        return True
+
+    if expected_resolved.slug != actual_resolved.slug:
+        logger.error(
+            f"[Supervisor] Locality validation mismatch for agent '{agent_cap}': "
+            f"expected '{expected_resolved.name}' ({expected_resolved.slug}), "
+            f"but received '{actual_resolved.name}' ({actual_resolved.slug}). Rejecting substituted locality."
+        )
+        return False
+    return True
 
 
 class Domain(str, Enum):
@@ -270,10 +406,11 @@ class PlannerFeedbackResponse(BaseModel):
 
 class PlannerExecuteRequest(BaseModel):
     request_id: Optional[str] = None
+    conversation_id: Optional[str] = None
     session_id: Optional[str] = None
     objective: Optional[str] = None
     query: Optional[str] = None
-    location: Optional[str] = "Narayanguda, Hyderabad"
+    location: Optional[str] = None
     domains: Optional[List[Domain]] = Field(default_factory=list)
     constraints: List[Constraint] = Field(default_factory=list)
     max_cycles: Optional[int] = 3
@@ -288,16 +425,27 @@ class PlannerExecuteRequest(BaseModel):
     @classmethod
     def sync_query_objective(cls, data: Any) -> Any:
         if isinstance(data, dict):
+            # Synchronize conversation_id and session_id
+            cid = data.get("conversation_id")
+            sid = data.get("session_id")
+            eff_cid = (cid or sid or "").strip()
+            if eff_cid:
+                data["conversation_id"] = eff_cid
+                data["session_id"] = eff_cid
+
             q = data.get("query")
             obj = data.get("objective")
             if q and not obj:
                 data["objective"] = q
             elif obj and not q:
                 data["query"] = obj
+
+            eff_query = data.get("objective") or data.get("query")
             data["location"] = sanitize_location(
                 location=data.get("location"),
-                query_text=data.get("objective") or data.get("query"),
+                query_text=eff_query,
                 conversation_history=data.get("conversation_history"),
+                conversation_id=eff_cid or None,
             )
 
             # Parse scenario, duration_seconds, seed from text if not provided
@@ -328,13 +476,16 @@ class PlannerExecuteRequest(BaseModel):
         return data
 
 
-# Session store for Planner conversations & simulation histories keyed by explicit session_id
+# Session store for Planner conversations & simulation histories keyed by explicit conversation_id / session_id
 _PLANNER_SESSIONS: Dict[str, Dict[str, Any]] = {}
 
 
 
 class PlannerExecuteResponse(BaseModel):
     request_id: str
+    conversation_id: Optional[str] = None
+    session_id: Optional[str] = None
+    location: Optional[str] = None
     status: str
     cycle: int = 1
     selected_capabilities: List[str] = Field(default_factory=list)
@@ -937,7 +1088,7 @@ def resolve_canonical_baseline(
                         if target_net is None or not s_net or str(s_net).strip().lower() == str(target_net).strip().lower():
                             s_m = s.get("metrics") or {}
                             corridor_speeds = {}
-                            for c in s.get("corridors", []):
+                            for c in (s.get("corridors") or []):
                                 if isinstance(c, dict) and c.get("avg_speed") is not None:
                                     if c.get("id"):
                                         corridor_speeds[str(c["id"]).lower().strip()] = float(c["avg_speed"])
@@ -957,7 +1108,7 @@ def resolve_canonical_baseline(
                                 "average_waiting_time_sec": s.get("average_waiting_time_sec") or s_m.get("average_waiting_time_sec"),
                                 "congestion_index": s.get("congestion_index") or s_m.get("congestion_index"),
                                 "throughput": s.get("throughput") or s_m.get("throughput", 0),
-                                "corridors": s.get("corridors", []),
+                                "corridors": s.get("corridors") or [],
                                 "corridor_speeds": corridor_speeds,
                                 "baseline_reference": {
                                     "scenario_id": base_id,
@@ -982,7 +1133,7 @@ def resolve_canonical_baseline(
             if target_scen is None or not base_scenario or str(base_scenario).strip().lower() == str(target_scen).strip().lower():
                 if target_seed is None or base_seed is None or int(base_seed) == int(target_seed):
                     corridor_speeds = {}
-                    for c in trf_data.get("corridors", []):
+                    for c in (trf_data.get("corridors") or []):
                         if isinstance(c, dict) and c.get("avg_speed") is not None:
                             if c.get("id"):
                                 corridor_speeds[str(c["id"]).lower().strip()] = float(c["avg_speed"])
@@ -1114,30 +1265,45 @@ def verify_multi_intervention_invariant(tested_scenarios: List[Dict[str, Any]]) 
 def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
     t_start = time.perf_counter()
     req_id = payload.request_id or make_id("planreq")
+    conv_id = (payload.conversation_id or payload.session_id or "").strip()
     planner_agent = get_planner_agent()
     stage_latencies: Dict[str, float] = {}
     specialist_calls_record: List[Dict[str, Any]] = []
 
     # CURRENT REQUEST: Objective must remain faithful to current user instruction without prepending stale history
     effective_objective = (payload.objective or payload.query or "").strip()
+    payload.objective = effective_objective
+    payload.query = effective_objective
 
-    # Sanitize and inherit location
+    # Sanitize and inherit location adhering to strict precedence hierarchy:
+    # 1. Explicit locality in current query text (overrides all past context)
+    # 2. Contextual reference ('there', 'same location', 'that corridor', 'test it') -> resolved from conversation context
+    # 3. Explicit request parameter provided by caller
+    # 4. Conversation context for genuine follow-ups
+    # 5. Default fallback ('Narayanguda, Hyderabad') ONLY when no context exists
     payload.location = sanitize_location(
         location=payload.location,
         query_text=effective_objective,
         conversation_history=payload.conversation_history,
+        conversation_id=conv_id or None,
     )
+
+    if conv_id:
+        sess = _PLANNER_SESSIONS.setdefault(conv_id, {})
+        sess["conversation_id"] = conv_id
+        sess["session_id"] = conv_id
+        sess["last_locality"] = payload.location
 
     # Safe request diagnostics logging (Section 4 & Section 1)
     logger.info(
-        f"[Planner Diagnostics] REQUEST_ID={req_id} | SESSION_ID={payload.session_id or 'none'} | "
+        f"[Planner Diagnostics] REQUEST_ID={req_id} | CONVERSATION_ID={conv_id or 'none'} | "
         f"CURRENT_QUERY='{payload.query or ''}' | CURRENT_OBJECTIVE='{payload.objective or ''}' | "
         f"LOCATION='{payload.location or ''}' | HISTORY_COUNT={len(payload.conversation_history or [])} | "
         f"SIM_HISTORY_COUNT={len(payload.simulation_history or [])} | TESTED_SCENARIOS_COUNT={len(payload.tested_scenarios or [])}"
     )
 
     # Ingest prior simulation history strictly for analytical follow-up comparisons
-    session_id = (payload.session_id or "").strip()
+    session_id = conv_id
     session_data = _PLANNER_SESSIONS.get(session_id, {}) if session_id else {}
 
     prior_sims: List[Dict[str, Any]] = []
@@ -1184,21 +1350,8 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
 
     # Determine effective duration, scenario, and seed
     obj_lower = effective_objective.lower()
-    is_opt_request = any(
-        w in obj_lower for w in [
-            "optimize", "optimization", "improve", "evaluate", "compare",
-            "apply", "test", "simulate", "intervention", "strategy", "strategies",
-            "rerout", "signal", "mitigate", "reduce", "how can we", "solve", "remedy"
-        ]
-    ) and not any(
-        w in obj_lower for w in [
-            "which corridor is the bottleneck", "which corridor is currently the bottleneck",
-            "where is the bottleneck", "identify the bottleneck", "identify main bottlenecks",
-            "diagnose current traffic", "what is the current traffic situation",
-            "what are the current traffic conditions", "what is the traffic situation",
-            "why is it slow", "why is this corridor slow"
-        ]
-    )
+    from backend.agents.planner_agent.scope import request_involves_traffic_optimization_or_simulation
+    is_opt_request = request_involves_traffic_optimization_or_simulation(obj_lower)
 
     import re
     is_cross_horizon = ("300" in obj_lower and "600" in obj_lower) or ("between 300 and 600" in obj_lower)
@@ -1302,11 +1455,18 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                     # req_payload is already dict(call.request or {})
 
                     # Step 2: Resolve preliminary experiment/request metadata
+                    from backend.agents.traffic_agent.location_resolver import LocationResolver
+                    loc_resolved = LocationResolver.resolve(
+                        query_text=payload.objective,
+                        explicit_location=req_payload.get("location") or payload.location,
+                    )
+                    prelim_loc = loc_resolved.name if loc_resolved else (req_payload.get("location") or payload.location or "Hyderabad")
+                    default_net = f"{loc_resolved.slug}_network.net.xml" if loc_resolved else "hyderabad_network.net.xml"
+
                     prelim_dur = req_payload.get("duration_seconds") or req_duration or DEFAULT_PRODUCTION_EVALUATION_DURATION_SECONDS
                     prelim_scen = req_payload.get("scenario_name") or req_payload.get("scenario") or payload.scenario or "synthetic_peak_westbound"
                     prelim_seed = req_payload.get("seed") if req_payload.get("seed") is not None else payload.seed
-                    prelim_net = req_payload.get("network_name") or req_payload.get("network") or "narayanguda_network.net.xml"
-                    prelim_loc = req_payload.get("location") or payload.location or "Narayanguda, Hyderabad"
+                    prelim_net = req_payload.get("network_name") or req_payload.get("network") or default_net
 
                     # Step 3: Resolve matching canonical baseline & structured baseline reference
                     canonical_baseline = resolve_canonical_baseline(
@@ -1389,13 +1549,12 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         or req_payload.get("network")
                         or (baseline_ref.get("network") if (baseline_ref and baseline_ref.get("network")) else None)
                         or (canonical_baseline.get("network") if (canonical_baseline and canonical_baseline.get("network")) else None)
-                        or "narayanguda_network.net.xml"
+                        or default_net
                     )
 
                     sim_loc = (
                         req_payload.get("location")
-                        or payload.location
-                        or "Narayanguda, Hyderabad"
+                        or prelim_loc
                     )
 
                     req_payload["duration_seconds"] = sim_dur
@@ -1410,27 +1569,69 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         del req_payload["seed"]
 
                     # Step 5: Build intervention request
-                    # Ensure structured intervention is provided for simulation
+                    # Ensure structured intervention is provided for simulation and normalized exactly once
+                    from backend.agents.simulation_agent.schemas import normalize_intervention
                     if not req_payload.get("intervention"):
                         if eval_result and eval_result.simulation_context and eval_result.simulation_context.get("intervention"):
                             req_payload["intervention"] = eval_result.simulation_context["intervention"]
                         elif "traffic" in collected_results:
                             trf_data = collected_results["traffic"]
                             cands = trf_data.get("candidate_interventions", [])
-                            bn = trf_data.get("bottleneck_corridor") or "Westbound"
+                            bn = trf_data.get("bottleneck_corridor") or prelim_loc or "Westbound"
                             if cands:
                                 top_c = cands[0]
                                 req_payload["intervention"] = {
-                                    "type": top_c.get("intervention_type", "signal_timing"),
+                                    "type": top_c.get("intervention_type", top_c.get("type", "signal_timing")),
                                     "target": top_c.get("target", bn),
-                                    "parameters": top_c.get("parameters", {"green_time_adjustment_sec": 10.0}),
+                                    "parameters": top_c.get("parameters", {"green_time_adjustment_sec": 15.0}),
                                 }
                             else:
                                 req_payload["intervention"] = {
                                     "type": "signal_timing",
                                     "target": bn,
-                                    "parameters": {"green_time_adjustment_sec": 10.0},
+                                    "parameters": {"green_time_adjustment_sec": 15.0},
                                 }
+
+                    req_payload["intervention"] = normalize_intervention(
+                        req_payload.get("intervention"),
+                        default_target=prelim_loc
+                    )
+
+                    # If an intervention is being simulated, ensure a paired canonical baseline is executed first
+                    has_intervention = bool(req_payload.get("intervention"))
+                    if has_intervention and not canonical_baseline:
+                        logger.info(f"[Supervisor] No canonical baseline exists for {sim_net} (seed={sim_seed}, dur={sim_dur}s). Executing baseline first.")
+                        baseline_req_payload = copy.deepcopy(req_payload)
+                        baseline_req_payload["intervention"] = None
+                        baseline_req_payload.pop("candidate_intervention", None)
+                        baseline_req_payload.pop("signal_optimization", None)
+                        baseline_req_payload.pop("intervention_applied", None)
+                        baseline_scen_id = f"baseline:dur{int(sim_dur)}s" + (f":seed{sim_seed}" if sim_seed is not None else "")
+                        baseline_req_payload["scenario_id"] = baseline_scen_id
+                        baseline_req_payload["baseline_metrics"] = None
+                        baseline_req_payload["baseline_reference"] = None
+                        try:
+                            t_base_start = time.perf_counter()
+                            baseline_res = dispatch_agent("simulation", baseline_req_payload)
+                            executed_scenario_ids.add(baseline_scen_id)
+                            simulations_history.append(baseline_res)
+                            canonical_baseline = copy.deepcopy(baseline_res)
+                            baseline_ref = {
+                                "scenario_id": baseline_scen_id,
+                                "scenario": sim_scen,
+                                "duration_seconds": int(sim_dur),
+                                "seed": sim_seed,
+                                "network": sim_net,
+                            }
+                            req_payload["baseline_metrics"] = copy.deepcopy(canonical_baseline)
+                            req_payload["baseline_reference"] = copy.deepcopy(baseline_ref)
+                            specialist_calls_record.append({
+                                "agent": "simulation",
+                                "status": "completed",
+                                "latency_ms": round((time.perf_counter() - t_base_start) * 1000.0, 1),
+                            })
+                        except Exception as exc:
+                            logger.warning(f"[Supervisor] Failed to auto-execute baseline simulation: {exc}")
 
                     from backend.agents.simulation_agent.service import SimulationService
                     scen_id = req_payload.get("scenario_id") or SimulationService.generate_scenario_id(
@@ -1453,14 +1654,20 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                         t_sim_start = time.perf_counter()
                         try:
                             agent_res = dispatch_agent(agent_cap, req_payload)
-                            executed_scenario_ids.add(scen_id)
-                            simulations_history.append(agent_res)
-                            sim_dur = round((time.perf_counter() - t_sim_start) * 1000.0, 1)
-                            specialist_calls_record.append({
-                                "agent": agent_cap,
-                                "status": "completed",
-                                "latency_ms": sim_dur,
-                            })
+                            if not validate_agent_locality(sim_loc, agent_res, "simulation"):
+                                err_msg = f"Locality mismatch in simulation: expected '{sim_loc}', but received '{agent_res.get('location') if isinstance(agent_res, dict) else 'unknown'}'"
+                                logger.error(f"[Supervisor] {err_msg}")
+                                failures[agent_cap] = err_msg
+                                agent_res = None
+                            else:
+                                executed_scenario_ids.add(scen_id)
+                                simulations_history.append(agent_res)
+                                sim_dur = round((time.perf_counter() - t_sim_start) * 1000.0, 1)
+                                specialist_calls_record.append({
+                                    "agent": agent_cap,
+                                    "status": "completed",
+                                    "latency_ms": sim_dur,
+                                })
                         except Exception as exc:
                             failures[agent_cap] = str(exc)
                             agent_res = None
@@ -1480,6 +1687,17 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                 else:
                     t_spec_start = time.perf_counter()
                     try:
+                        # Propagate resolved locality and context consistently across ALL specialist agents
+                        from backend.agents.traffic_agent.location_resolver import LocationResolver
+                        loc_res = LocationResolver.resolve(
+                            explicit_location=payload.location,
+                            query_text=payload.objective,
+                        )
+                        resolved_loc_str = f"{loc_res.name}, Hyderabad" if loc_res else (payload.location or "Hyderabad")
+                        req_payload["location"] = resolved_loc_str
+                        if payload.objective and "query_text" not in req_payload:
+                            req_payload["query_text"] = payload.objective
+
                         if agent_cap == "traffic":
                             if req_duration is not None and "duration_seconds" not in req_payload:
                                 req_payload["duration_seconds"] = req_duration
@@ -1488,14 +1706,24 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
                             if payload.seed is not None and "seed" not in req_payload:
                                 req_payload["seed"] = payload.seed
                         agent_res = dispatch_agent(agent_cap, req_payload)
-                        collected_results[agent_cap] = agent_res
-                        if agent_cap == "traffic" and isinstance(agent_res, dict):
-                            actual_sim_seed = agent_res.get("seed") or (agent_res.get("metadata", {}) or {}).get("random_seed")
-                            if actual_sim_seed is not None:
-                                payload.seed = actual_sim_seed
-                        agent_tag = f"{agent_cap}_agent"
-                        if agent_tag not in dispatched_agents:
-                            dispatched_agents.append(agent_tag)
+
+                        # Validate returned locality before combining agent results
+                        if not validate_agent_locality(resolved_loc_str, agent_res, agent_cap):
+                            err_msg = (
+                                f"Locality mismatch: expected evidence for '{resolved_loc_str}', "
+                                f"but received data for '{agent_res.get('location') if isinstance(agent_res, dict) else 'unknown'}'."
+                            )
+                            logger.error(f"[Supervisor] {err_msg}")
+                            failures[agent_cap] = err_msg
+                        else:
+                            collected_results[agent_cap] = agent_res
+                            if agent_cap == "traffic" and isinstance(agent_res, dict):
+                                actual_sim_seed = agent_res.get("seed") or (agent_res.get("metadata", {}) or {}).get("random_seed")
+                                if actual_sim_seed is not None:
+                                    payload.seed = actual_sim_seed
+                            agent_tag = f"{agent_cap}_agent"
+                            if agent_tag not in dispatched_agents:
+                                dispatched_agents.append(agent_tag)
                         spec_dur = round((time.perf_counter() - t_spec_start) * 1000.0, 1)
                         spec_rec = {
                             "agent": agent_cap,
@@ -1560,21 +1788,54 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         else:
             break
 
-    final_reasoning_dict = eval_result.final_reasoning.model_dump() if eval_result.final_reasoning else {
-        "summary": eval_result.analysis,
-        "recommendation": eval_result.final_recommendation,
-        "confidence": eval_result.confidence,
-        "decision": eval_result.decision,
-        "evidence_status": eval_result.evidence_status,
-    }
-
-    # Deterministic evidence_status based on completed simulation history
-    if len(simulations_history) >= 2:
-        det_evidence_status = "EVIDENCE: MULTI-SIMULATION EVALUATION"
-    elif len(simulations_history) == 1:
-        det_evidence_status = "EVIDENCE: SINGLE SIMULATION RUN"
+    if eval_result.final_reasoning:
+        final_reasoning_dict = eval_result.final_reasoning.model_dump()
     else:
-        det_evidence_status = "EVIDENCE: OBSERVATIONAL"
+        # Fallback if final_reasoning is somehow None
+        from backend.agents.planner_agent.planner import PlannerAgent
+        fallback_sum = PlannerAgent._build_deterministic_specialist_summary(
+            objective=effective_objective,
+            collected_results=collected_results,
+            location=payload.location,
+        )
+        final_reasoning_dict = {
+            "summary": fallback_sum or eval_result.analysis,
+            "recommendation": eval_result.final_recommendation or "",
+            "confidence": eval_result.confidence,
+            "decision": eval_result.decision,
+            "evidence_status": eval_result.evidence_status,
+        }
+
+    # Honest evidence_status based on executed simulation history or collected specialist evidence
+    from backend.agents.planner_agent.planner import is_analytical_history_followup
+    new_sims_this_turn = len(executed_scenario_ids)
+    is_sim_followup = is_analytical_history_followup(effective_objective) and len(simulations_history) > 0
+
+    if new_sims_this_turn >= 2 or (is_sim_followup and len(simulations_history) >= 2):
+        det_evidence_status = "EVIDENCE: MULTI-SIMULATION EVALUATION"
+        rec_basis = "SIMULATION_TESTED_EVIDENCE"
+    elif new_sims_this_turn == 1 or (is_sim_followup and len(simulations_history) == 1):
+        det_evidence_status = "EVIDENCE: SINGLE SIMULATION RUN"
+        rec_basis = "SIMULATION_TESTED_EVIDENCE"
+    else:
+        # No simulation executed this turn and not an analytical simulation follow-up
+        has_pol = "pollution" in collected_results and "pollution" not in failures
+        has_trf = "traffic" in collected_results and "traffic" not in failures
+        has_wtr = "weather" in collected_results and "weather" not in failures
+        has_eng = "energy" in collected_results and "energy" not in failures
+
+        if has_pol and not has_trf:
+            det_evidence_status = "EVIDENCE: MODELLED ESTIMATE"
+            rec_basis = "MODELLED_ENVIRONMENTAL_ANALYSIS"
+        elif has_trf and has_pol:
+            det_evidence_status = "EVIDENCE: MULTI-SOURCE (API & MODELLED)"
+            rec_basis = "MULTI_DOMAIN_TELEMETRY_AND_MODEL"
+        elif has_trf or has_wtr or has_eng:
+            det_evidence_status = "EVIDENCE: API-SOURCED TELEMETRY"
+            rec_basis = "OBSERVATIONAL_TELEMETRY_ONLY"
+        else:
+            det_evidence_status = "EVIDENCE: MUNICIPAL ADVISORY & RECOMMENDATION"
+            rec_basis = "EXPERT_MUNICIPAL_KNOWLEDGE"
 
     eval_result.evidence_status = det_evidence_status
     final_reasoning_dict["evidence_status"] = det_evidence_status
@@ -1582,11 +1843,11 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
     if eval_result.final_reasoning:
         final_reasoning_dict["tested_interventions"] = eval_result.final_reasoning.tested_interventions
         final_reasoning_dict["untested_candidates"] = eval_result.final_reasoning.untested_candidates
-        final_reasoning_dict["recommendation_basis"] = eval_result.final_reasoning.recommendation_basis
+        final_reasoning_dict["recommendation_basis"] = rec_basis
     else:
         final_reasoning_dict.setdefault("tested_interventions", [])
         final_reasoning_dict.setdefault("untested_candidates", [])
-        final_reasoning_dict.setdefault("recommendation_basis", "OBSERVATIONAL_TELEMETRY_ONLY" if not simulations_history else "SIMULATION_TESTED_EVIDENCE")
+        final_reasoning_dict["recommendation_basis"] = rec_basis
 
     if eval_result.cross_analysis:
         final_reasoning_dict["key_findings"] = eval_result.cross_analysis.key_findings
@@ -1611,10 +1872,17 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
             final_reasoning_dict["simulation_comparison"] = target_sim.get("comparison")
 
         # PART 6: Structured Active Experiment Context
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        loc_res_final = LocationResolver.resolve(
+            query_text=payload.objective,
+            explicit_location=payload.location,
+        )
+        resolved_net = f"{loc_res_final.slug}_network.net.xml" if loc_res_final else "hyderabad_network.net.xml"
+
         final_reasoning_dict["requested_duration"] = "BOTH" if is_cross_horizon else req_duration
         final_reasoning_dict["requested_scenario"] = payload.scenario or (target_sim.get("scenario") if isinstance(target_sim, dict) else None) or "synthetic_peak_westbound"
         final_reasoning_dict["requested_seed"] = payload.seed or (target_sim.get("seed") if isinstance(target_sim, dict) else None)
-        final_reasoning_dict["requested_network"] = (target_sim.get("network_name") if isinstance(target_sim, dict) else None) or "narayanguda_network.net.xml"
+        final_reasoning_dict["requested_network"] = (target_sim.get("network_name") if isinstance(target_sim, dict) else None) or resolved_net
 
         tested_scenarios_list = []
         for s in simulations_history:
@@ -1625,14 +1893,15 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
             b_ref = s.get("baseline_reference") or s_comp.get("baseline_reference")
             b_metrics = s.get("baseline_metrics") or s_comp.get("baseline_summary")
             int_metrics = s.get("intervention_metrics") or s_comp.get("intervention_summary") or s.get("metrics")
+            s_network = s.get("network_name") or s_comp.get("intervention_network") or s_meta.get("network_name") or resolved_net
 
             tested_scenarios_list.append({
                 "scenario_id": s.get("scenario_id"),
                 "scenario": s.get("scenario") or s_comp.get("intervention_scenario") or s_meta.get("demand_profile") or "synthetic_peak_westbound",
                 "duration_seconds": s.get("duration_seconds") or s_comp.get("intervention_duration_seconds") or s_meta.get("duration_seconds"),
                 "seed": s.get("seed") or s_comp.get("intervention_seed") or s_meta.get("random_seed"),
-                "network": s.get("network_name") or s_comp.get("intervention_network") or s_meta.get("network_name") or "narayanguda_network.net.xml",
-                "network_name": s.get("network_name") or s_comp.get("intervention_network") or s_meta.get("network_name") or "narayanguda_network.net.xml",
+                "network": s_network,
+                "network_name": s_network,
                 "intervention": s.get("intervention_applied") or s.get("intervention"),
                 "baseline_reference": b_ref,
                 "baseline_metrics": b_metrics,
@@ -1650,7 +1919,9 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
     final_reasoning_dict.setdefault("requested_duration", "BOTH" if is_cross_horizon else req_duration)
     final_reasoning_dict.setdefault("requested_scenario", payload.scenario or "synthetic_peak_westbound")
     final_reasoning_dict.setdefault("requested_seed", payload.seed)
-    final_reasoning_dict.setdefault("requested_network", "narayanguda_network.net.xml")
+    from backend.agents.traffic_agent.location_resolver import LocationResolver
+    _lres = LocationResolver.resolve(query_text=payload.objective, explicit_location=payload.location)
+    final_reasoning_dict.setdefault("requested_network", f"{_lres.slug}_network.net.xml" if _lres else "hyderabad_network.net.xml")
 
     agent_results_payload = dict(collected_results)
     if simulations_history:
@@ -1677,10 +1948,12 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         )
     )
 
-    # Session store caching for current session_id (simulation experiment history only, NO stale specialist evidence)
+    # Session store caching for current session_id / conversation_id
     if session_id:
         _PLANNER_SESSIONS[session_id] = {
+            "conversation_id": session_id,
             "session_id": session_id,
+            "last_locality": payload.location,
             "simulations_history": simulations_history,
             "tested_scenarios": final_reasoning_dict.get("tested_scenarios", []),
             "tested_interventions": final_reasoning_dict.get("tested_interventions", []),
@@ -1696,7 +1969,9 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
     total_latency_ms = round((time.perf_counter() - t_start) * 1000.0, 1)
     runtime_metadata = {
         "request_id": req_id,
+        "conversation_id": session_id or None,
         "session_id": session_id or None,
+        "location": payload.location,
         "llm_provider": provider_name,
         "llm_model": provider_model,
         "llm_calls": 3 if current_cycle == 1 else (3 + (current_cycle - 1) * 2),
@@ -1707,8 +1982,13 @@ def planner_execute(payload: PlannerExecuteRequest) -> PlannerExecuteResponse:
         "stage_latencies_ms": stage_latencies,
     }
 
+    final_reasoning_dict["location"] = payload.location
+
     return PlannerExecuteResponse(
         request_id=req_id,
+        conversation_id=session_id or None,
+        session_id=session_id or None,
+        location=payload.location,
         status=status_str,
         cycle=current_cycle,
         selected_capabilities=plan_decision.required_capabilities,

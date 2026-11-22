@@ -30,17 +30,20 @@ const statusColor = {
 
 export default function Traffic() {
   const [timeRange, setTimeRange] = useState('Live')
+  const [showAllIncidents, setShowAllIncidents] = useState(false)
+  const [showAllCorridors, setShowAllCorridors] = useState(false)
+  const [showAllIntersections, setShowAllIntersections] = useState(false)
   const { kpis, incidents, corridors, trend, intersections, loading, error } = useTrafficData()
 
   /* ── Build KPI card array from live data (or loading placeholders) ── */
   const kpiCards = kpis
     ? [
-        { icon: Gauge,         label: 'Avg Speed',           value: kpis.avgSpeed,          unit: 'km/h', trend: '▼ live', tColor: '#E5483F' },
-        { icon: Car,           label: 'Traffic Volume',      value: kpis.trafficVolume,     unit: 'Lakh', trend: '▲ est',  tColor: '#2F8F72' },
-        { icon: Timer,         label: 'Travel Time Index',   value: kpis.travelTimeIndex,   unit: '',     trend: '▲ live', tColor: '#E5483F' },
-        { icon: MapPin,        label: 'Queue Length',        value: kpis.queueLength,       unit: 'km',   trend: '▲ live', tColor: '#E5483F' },
-        { icon: AlertTriangle, label: 'Congested Corridors', value: String(kpis.congestedCorridors), unit: '', trend: '▲ live', tColor: '#E5483F' },
-        { icon: ShieldAlert,   label: 'Active Incidents',    value: String(kpis.activeIncidents),    unit: '', trend: '▲ live', tColor: '#E5483F' },
+        { icon: Gauge,         label: 'Avg Speed',           value: kpis.avgSpeed ?? 'Unavailable', unit: kpis.avgSpeed ? 'km/h' : '', trend: kpis.avgSpeed ? '▼ live' : '—', tColor: '#E5483F' },
+        { icon: Car,           label: 'Traffic Volume',      value: 'Unavailable',                  unit: '',    trend: '—', tColor: 'var(--text-muted)' },
+        { icon: Timer,         label: 'Travel Time Index',   value: kpis.travelTimeIndex ?? 'Unavailable', unit: '', trend: kpis.travelTimeIndex ? '▲ DERIVED' : '—', tColor: '#E5483F' },
+        { icon: MapPin,        label: 'Queue Length',        value: 'Unavailable',                  unit: '',    trend: '—', tColor: 'var(--text-muted)' },
+        { icon: AlertTriangle, label: 'Congested Corridors', value: String(kpis.congestedCorridors), unit: '',  trend: '▲ live', tColor: '#E5483F' },
+        { icon: ShieldAlert,   label: 'Active Incidents',    value: String(kpis.activeIncidents),    unit: '',  trend: '▲ live', tColor: '#E5483F' },
       ]
     : LOADING_KPIS
 
@@ -48,6 +51,16 @@ export default function Traffic() {
   const displayIncidents = incidents.length > 0 ? incidents : []
   const displayTrend = trend.length > 0 ? trend : []
   const displayIntersections = intersections.length > 0 ? intersections : []
+
+  // Sliced trend data according to timeRange
+  const filteredTrend = (() => {
+    if (displayTrend.length === 0) return []
+    if (timeRange === '15 Min') return displayTrend.slice(-2)
+    if (timeRange === '1 Hour') return displayTrend.slice(-4)
+    if (timeRange === '3 Hours') return displayTrend.slice(-8)
+    if (timeRange === 'Live') return displayTrend.slice(-6)
+    return displayTrend
+  })()
 
   return (
     <div className="stagger-children" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-lg)' }}>
@@ -148,19 +161,22 @@ export default function Traffic() {
               Active Incidents
             </h3>
           </div>
-          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}>
-            VIEW ALL &gt;
+          <span
+            onClick={() => setShowAllIncidents(prev => !prev)}
+            style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+          >
+            {showAllIncidents ? 'COLLAPSE <' : `VIEW ALL (${displayIncidents.length}) >`}
           </span>
         </div>
 
-        {/* 4 Incidents in a balanced responsive grid */}
+        {/* Incidents in a balanced responsive grid */}
         <div style={{
           display: 'grid',
           gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
           gap: '12px',
         }}>
           {displayIncidents.length > 0 ? (
-            displayIncidents.slice(0, 4).map((inc, i) => (
+            (showAllIncidents ? displayIncidents : displayIncidents.slice(0, 4)).map((inc, i) => (
               <div key={i} style={{
                 display: 'flex', alignItems: 'flex-start', gap: '12px',
                 padding: '14px', borderRadius: 'var(--radius-md)',
@@ -237,7 +253,12 @@ export default function Traffic() {
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
             <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Corridor Performance</h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', cursor: 'pointer' }}>VIEW ALL &gt;</span>
+            <span
+              onClick={() => setShowAllCorridors(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllCorridors ? 'COLLAPSE <' : `VIEW ALL (${displayCorridors.length}) >`}
+            </span>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
             <thead>
@@ -248,7 +269,7 @@ export default function Traffic() {
               </tr>
             </thead>
             <tbody>
-              {(displayCorridors.length > 0 ? displayCorridors.slice(0, 5) : [
+              {(displayCorridors.length > 0 ? (showAllCorridors ? displayCorridors : displayCorridors.slice(0, 5)) : [
                 { name: 'Loading…', speed: '—', time: '—', status: '—' },
               ]).map((c, i) => (
                 <tr key={i}>
@@ -272,9 +293,14 @@ export default function Traffic() {
           background: 'var(--bg-card)', border: '1px solid var(--border-card)',
           borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)',
         }}>
-          <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em', marginBottom: '14px' }}>Traffic Trend</h3>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Traffic Trend</h3>
+            <span style={{ fontSize: '0.62rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', background: 'rgba(47, 143, 114, 0.08)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Range: {timeRange}
+            </span>
+          </div>
           <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={displayTrend} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
+            <AreaChart data={filteredTrend} margin={{ top: 5, right: 10, left: -20, bottom: 0 }}>
               <defs>
                 <linearGradient id="tSpeedGrad" x1="0" y1="0" x2="0" y2="1">
                   <stop offset="0%" stopColor="#2F8F72" stopOpacity={0.15} />
@@ -282,12 +308,10 @@ export default function Traffic() {
                 </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,0,0,0.04)" vertical={false} />
-              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={3} axisLine={false} tickLine={false} />
+              <XAxis dataKey="time" tick={{ fontSize: 8, fill: '#8F9295' }} interval={timeRange === '15 Min' || timeRange === '1 Hour' ? 0 : 2} axisLine={false} tickLine={false} />
               <YAxis yAxisId="speed" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} label={{ value: 'Speed (km/h)', angle: -90, position: 'insideLeft', fontSize: 8, fill: '#8F9295' }} />
-              <YAxis yAxisId="volume" orientation="right" tick={{ fontSize: 8, fill: '#8F9295' }} axisLine={false} tickLine={false} label={{ value: 'Volume (Lakh)', angle: 90, position: 'insideRight', fontSize: 8, fill: '#8F9295' }} />
               <Tooltip contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: '0.7rem', boxShadow: 'var(--shadow-elevated)' }} />
               <Area yAxisId="speed" type="monotone" dataKey="speed" stroke="#2F8F72" strokeWidth={1.5} fill="url(#tSpeedGrad)" name="Avg Speed (km/h)" />
-              <Line yAxisId="volume" type="monotone" dataKey="volume" stroke="#6C8FC5" strokeWidth={1.5} strokeDasharray="4 3" dot={false} name="Traffic Volume (Lakh)" />
             </AreaChart>
           </ResponsiveContainer>
         </div>
@@ -298,8 +322,16 @@ export default function Traffic() {
           borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)',
         }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Intersection Performance</h3>
-            <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', cursor: 'pointer' }}>VIEW ALL &gt;</span>
+            <div>
+              <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Intersection Performance</h3>
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>DERIVED from nearby TomTom corridor flow delay</div>
+            </div>
+            <span
+              onClick={() => setShowAllIntersections(prev => !prev)}
+              style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', cursor: 'pointer', fontWeight: 600 }}
+            >
+              {showAllIntersections ? 'COLLAPSE <' : `VIEW ALL (${displayIntersections.length}) >`}
+            </span>
           </div>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.72rem' }}>
             <thead>
@@ -310,7 +342,7 @@ export default function Traffic() {
               </tr>
             </thead>
             <tbody>
-              {(displayIntersections.length > 0 ? displayIntersections : [
+              {(displayIntersections.length > 0 ? (showAllIntersections ? displayIntersections : displayIntersections.slice(0, 5)) : [
                 { name: 'Loading…', delay: '—', los: '—', status: '—' },
               ]).map((int, i) => (
                 <tr key={i}>

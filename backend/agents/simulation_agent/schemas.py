@@ -66,6 +66,140 @@ class ReroutingParameters(BaseModel):
         return self
 
 
+def normalize_intervention(data: Any, default_target: str = "Westbound") -> Optional[Dict[str, Any]]:
+    """
+    Normalizes any candidate intervention into the canonical schema:
+    {
+        "type": str,
+        "target": Optional[str],
+        "parameters": Dict[str, Any]
+    }
+    Strictly flattens and prevents any recursive nesting:
+    - Eliminates 'intervention.parameter.intervention.parameter...' recursion.
+    - Ensures parameters dictionary contains only flat scalar values.
+    - Normalizes string shortcuts (e.g. 'signal_timing', 'rerouting').
+    - Returns None if input is None or represents no intervention.
+    """
+    if data is None:
+        return None
+
+    # Handle string shortcut
+    if isinstance(data, str):
+        s = data.strip().lower()
+        if not s or s in ("none", "null", "baseline", "no_intervention", "false"):
+            return None
+        if "rerout" in s or "diversion" in s:
+            return {
+                "type": "rerouting",
+                "target": default_target,
+                "parameters": {
+                    "diversion_fraction": 0.15,
+                    "reroute_mode": "alternative_route",
+                },
+            }
+        elif "lane" in s:
+            return {
+                "type": "lane_use_changes",
+                "target": default_target,
+                "parameters": {},
+            }
+        elif "closure" in s:
+            return {
+                "type": "road_closure",
+                "target": default_target,
+                "parameters": {},
+            }
+        elif "incident" in s:
+            return {
+                "type": "incident_response",
+                "target": default_target,
+                "parameters": {},
+            }
+        else:
+            return {
+                "type": "signal_timing",
+                "target": default_target,
+                "parameters": {
+                    "green_time_adjustment_sec": 15.0,
+                },
+            }
+
+    if hasattr(data, "model_dump"):
+        data = data.model_dump()
+    elif hasattr(data, "dict"):
+        data = data.dict()
+
+    if not isinstance(data, dict):
+        return None
+
+    # Unwrap any outer envelope such as {"intervention": {...}}
+    while isinstance(data, dict) and "intervention" in data and isinstance(data["intervention"], dict) and len(data) == 1:
+        data = data["intervention"]
+
+    target = data.get("target") or data.get("target_corridor") or default_target
+    raw_type = data.get("type") or data.get("intervention_type") or "signal_timing"
+    if hasattr(raw_type, "value"):
+        raw_type = raw_type.value
+    raw_type = str(raw_type).strip().lower()
+
+    # Collect parameters by traversing any nested 'parameter' / 'parameters' / 'intervention' keys
+    flat_params: Dict[str, Any] = {}
+
+    def extract_flat_params(node: Any):
+        if not isinstance(node, dict):
+            return
+        for k, v in node.items():
+            if k in ("intervention", "parameters", "parameter", "params") and isinstance(v, dict):
+                nonlocal target, raw_type
+                if not target and (v.get("target") or v.get("target_corridor")):
+                    target = v.get("target") or v.get("target_corridor")
+                if (not raw_type or raw_type == "signal_timing") and (v.get("type") or v.get("intervention_type")):
+                    raw_type = str(v.get("type") or v.get("intervention_type")).strip().lower()
+                extract_flat_params(v)
+            elif k not in (
+                "type", "intervention_type", "target", "target_corridor",
+                "intervention", "parameters", "parameter", "params",
+                "reason", "executable", "potential_benefit", "potential_tradeoff",
+                "notes", "status", "execution_notes", "evidence"
+            ):
+                if not isinstance(v, (dict, list)):
+                    flat_params[k] = v
+
+    root_params = data.get("parameters") or data.get("parameter") or data.get("params") or {}
+    if isinstance(root_params, dict):
+        extract_flat_params(root_params)
+    extract_flat_params(data)
+
+    # Validate parameters based on type
+    if raw_type in ("signal_timing", "adaptive_signal_control"):
+        raw_type = "signal_timing"
+        adj = flat_params.get("green_time_adjustment_sec") or flat_params.get("adjustment_seconds") or flat_params.get("adjustment_sec") or 15.0
+        try:
+            adj = float(adj)
+        except (ValueError, TypeError):
+            adj = 15.0
+        flat_params["green_time_adjustment_sec"] = adj
+        flat_params.pop("adjustment_seconds", None)
+        flat_params.pop("adjustment_sec", None)
+    elif raw_type in ("rerouting", "traffic_diversion"):
+        raw_type = "rerouting"
+        div = flat_params.get("diversion_fraction") or flat_params.get("fraction") or 0.15
+        try:
+            div = float(div)
+        except (ValueError, TypeError):
+            div = 0.15
+        div = max(0.01, min(0.50, div))
+        flat_params["diversion_fraction"] = div
+        flat_params.setdefault("reroute_mode", "alternative_route")
+        flat_params.pop("fraction", None)
+
+    return {
+        "type": raw_type,
+        "target": str(target) if target else default_target,
+        "parameters": flat_params,
+    }
+
+
 class InterventionPayload(BaseModel):
     type: InterventionType = Field(default=InterventionType.SIGNAL_TIMING, description="Category of intervention")
     target: Optional[str] = Field(default="Westbound", description="Target corridor, junction, or roadway segment")
@@ -74,15 +208,16 @@ class InterventionPayload(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def normalize_intervention(cls, data: Any) -> Any:
-        if isinstance(data, dict):
-            # Normalize string types if provided as string
-            t = data.get("type")
-            if isinstance(t, str):
-                t_clean = t.strip().lower()
-                for member in InterventionType:
-                    if member.value == t_clean:
-                        data["type"] = member
-                        break
+        if data is None:
+            return data
+        normalized = normalize_intervention(data)
+        if normalized:
+            t = normalized.get("type")
+            for member in InterventionType:
+                if member.value == t:
+                    normalized["type"] = member
+                    break
+            return normalized
         return data
 
     @model_validator(mode="after")
@@ -116,7 +251,7 @@ class BaselineReference(BaseModel):
 class SimulationScenarioRequest(BaseModel):
     scenario_id: Optional[str] = Field(default=None, description="Deterministic scenario identifier (e.g. signal_timing:Westbound:adj+19.0s:seed42)")
     scenario_name: str = Field(default="synthetic_normal", description="Demand profile scenario")
-    location: str = Field(default="Narayanguda, Hyderabad", description="Target urban locality")
+    location: Optional[str] = Field(default=None, description="Target urban locality")
     target_location: Optional[str] = None
     duration_seconds: int = Field(default=120, description="Simulation duration in seconds")
     duration_steps: Optional[int] = Field(default=None, description="Legacy step parameter (alias for duration_seconds)")
@@ -135,14 +270,13 @@ class SimulationScenarioRequest(BaseModel):
                 data["location"] = data["target_location"]
             if data.get("duration_steps") and not data.get("duration_seconds"):
                 data["duration_seconds"] = int(data["duration_steps"])
+            # Normalize any provided intervention payload defensively
+            if data.get("intervention"):
+                data["intervention"] = normalize_intervention(data["intervention"], default_target=data.get("location") or "Westbound")
             # If candidate_intervention given as string without intervention payload
-            if not data.get("intervention") and data.get("candidate_intervention"):
-                data["intervention"] = {
-                    "type": "signal_timing",
-                    "target": data.get("candidate_intervention"),
-                    "parameters": {},
-                }
-            elif not data.get("intervention") and data.get("signal_optimization"):
+            elif data.get("candidate_intervention"):
+                data["intervention"] = normalize_intervention(data.get("candidate_intervention"), default_target=data.get("location") or "Westbound")
+            elif data.get("signal_optimization"):
                 data["intervention"] = {
                     "type": "signal_timing",
                     "target": "Westbound",

@@ -38,7 +38,8 @@ from tenacity import (
 # ---------------------------------------------------------------------------
 # Configuration
 # ---------------------------------------------------------------------------
-load_dotenv()
+_ENV_PATH = Path(__file__).resolve().parent.parent.parent / ".env"
+load_dotenv(dotenv_path=_ENV_PATH)
 
 logger = logging.getLogger("tomtom")
 
@@ -48,7 +49,7 @@ TRAFFIC_MODE: str = os.getenv("TRAFFIC_MODE", "live").lower()
 def _get_api_key() -> str:
     global TOMTOM_API_KEY
     if not TOMTOM_API_KEY or TOMTOM_API_KEY == "REPLACE_WITH_YOUR_TOMTOM_KEY":
-        load_dotenv(override=True)
+        load_dotenv(dotenv_path=_ENV_PATH, override=True)
         TOMTOM_API_KEY = os.getenv("TOMTOM_API_KEY", "")
     return TOMTOM_API_KEY
 
@@ -129,7 +130,6 @@ class TrafficOverviewKPI(BaseModel):
     congested_corridors: int
     active_incidents: int
     travel_time_index: float
-    queue_length_km: float
     source: str = "TOMTOM_LIVE"
     as_of: str
 
@@ -169,7 +169,7 @@ class CorridorsResponse(BaseModel):
 class TrendPoint(BaseModel):
     time: str
     speed: float
-    volume: float
+    volume: Optional[float] = None
 
 
 class TrendResponse(BaseModel):
@@ -210,9 +210,7 @@ def _record_trend_point(avg_speed: float):
     hour = now_h.hour
     minute = now_h.minute
     label = f"{hour % 12 or 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
-    # Estimate volume from speed (inverse proxy)
-    volume = round(max(0.5, 4.0 - avg_speed / 20.0) * 0.7, 2)
-    _trend_history.append({"time": label, "speed": round(avg_speed, 1), "volume": volume})
+    _trend_history.append({"time": label, "speed": round(avg_speed, 1), "volume": None})
     if len(_trend_history) > _MAX_TREND_POINTS:
         _trend_history.pop(0)
 
@@ -227,11 +225,25 @@ _shared_client: Optional[httpx.AsyncClient] = None
 
 def _get_shared_client() -> httpx.AsyncClient:
     global _shared_client
+    try:
+        cur_loop = asyncio.get_running_loop()
+    except RuntimeError:
+        cur_loop = None
+
+    needs_new = False
     if _shared_client is None or _shared_client.is_closed:
+        needs_new = True
+    elif getattr(_shared_client, "_owner_loop", None) != cur_loop:
+        needs_new = True
+    elif getattr(_shared_client, "_owner_loop", None) is not None and getattr(_shared_client, "_owner_loop").is_closed():
+        needs_new = True
+
+    if needs_new:
         _shared_client = httpx.AsyncClient(
             timeout=httpx.Timeout(connect=3.0, read=5.0, write=5.0, pool=10.0),
             limits=httpx.Limits(max_keepalive_connections=50, max_connections=100, keepalive_expiry=120.0),
         )
+        _shared_client._owner_loop = cur_loop
     return _shared_client
 
 class _ClientContext:
@@ -358,7 +370,6 @@ def _demo_overview() -> TrafficOverviewKPI:
         congested_corridors=random.randint(5, 15),
         active_incidents=random.randint(8, 30),
         travel_time_index=round(random.uniform(1.3, 2.1), 2),
-        queue_length_km=round(random.uniform(1.5, 5.0), 1),
         source="DEMO_SIMULATED",
         as_of=_utc_now(),
     )
@@ -621,19 +632,11 @@ async def fetch_traffic_overview() -> TrafficOverviewKPI:
     # Travel Time Index = weighted avg of congestion ratios + 1 (baseline = 1.0)
     tti = 1.0 + sum(f.congestion_ratio for f in flows) / len(flows)
 
-    # Queue length proxy: sum of corridors where speed < 25 km/h weighted by delay
-    queue_km = sum(
-        (f.delay_seconds / 60.0) * 0.8  # rough km from delay minutes
-        for f in flows if f.current_speed < 25
-    )
-    queue_km = round(min(queue_km, 20.0), 1)
-
     result = TrafficOverviewKPI(
         avg_speed_kmh=round(avg_speed, 1),
         congested_corridors=congested,
         active_incidents=active_incidents,
         travel_time_index=round(tti, 2),
-        queue_length_km=queue_km,
         source="TOMTOM_LIVE",
         as_of=_utc_now(),
     )
@@ -749,16 +752,12 @@ async def fetch_trend() -> TrendResponse:
     avg = sum(f.current_speed for f in flows) / max(len(flows), 1) if flows else 20.0
     _record_trend_point(avg)
 
-    import math as _math
     now_h = datetime.now(timezone.utc).hour
     points = []
     for i in range(24):
         h = (now_h - 23 + i) % 24
         label = f"{h % 12 or 12} {'AM' if h < 12 else 'PM'}"
-        # Synthetic diurnal curve seeded with real current value
-        synthetic = max(10.0, avg * (0.5 + 0.5 * _math.cos((h - 9) * _math.pi / 8)))
-        vol = round(max(0.5, 4.0 - synthetic / 20.0) * 0.7, 2)
-        points.append(TrendPoint(time=label, speed=round(synthetic, 1), volume=vol))
+        points.append(TrendPoint(time=label, speed=round(avg, 1), volume=None))
 
     return TrendResponse(data=points, source="TOMTOM_LIVE", as_of=_utc_now())
 

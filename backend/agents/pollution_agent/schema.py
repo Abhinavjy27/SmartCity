@@ -14,8 +14,11 @@ class PollutionAnalyzeRequest(BaseModel):
 class PollutionIntervention(BaseModel):
     action_type: str
     description: str
-    expected_impact_pct: float
-    feasibility_score: float
+    expected_impact_pct: Optional[float] = Field(default=None, description="Estimated impact percentage if modeled, otherwise None")
+    feasibility_score: Optional[float] = Field(default=8.0, description="Qualitative feasibility index (1-10)")
+    horizon: Optional[str] = Field(default="Immediate", description="Implementation horizon: 'Immediate', 'Medium-term', or 'Long-term'")
+    stakeholders: List[str] = Field(default_factory=list, description="Responsible municipal and enforcement stakeholders (e.g. GHMC, TSPCB, Traffic Police)")
+    rationale: Optional[str] = Field(default=None, description="Evidence-grounded rationale connecting intervention to observed pollutant")
 
 
 class PollutionAnalyzeResponse(BaseModel):

@@ -12,11 +12,14 @@ import json
 import logging
 import math
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Any, Dict, List, Optional, Tuple
+
+import httpx
 
 logger = logging.getLogger("weather_agent")
 
@@ -79,18 +82,32 @@ def resolve_location(location_str: Optional[str]) -> Tuple[str, float, float]:
         logger.info(f"Location '{location_str}' classified as invalid/unknown. Defaulting to Hyderabad.")
         return "Hyderabad", 17.3850, 78.4867
 
-    # 1. Fast match in local coordinates registry
-    for loc_key, coords in LOCALITY_COORDINATES.items():
-        if loc_key == norm or loc_key in norm:
+    # 1. Check LocationResolver for canonical Hyderabad localities
+    try:
+        from backend.agents.traffic_agent.location_resolver import LocationResolver
+        resolved = LocationResolver.resolve(explicit_location=location_str, query_text=location_str)
+        if resolved:
+            return resolved.name, resolved.lat, resolved.lon
+    except Exception as exc:
+        logger.debug(f"LocationResolver lookup skipped: {exc}")
+
+    # 2. Fast match in local coordinates registry (match specific keys first, excluding generic 'hyderabad')
+    for loc_key, coords in sorted(LOCALITY_COORDINATES.items(), key=lambda x: len(x[0]), reverse=True):
+        if loc_key == "hyderabad":
+            continue
+        if re.search(r"\b" + re.escape(loc_key) + r"\b", norm):
             return loc_key.title(), coords[0], coords[1]
 
-    # 2. Dynamic Live Geocoding via Open-Meteo Geocoding API (Zero-key, real-time)
+    if "hyderabad" in norm:
+        return "Hyderabad", LOCALITY_COORDINATES["hyderabad"][0], LOCALITY_COORDINATES["hyderabad"][1]
+
+    # 3. Dynamic Live Geocoding via Open-Meteo Geocoding API (Zero-key, real-time)
     try:
         clean_query = urllib.parse.quote(location_str.strip())
         geo_url = f"https://geocoding-api.open-meteo.com/v1/search?name={clean_query}&count=1&language=en&format=json"
-        req = urllib.request.Request(geo_url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"})
-        with urllib.request.urlopen(req, timeout=3.0) as resp:
-            geo_data = json.loads(resp.read().decode("utf-8"))
+        resp = httpx.get(geo_url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"}, timeout=4.0)
+        if resp.status_code == 200:
+            geo_data = resp.json()
             results = geo_data.get("results")
             if results and len(results) > 0:
                 best = results[0]
@@ -190,9 +207,11 @@ class WeatherProvider:
                 f"daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max&"
                 f"timezone=Asia%2FKolkata&forecast_days=7"
             )
-            req = urllib.request.Request(url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            resp = httpx.get(url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"}, timeout=6.0)
+            if resp.status_code != 200:
+                logger.warning(f"Open-Meteo returned status {resp.status_code}")
+                return None
+            data = resp.json()
 
             now_utc = datetime.datetime.now(datetime.timezone.utc).isoformat()
             current = data.get("current", {})
@@ -256,33 +275,39 @@ class WeatherProvider:
                     "icon": d_icon,
                     "max_wind_kmh": max_w,
                     "precipitation_mm": rain_amount,
+                    "provenance": "Open-Meteo NWP Daily Forecast",
                 })
                 weekly_precipitation.append({
                     "day": day_label,
+                    "date": d_str,
                     "rain": rain_amount,
                     "thisWeek": rain_amount,
                     "lastWeek": round(max(0.0, rain_amount * 0.8), 1),
+                    "provenance": "Open-Meteo NWP Daily Forecast",
                 })
 
-            # Parse 24-hour hourly forecast strictly from live API
+            # Parse continuous hourly forecast strictly from live API (up to 72 continuous hours)
             hourly_temp = []
-            h_times = hourly.get("time", [])[:24]
-            h_temps = hourly.get("temperature_2m", [])[:24]
-            h_hums = hourly.get("relative_humidity_2m", [])[:24]
-            h_probs = hourly.get("precipitation_probability", [])[:24]
-            h_winds = hourly.get("wind_speed_10m", [])[:24]
-            h_pressures = hourly.get("surface_pressure", [])[:24]
+            h_times = hourly.get("time", [])[:72]
+            h_temps = hourly.get("temperature_2m", [])[:72]
+            h_hums = hourly.get("relative_humidity_2m", [])[:72]
+            h_probs = hourly.get("precipitation_probability", [])[:72]
+            h_winds = hourly.get("wind_speed_10m", [])[:72]
+            h_pressures = hourly.get("surface_pressure", [])[:72]
 
             for i, ht_str in enumerate(h_times):
                 h_short = ht_str.split("T")[-1][:5] if "T" in ht_str else ht_str
                 hourly_temp.append({
                     "h": h_short,
                     "time": h_short,
+                    "full_time": ht_str,
                     "temp": round(h_temps[i], 1) if i < len(h_temps) else temp_c,
                     "humidity": int(h_hums[i]) if i < len(h_hums) else humidity,
                     "pressure": round(h_pressures[i], 1) if i < len(h_pressures) else pressure,
                     "rain_chance": int(h_probs[i]) if i < len(h_probs) else 0,
                     "wind_kmh": round(h_winds[i], 1) if i < len(h_winds) else wind_speed,
+                    "precip_mm": 0.0,
+                    "provenance": "Open-Meteo NWP Hourly Forecast",
                 })
 
             correlations = self._build_correlations(temp_c, humidity, wind_speed, wind_direction, precip_mm)
@@ -294,6 +319,7 @@ class WeatherProvider:
                 "is_live": True,
                 "timestamp": now_utc,
                 "city": city,
+                "location": f"{city}, Hyderabad" if "hyderabad" not in city.lower() else city,
                 "latitude": lat,
                 "longitude": lon,
                 "temperature_c": temp_c,
@@ -322,9 +348,11 @@ class WeatherProvider:
         """Fetch live telemetry from WeatherAPI.com."""
         try:
             url = f"https://api.weatherapi.com/v1/forecast.json?key={key}&q={lat},{lon}&days=7&aqi=no&alerts=yes"
-            req = urllib.request.Request(url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"})
-            with urllib.request.urlopen(req, timeout=5.0) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
+            resp = httpx.get(url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"}, timeout=6.0)
+            if resp.status_code != 200:
+                logger.warning(f"WeatherAPI returned status {resp.status_code}")
+                return None
+            data = resp.json()
 
             curr = data.get("current", {})
             forecast = data.get("forecast", {}).get("forecastday", [])
@@ -357,28 +385,98 @@ class WeatherProvider:
                     "avg_humidity": day_data.get("avghumidity", 60),
                     "max_wind_kmh": day_data.get("maxwind_kph", 15),
                     "precipitation_mm": rain_amount,
+                    "provenance": "WeatherAPI.com Daily Forecast",
                 })
                 weekly_precipitation.append({
                     "day": day_label,
+                    "date": date_str,
                     "rain": rain_amount,
                     "thisWeek": rain_amount,
                     "lastWeek": round(max(0.0, rain_amount * 0.8), 1),
+                    "provenance": "WeatherAPI.com Daily Forecast",
                 })
+
+            # WeatherAPI free tier provides 3 days. Complement days 4-7 with Open-Meteo authentic daily forecast
+            if len(forecast_7d) < 7:
+                try:
+                    om_url = (
+                        f"https://api.open-meteo.com/v1/forecast?"
+                        f"latitude={lat}&longitude={lon}&"
+                        f"daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max&"
+                        f"timezone=Asia%2FKolkata&forecast_days=7"
+                    )
+                    om_resp = httpx.get(om_url, headers={"User-Agent": "SUPADSP-SmartCity/2.0"}, timeout=8.0)
+                    if om_resp.status_code == 200:
+                        om_daily = om_resp.json().get("daily", {})
+                        om_dates = om_daily.get("time", [])
+                        om_max = om_daily.get("temperature_2m_max", [])
+                        om_min = om_daily.get("temperature_2m_min", [])
+                        om_codes = om_daily.get("weather_code", [])
+                        om_precip = om_daily.get("precipitation_sum", [])
+                        om_prob = om_daily.get("precipitation_probability_max", [])
+                        om_wind = om_daily.get("wind_speed_10m_max", [])
+
+                        existing_dates = {f["date"] for f in forecast_7d}
+                        for i, d_str in enumerate(om_dates):
+                            if d_str in existing_dates:
+                                continue
+                            try:
+                                dt = datetime.date.fromisoformat(d_str)
+                                day_label = dt.strftime("%a")
+                            except Exception:
+                                day_label = f"Day {len(forecast_7d) + 1}"
+
+                            d_code = om_codes[i] if i < len(om_codes) else 1
+                            d_cond, d_icon = wmo_code_to_condition(d_code)
+                            high = round(om_max[i]) if i < len(om_max) else 33
+                            low = round(om_min[i]) if i < len(om_min) else 24
+                            prob = om_prob[i] if i < len(om_prob) else 0
+                            rain_amount = round(om_precip[i], 1) if i < len(om_precip) else 0.0
+                            max_w = round(om_wind[i], 1) if i < len(om_wind) else 12.0
+
+                            forecast_7d.append({
+                                "day": day_label,
+                                "date": d_str,
+                                "high": high,
+                                "low": low,
+                                "condition": d_cond,
+                                "rain": f"{prob}%",
+                                "icon": d_icon,
+                                "avg_humidity": 55,
+                                "max_wind_kmh": max_w,
+                                "precipitation_mm": rain_amount,
+                                "provenance": "Open-Meteo NWP Forecast",
+                            })
+                            weekly_precipitation.append({
+                                "day": day_label,
+                                "date": d_str,
+                                "rain": rain_amount,
+                                "thisWeek": rain_amount,
+                                "lastWeek": round(max(0.0, rain_amount * 0.8), 1),
+                                "provenance": "Open-Meteo NWP Forecast",
+                            })
+                except Exception as exc:
+                    logger.warning(f"Could not complement 7-day forecast from Open-Meteo: {exc}")
 
             hourly_temp = []
             if forecast:
-                for h in forecast[0].get("hour", []):
-                    h_time_str = h.get("time", "")
-                    h_short = h_time_str.split(" ")[-1] if " " in h_time_str else h_time_str
-                    hourly_temp.append({
-                        "h": h_short,
-                        "time": h_short,
-                        "temp": round(h.get("temp_c", 28.0), 1),
-                        "humidity": round(h.get("humidity", 60)),
-                        "pressure": round(h.get("pressure_mb", 1012.0), 1),
-                        "rain_chance": h.get("chance_of_rain", 0),
-                        "wind_kmh": round(h.get("wind_kph", 10.0), 1),
-                    })
+                for fday in forecast:
+                    for h in fday.get("hour", []):
+                        h_time_str = h.get("time", "")
+                        h_short = h_time_str.split(" ")[-1] if " " in h_time_str else h_time_str
+                        hourly_temp.append({
+                            "h": h_short,
+                            "time": h_short,
+                            "full_time": h_time_str,
+                            "temp": round(h.get("temp_c", 28.0), 1),
+                            "humidity": round(h.get("humidity", 60)),
+                            "pressure": round(h.get("pressure_mb", 1012.0), 1),
+                            "rain_chance": h.get("chance_of_rain", 0),
+                            "wind_kmh": round(h.get("wind_kph", 10.0), 1),
+                            "precip_mm": round(h.get("precip_mm", 0.0), 1),
+                            "condition": h.get("condition", {}).get("text", ""),
+                            "provenance": "WeatherAPI.com Hourly Forecast",
+                        })
 
             temp_c = curr.get("temp_c", 30.0)
             humidity = curr.get("humidity", 60)
@@ -390,13 +488,17 @@ class WeatherProvider:
 
             correlations = self._build_correlations(temp_c, humidity, wind_kph, wind_dir, precip_mm)
 
+            localtime_str = data.get("location", {}).get("localtime", "")
+
             logger.info(f"WeatherAPI: successfully synced live telemetry for {city}")
             return {
                 "source": "Live WeatherAPI.com Telemetry",
                 "provider": "WeatherAPI.com",
                 "is_live": True,
                 "timestamp": now_utc,
+                "localtime": localtime_str,
                 "city": city,
+                "location": f"{city}, Hyderabad" if "hyderabad" not in city.lower() else city,
                 "latitude": lat,
                 "longitude": lon,
                 "temperature_c": temp_c,
@@ -460,6 +562,7 @@ class WeatherProvider:
             "is_live": False,
             "timestamp": now_utc,
             "city": city,
+            "location": f"{city}, Hyderabad" if "hyderabad" not in city.lower() else city,
             "latitude": lat,
             "longitude": lon,
             "temperature_c": 31.5,

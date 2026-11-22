@@ -26,10 +26,12 @@ class WeatherCurrentResponse(BaseModel):
     pressure_hpa: float = Field(1012.0, description="Surface atmospheric pressure in hPa")
     uv_index: Optional[float] = Field(None, description="UV Index rating")
     visibility_km: Optional[float] = Field(10.0, description="Visibility in kilometers")
+    localtime: Optional[str] = Field(None, description="Local station time string")
     forecast_7d: List[Dict[str, Any]] = Field(default_factory=list)
     hourly_temp: List[Dict[str, Any]] = Field(default_factory=list)
     weekly_precipitation: List[Dict[str, Any]] = Field(default_factory=list)
     correlations: List[Dict[str, Any]] = Field(default_factory=list)
+    provenance_summary: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
 
 class WeatherForecastDay(BaseModel):

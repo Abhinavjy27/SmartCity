@@ -147,12 +147,14 @@ export const planningApi = {
   },
 
   async executePlanner(payload = {}) {
+    const convId = payload.conversation_id || payload.session_id || undefined
     const defaultPayload = {
-      request_id: payload.request_id || `req_${Date.now()}`,
-      session_id: payload.session_id || undefined,
-      objective: payload.objective || payload.query || 'What is the traffic situation in Narayanguda?',
-      query: payload.query || payload.objective || 'What is the traffic situation in Narayanguda?',
-      location: payload.location || 'Narayanguda, Hyderabad',
+      request_id: payload.request_id || `req_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
+      conversation_id: convId,
+      session_id: convId,
+      objective: payload.objective || payload.query || '',
+      query: payload.query || payload.objective || '',
+      location: payload.location !== undefined ? payload.location : undefined,
       constraints: payload.constraints || [],
       domains: payload.domains || undefined,
       max_cycles: payload.max_cycles || 2,
@@ -164,9 +166,9 @@ export const planningApi = {
     // Safe request logging (no secrets)
     console.log(
       `[API Execute Planner] REQUEST_ID=${defaultPayload.request_id} | ` +
-      `SESSION_ID=${defaultPayload.session_id || 'none'} | ` +
+      `CONVERSATION_ID=${defaultPayload.conversation_id || 'none'} | ` +
       `QUERY='${defaultPayload.query}' | OBJECTIVE='${defaultPayload.objective}' | ` +
-      `LOCATION='${defaultPayload.location}' | ` +
+      `LOCATION='${defaultPayload.location || 'unspecified'}' | ` +
       `CONV_LEN=${(defaultPayload.conversation_history || []).length} | ` +
       `SIM_LEN=${(defaultPayload.simulation_history || []).length} | ` +
       `SCEN_LEN=${(defaultPayload.tested_scenarios || []).length}`
