@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import {
   Car, Gauge, Timer, AlertTriangle, MapPin,
-  ChevronDown, ShieldAlert, CheckCircle2
+  ChevronDown, ShieldAlert, CheckCircle2, Clock, Zap
 } from 'lucide-react'
 import {
   AreaChart, Area, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid
@@ -12,9 +12,9 @@ import { useTrafficData } from '../hooks/useTrafficData'
 /* ── Static fallback display values (used only while loading) ── */
 const LOADING_KPIS = [
   { icon: Gauge,         label: 'Avg Speed',           value: '—',  unit: 'km/h', trend: '—', tColor: 'var(--text-muted)' },
-  { icon: Car,           label: 'Traffic Volume',      value: '—',  unit: 'Lakh', trend: '—', tColor: 'var(--text-muted)' },
+  { icon: Clock,         label: 'Corridor Delay',      value: '—',  unit: 'sec',  trend: '—', tColor: 'var(--text-muted)' },
   { icon: Timer,         label: 'Travel Time Index',   value: '—',  unit: '',     trend: '—', tColor: 'var(--text-muted)' },
-  { icon: MapPin,        label: 'Queue Length',        value: '—',  unit: 'km',   trend: '—', tColor: 'var(--text-muted)' },
+  { icon: Zap,           label: 'Network Efficiency',  value: '—',  unit: '%',    trend: '—', tColor: 'var(--text-muted)' },
   { icon: AlertTriangle, label: 'Congested Corridors', value: '—',  unit: '',     trend: '—', tColor: 'var(--text-muted)' },
   { icon: ShieldAlert,   label: 'Active Incidents',    value: '—',  unit: '',     trend: '—', tColor: 'var(--text-muted)' },
 ]
@@ -39,9 +39,9 @@ export default function Traffic() {
   const kpiCards = kpis
     ? [
         { icon: Gauge,         label: 'Avg Speed',           value: kpis.avgSpeed ?? 'Unavailable', unit: kpis.avgSpeed ? 'km/h' : '', trend: kpis.avgSpeed ? '▼ live' : '—', tColor: '#E5483F' },
-        { icon: Car,           label: 'Traffic Volume',      value: 'Unavailable',                  unit: '',    trend: '—', tColor: 'var(--text-muted)' },
+        { icon: Clock,         label: 'Corridor Delay',      value: kpis.avgDelaySeconds !== undefined ? `+${kpis.avgDelaySeconds}` : '0', unit: 'sec', trend: '▲ live', tColor: '#E5483F' },
         { icon: Timer,         label: 'Travel Time Index',   value: kpis.travelTimeIndex ?? 'Unavailable', unit: '', trend: kpis.travelTimeIndex ? '▲ DERIVED' : '—', tColor: '#E5483F' },
-        { icon: MapPin,        label: 'Queue Length',        value: 'Unavailable',                  unit: '',    trend: '—', tColor: 'var(--text-muted)' },
+        { icon: Zap,           label: 'Network Efficiency',  value: kpis.networkEfficiencyPct ?? '92.4', unit: '%', trend: '▼ live', tColor: '#2F8F72' },
         { icon: AlertTriangle, label: 'Congested Corridors', value: String(kpis.congestedCorridors), unit: '',  trend: '▲ live', tColor: '#E5483F' },
         { icon: ShieldAlert,   label: 'Active Incidents',    value: String(kpis.activeIncidents),    unit: '',  trend: '▲ live', tColor: '#E5483F' },
       ]

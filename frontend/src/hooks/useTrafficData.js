@@ -90,12 +90,12 @@ function normKPIs(raw) {
   const avgSpeed = raw.avg_speed_kmh ?? null
 
   return {
-    avgSpeed:          avgSpeed !== null ? avgSpeed.toFixed(1) : null,
-    trafficVolume:     null,
-    travelTimeIndex:   raw.travel_time_index !== undefined && raw.travel_time_index !== null ? Number(raw.travel_time_index).toFixed(2) : null,
-    queueLength:       null,
-    congestedCorridors: raw.congested_corridors ?? 0,
-    activeIncidents:   raw.active_incidents ?? 0,
+    avgSpeed:              avgSpeed !== null ? avgSpeed.toFixed(1) : null,
+    avgDelaySeconds:       raw.avg_delay_seconds ?? 0,
+    networkEfficiencyPct:  raw.network_efficiency_pct !== undefined && raw.network_efficiency_pct !== null ? Number(raw.network_efficiency_pct).toFixed(1) : null,
+    travelTimeIndex:       raw.travel_time_index !== undefined && raw.travel_time_index !== null ? Number(raw.travel_time_index).toFixed(2) : null,
+    congestedCorridors:    raw.congested_corridors ?? 0,
+    activeIncidents:       raw.active_incidents ?? 0,
   }
 }
 

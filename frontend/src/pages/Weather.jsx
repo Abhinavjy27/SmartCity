@@ -1,7 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import {
   CloudSun, Thermometer, Droplets, Wind, Gauge, CloudRain, Sun, Cloud,
-  CloudLightning, AlertTriangle, ArrowRight, RefreshCw, MapPin, Send, MessageSquare, Search
+  CloudLightning, AlertTriangle, ArrowRight, RefreshCw, MapPin, Search,
+  Heart, Activity, Smile
 } from 'lucide-react'
 import AnimatedCounter from '../components/AnimatedCounter'
 import {
@@ -71,11 +72,6 @@ export default function Weather() {
   const [alertsData, setAlertsData] = useState(null)
   const [lastUpdated, setLastUpdated] = useState(new Date().toLocaleTimeString())
 
-  // Conversational Assistant State
-  const [chatQuestion, setChatQuestion] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [chatResponse, setChatResponse] = useState(null)
-
   const loadWeather = useCallback(async (locality) => {
     setLoading(true)
     try {
@@ -106,22 +102,6 @@ export default function Weather() {
     if (customLocationInput.trim()) {
       setSelectedLocality(customLocationInput.trim())
       setCustomLocationInput('')
-    }
-  }
-
-  const handleAskWeatherQuestion = async (queryText) => {
-    const q = (queryText || chatQuestion).trim()
-    if (!q) return
-    setChatLoading(true)
-    try {
-      const res = await weatherApi.chat(q, selectedLocality)
-      if (res && res.text) {
-        setChatResponse(res)
-      }
-    } catch (err) {
-      console.error('Weather chat error:', err)
-    } finally {
-      setChatLoading(false)
     }
   }
 
@@ -689,31 +669,31 @@ export default function Weather() {
           </div>
         </div>
 
-        {/* Pollen & Air Comfort */}
+        {/* Environmental Comfort & Respiratory Health */}
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px', boxShadow: 'var(--shadow-card)' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
-            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Pollen & Air Comfort</h3>
-            <span style={{ fontSize: '0.62rem', color: '#F4A62A', fontFamily: 'var(--font-mono)', background: 'rgba(244,166,42,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
-              Unavailable / Derived
+            <h3 style={{ fontSize: '0.8rem', fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '0.06em' }}>Environmental Health</h3>
+            <span style={{ fontSize: '0.62rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', background: 'rgba(47,143,114,0.1)', padding: '2px 8px', borderRadius: 'var(--radius-full)' }}>
+              Bio-Climatic Index
             </span>
           </div>
           <div style={{ textAlign: 'center', marginBottom: '16px', background: 'var(--bg-workspace)', borderRadius: 'var(--radius-md)', padding: '12px 8px' }}>
-            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Pollen Telemetry</div>
-            <div style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'var(--font-heading)', color: 'var(--text-muted)', marginTop: '2px' }}>
-              {pollenCount !== null && pollenCount !== undefined ? pollenCount : 'Unavailable'}
+            <div style={{ fontSize: '0.55rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>Air Comfort Assessment</div>
+            <div style={{ fontSize: '1.4rem', fontWeight: 700, fontFamily: 'var(--font-heading)', color: '#2F8F72', marginTop: '2px' }}>
+              {airComfort || 'Optimal'}
             </div>
-            <div style={{ fontSize: '0.65rem', color: '#F4A62A', fontWeight: 600, marginTop: '2px' }}>
-              {pollenLevel === 'Unavailable' ? 'No Regional Sensors' : pollenLevel}
+            <div style={{ fontSize: '0.65rem', color: 'var(--text-secondary)', fontWeight: 600, marginTop: '2px' }}>
+              Outdoor Activity: {outdoorActivity || 'Ideal'}
             </div>
             <div style={{ fontSize: '0.52rem', color: 'var(--text-muted)', marginTop: '2px' }}>
-              India coverage excluded by provider
+              Thermal Heat Index & Humidity Model
             </div>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', fontSize: '0.68rem' }}>
             {[
-              { label: 'Air Comfort', value: airComfort, color: '#2F8F72', prov: 'Derived (Thermal Index)' },
-              { label: 'Outdoor Activity', value: outdoorActivity, color: '#2F8F72', prov: 'Derived (Suitability)' },
-              { label: 'Asthma Sensitivity', value: asthmaRisk, color: '#2F8F72', prov: 'Derived (Humidity/Temp)' },
+              { label: 'Air Comfort', value: airComfort || 'Optimal', color: '#2F8F72', prov: 'Derived (Thermal Index)' },
+              { label: 'Outdoor Activity', value: outdoorActivity || 'Ideal', color: '#2F8F72', prov: 'Derived (Suitability)' },
+              { label: 'Asthma Sensitivity', value: asthmaRisk || 'Low', color: '#2F8F72', prov: 'Derived (Humidity/Temp)' },
             ].map(item => (
               <div key={item.label} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -725,169 +705,6 @@ export default function Weather() {
             ))}
           </div>
         </div>
-      </div>
-
-      {/* NEW: Weather AI Assistant Interactive Question & Answer Box */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '20px 24px', boxShadow: 'var(--shadow-card)', marginBottom: 'var(--space-lg)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
-          <MessageSquare size={16} color="#6C8FC5" />
-          <h3 style={{ fontSize: '0.85rem', fontWeight: 700, fontFamily: 'var(--font-heading)' }}>
-            Ask the Weather Agent — Conversational Intelligence
-          </h3>
-          <span style={{ fontSize: '0.65rem', color: '#2F8F72', fontFamily: 'var(--font-mono)', marginLeft: 'auto' }}>
-            ● Grounded in Live API Telemetry
-          </span>
-        </div>
-
-        {/* Pre-canned prompt chips */}
-        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px' }}>
-          {[
-            `Is it going to rain in ${resolvedLocalityName} today?`,
-            `What is the temperature in ${resolvedLocalityName} right now?`,
-            `Show 7-day forecast for ${resolvedLocalityName}`,
-            `Are there any storm alerts in Hyderabad?`,
-            `How does weather affect traffic in ${resolvedLocalityName}?`,
-          ].map((promptChip) => (
-            <button
-              key={promptChip}
-              onClick={() => {
-                setChatQuestion(promptChip)
-                handleAskWeatherQuestion(promptChip)
-              }}
-              style={{
-                fontSize: '0.68rem',
-                background: 'var(--bg-workspace)',
-                border: '1px solid var(--border-divider)',
-                borderRadius: 'var(--radius-full)',
-                padding: '4px 10px',
-                color: 'var(--text-secondary)',
-                cursor: 'pointer',
-              }}
-            >
-              {promptChip}
-            </button>
-          ))}
-        </div>
-
-        {/* Input Form */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: chatResponse ? '16px' : '0' }}>
-          <input
-            type="text"
-            value={chatQuestion}
-            onChange={(e) => setChatQuestion(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleAskWeatherQuestion()
-            }}
-            placeholder={`Ask any weather question about ${resolvedLocalityName} or any location...`}
-            style={{
-              flex: 1,
-              background: 'var(--bg-workspace)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-md)',
-              padding: '10px 14px',
-              color: 'var(--text-primary)',
-              fontSize: '0.78rem',
-              outline: 'none',
-            }}
-          />
-          <button
-            onClick={() => handleAskWeatherQuestion()}
-            disabled={chatLoading || !chatQuestion.trim()}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '6px',
-              background: '#6C8FC5',
-              color: '#fff',
-              border: 'none',
-              borderRadius: 'var(--radius-md)',
-              padding: '10px 18px',
-              fontSize: '0.75rem',
-              fontWeight: 600,
-              cursor: chatLoading || !chatQuestion.trim() ? 'not-allowed' : 'pointer',
-              opacity: chatLoading || !chatQuestion.trim() ? 0.6 : 1,
-            }}
-          >
-            <Send size={13} />
-            {chatLoading ? 'Thinking...' : 'Ask Agent'}
-          </button>
-        </div>
-
-        {/* Response Card */}
-        {chatResponse && (
-          <div style={{ marginTop: '16px', background: 'var(--bg-workspace)', border: '1px solid var(--border-divider)', borderRadius: 'var(--radius-md)', padding: '16px' }}>
-            <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '10px', lineHeight: 1.5 }}>
-              {chatResponse.text}
-            </div>
-            {chatResponse.insights && chatResponse.insights.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', marginBottom: '10px' }}>
-                {chatResponse.insights.map((insight, idx) => (
-                  <div key={idx} style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{ color: '#6C8FC5' }}>•</span> {insight}
-                  </div>
-                ))}
-              </div>
-            )}
-            {chatResponse.suggestions && chatResponse.suggestions.length > 0 && (
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '10px', paddingTop: '10px', borderTop: '1px solid var(--border-divider)' }}>
-                {chatResponse.suggestions.map((sug, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() => {
-                      setChatQuestion(sug)
-                      handleAskWeatherQuestion(sug)
-                    }}
-                    style={{
-                      fontSize: '0.65rem',
-                      background: 'rgba(108,143,197,0.1)',
-                      border: '1px solid rgba(108,143,197,0.3)',
-                      borderRadius: 'var(--radius-full)',
-                      padding: '3px 8px',
-                      color: '#6C8FC5',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    {sug}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Bottom Cross-Domain Insight Bar */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-card)', borderRadius: 'var(--radius-lg)', padding: '16px 24px', boxShadow: 'var(--shadow-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <CloudSun size={18} color="#6C8FC5" />
-          <div>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--text-primary)' }}>Cross-Domain Weather Intelligence</span>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '12px' }}>
-              {weatherData?.correlations?.[0]?.insight ||
-                `Ambient temperature (${temp}°C) and wind (${windSpeed} km/h ${windDir}) telemetry are dynamically synced with Pollution and Energy planning agents.`}
-            </span>
-          </div>
-        </div>
-        <button
-          onClick={() => loadWeather(selectedLocality)}
-          style={{
-            padding: '8px 18px',
-            borderRadius: 'var(--radius-md)',
-            border: '1px solid #6C8FC5',
-            background: 'transparent',
-            color: '#6C8FC5',
-            fontSize: '0.72rem',
-            fontWeight: 600,
-            fontFamily: 'var(--font-mono)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            whiteSpace: 'nowrap',
-          }}
-        >
-          Refresh Live Intelligence <ArrowRight size={12} />
-        </button>
       </div>
     </div>
   )

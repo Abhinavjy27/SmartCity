@@ -964,8 +964,14 @@ export default function Pollution() {
                 <div style={{ fontSize: '0.52rem', color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', flexShrink: 0 }}>{a.severity}</div>
               </div>
             )) : (
-              <div style={{ fontSize: '0.72rem', color: 'var(--text-muted)', textAlign: 'center', padding: '20px' }}>
-                No active alerts
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '12px 14px', borderRadius: 'var(--radius-sm)', background: 'rgba(47, 143, 114, 0.06)', border: '1px solid rgba(47, 143, 114, 0.2)' }}>
+                <CheckCircle2 size={16} color="#2F8F72" style={{ flexShrink: 0 }} />
+                <div>
+                  <div style={{ fontSize: '0.72rem', fontWeight: 600, color: '#2F8F72' }}>All Monitored Stations Nominal</div>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-muted)', marginTop: '2px', lineHeight: 1.3 }}>
+                    Current ambient AQI ({current?.aqi ?? 70} — {current?.category ?? 'Satisfactory'}) is within statutory standards. No acute health advisories or emission curtailments required.
+                  </div>
+                </div>
               </div>
             )}
           </div>

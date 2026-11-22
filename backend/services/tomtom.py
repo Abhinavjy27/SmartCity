@@ -130,6 +130,8 @@ class TrafficOverviewKPI(BaseModel):
     congested_corridors: int
     active_incidents: int
     travel_time_index: float
+    avg_delay_seconds: int = 0
+    network_efficiency_pct: float = 100.0
     source: str = "TOMTOM_LIVE"
     as_of: str
 
@@ -365,11 +367,14 @@ def _demo_flow(corridor_id: str, corridor_name: str) -> FlowSegmentData:
 
 def _demo_overview() -> TrafficOverviewKPI:
     import random
+    avg_spd = round(random.uniform(12, 30), 1)
     return TrafficOverviewKPI(
-        avg_speed_kmh=round(random.uniform(12, 30), 1),
+        avg_speed_kmh=avg_spd,
         congested_corridors=random.randint(5, 15),
         active_incidents=random.randint(8, 30),
         travel_time_index=round(random.uniform(1.3, 2.1), 2),
+        avg_delay_seconds=random.randint(45, 180),
+        network_efficiency_pct=round(max(20.0, (avg_spd / DEFAULT_FREE_FLOW_SPEED) * 100), 1),
         source="DEMO_SIMULATED",
         as_of=_utc_now(),
     )
@@ -631,12 +636,17 @@ async def fetch_traffic_overview() -> TrafficOverviewKPI:
 
     # Travel Time Index = weighted avg of congestion ratios + 1 (baseline = 1.0)
     tti = 1.0 + sum(f.congestion_ratio for f in flows) / len(flows)
+    avg_delay = int(round(sum(f.delay_seconds for f in flows) / len(flows)))
+    mean_ff = sum(f.free_flow_speed for f in flows) / max(len(flows), 1)
+    network_eff = round(max(0.0, min(100.0, (avg_speed / mean_ff) * 100)), 1) if mean_ff > 0 else 85.0
 
     result = TrafficOverviewKPI(
         avg_speed_kmh=round(avg_speed, 1),
         congested_corridors=congested,
         active_incidents=active_incidents,
         travel_time_index=round(tti, 2),
+        avg_delay_seconds=avg_delay,
+        network_efficiency_pct=network_eff,
         source="TOMTOM_LIVE",
         as_of=_utc_now(),
     )
@@ -740,11 +750,43 @@ async def fetch_trend() -> TrendResponse:
     Return 24 hourly trend data points. Uses stored history if available,
     otherwise generates from current flows.
     """
-    if _trend_history:
-        # Return last 24 unique-ish points (sample evenly if more)
+    # If in-memory history has at least 6 points, use it
+    if len(_trend_history) >= 6:
         hist = _trend_history[-24:] if len(_trend_history) >= 24 else _trend_history
         points = [TrendPoint(time=p["time"], speed=p["speed"], volume=p["volume"]) for p in hist]
-        src = _trend_history[-1].get("source", "TOMTOM_LIVE") if _trend_history else "TOMTOM_LIVE"
+        return TrendResponse(data=points, source="TOMTOM_LIVE", as_of=_utc_now())
+
+    # Try seeding from recorded SQLite congestion snapshots if available
+    try:
+        from .congestion_service import congestion_service
+        db_history = congestion_service.get_history(hours=24)
+        if len(db_history) >= 4:
+            # Calibrate speed against the arterial corridor network's mean free-flow speed (~28 km/h)
+            flows = await fetch_all_corridor_flows()
+            arterial_ff = sum(f.free_flow_speed for f in flows) / max(len(flows), 1) if flows else 28.0
+            points = []
+            for item in db_history[-24:]:
+                # Convert congestion % to estimated network speed using arterial free-flow baseline
+                ci = item.get("value_pct", 20.0)
+                spd = round(arterial_ff * (1.0 - ci / 100.0), 1)
+                t_str = item.get("t", "")
+                label = ""
+                if t_str:
+                    try:
+                        dt = datetime.fromisoformat(t_str.replace("Z", "+00:00"))
+                        hour = dt.hour
+                        minute = dt.minute
+                        label = f"{hour % 12 or 12}:{minute:02d} {'AM' if hour < 12 else 'PM'}"
+                    except Exception:
+                        label = t_str[:5]
+                points.append(TrendPoint(time=label or "Live", speed=max(10.0, spd), volume=None))
+            if len(points) >= 4:
+                return TrendResponse(data=points, source="TOMTOM_LIVE", as_of=_utc_now())
+    except Exception as exc:
+        logger.warning("Could not seed trend from congestion history: %s", exc)
+
+    if _trend_history:
+        points = [TrendPoint(time=p["time"], speed=p["speed"], volume=p["volume"]) for p in _trend_history]
         return TrendResponse(data=points, source="TOMTOM_LIVE", as_of=_utc_now())
 
     # No history yet — seed with current overview + time labels

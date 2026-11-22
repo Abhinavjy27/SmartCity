@@ -2,8 +2,8 @@ import { useState, useEffect, useCallback } from 'react'
 import { Outlet, NavLink, useLocation } from 'react-router-dom'
 import {
   LayoutDashboard, Car, Wind, Zap, CloudSun, Brain,
-  Bell, User, Menu, X, AlertOctagon, CheckCircle2,
-  MapPin, ChevronDown, Shield, PanelLeftClose, PanelLeftOpen
+  Menu, X, AlertOctagon, CheckCircle2,
+  MapPin, Shield, PanelLeftClose, PanelLeftOpen
 } from 'lucide-react'
 import CommandMenu from '../components/cult-ui/CommandMenu'
 
@@ -390,42 +390,6 @@ export default function DashboardLayout() {
 
           {/* Right header area */}
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0, paddingTop: '4px' }}>
-
-
-            {/* Notifications */}
-            <button style={{
-              position: 'relative', background: 'none', border: 'none',
-              color: 'var(--text-secondary)', cursor: 'pointer', padding: '6px',
-            }}>
-              <Bell size={20} />
-              <span style={{
-                position: 'absolute', top: 2, right: 2,
-                width: 16, height: 16, borderRadius: '50%',
-                background: 'var(--accent-warning)',
-                color: '#fff', fontSize: '0.6rem', fontWeight: 700,
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-              }}>3</span>
-            </button>
-
-            {/* User avatar */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}
-              className="hide-mobile"
-            >
-              <div style={{
-                width: 38, height: 38, borderRadius: '50%',
-                background: 'linear-gradient(135deg, #8B6F47, #A0845C)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                border: '2px solid var(--border-default)',
-                overflow: 'hidden',
-              }}>
-                <User size={18} color="#fff" />
-              </div>
-              <div>
-                <div style={{ fontSize: '0.82rem', fontWeight: 600, color: 'var(--text-primary)', lineHeight: 1.2 }}>Arjun R.</div>
-                <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>Operations Lead</div>
-              </div>
-              <ChevronDown size={14} color="var(--text-muted)" />
-            </div>
           </div>
         </header>
 
